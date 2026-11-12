@@ -8,7 +8,7 @@
 
 const path = require("node:path");
 const fsp = require("node:fs/promises");
-const { list, normalize, remove, save, slug, userDir } = require("./recipes_store");
+const { list, normalize, remove, save, slug, userDir, userFileStems } = require("./recipes_store");
 const { fromWorkflow } = require("./recipes_workflow");
 const { cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, promotedOf, toPrompt } = require("./recipes_graph");
 
@@ -234,13 +234,6 @@ function hasVariants(data) {
     return !!(data.provider || (p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).length));
 }
 
-async function userFileStems() {
-    try {
-        return new Set((await fsp.readdir(userDir())).filter((n) => /\.json$/i.test(n)).map((n) => n.slice(0, -5).toLowerCase()));
-    } catch (_) {
-        return new Set();
-    }
-}
 
 /**
  * Import a workflow file. `objectInfo` comes from the connected server (null when
@@ -321,4 +314,4 @@ async function importFile(file, objectInfo, opts) {
     return out;
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, detach, userDir, _normalize: normalize };
+module.exports = { list, remove, save, userFileStems, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, detach, userDir, _normalize: normalize };

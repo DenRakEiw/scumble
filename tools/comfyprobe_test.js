@@ -152,6 +152,28 @@ async function main() {
     check("a refused /system_stats: the auth message, nothing else asked", /refuses the request \(401\)/.test(refused) && s.seen.length === 1, refused + " / " + s.seen.join(" "));
     await new Promise((r) => s.server.close(r));
 
+    // 5. review finding main-net/comfy-connect-stale-result: a connect started for an earlier URL that answers after a
+    // newer connect succeeded writes nothing (its status named the new URL as unreachable before)
+    {
+        const slow = http.createServer((req, res) => { setTimeout(() => { res.writeHead(500); res.end("down"); }, 500); });
+        await new Promise((r) => slow.listen(0, "127.0.0.1", r));
+        const slowUrl = `http://127.0.0.1:${slow.address().port}`;
+        s = await stub();
+        const c = new ComfyClient({});
+        const first = c.connect(slowUrl);
+        const second = await c.connect(s.url);
+        await first;
+        await new Promise((r) => setTimeout(r, 600));
+        const st = c.status;
+        check("a connect for an earlier URL that fails after a newer one succeeded leaves the newer status (connected, the newer URL, its version)",
+            second.state === "connected" && st.state === "connected" && st.url === s.url && st.version === "0.44.0", JSON.stringify({ state: st.state, url: st.url, message: st.message }));
+        c.disconnect();
+        slow.closeAllConnections && slow.closeAllConnections();
+        await new Promise((r) => slow.close(r));
+        s.server.closeAllConnections && s.server.closeAllConnections();
+        await new Promise((r) => s.server.close(r));
+    }
+
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

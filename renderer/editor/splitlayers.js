@@ -27,6 +27,9 @@ export const SPLIT_COUNT_DEFAULT = 16;
 
 const MIN_PIXELS = 512 * 512;
 const MAX_PIXELS = 6000 * 6000;
+// the most a source goes out at: the model answers at most about 2K, so a larger picture (a 15k document, a large layer)
+// goes scaled down to this area in its own shape, and the layers land at the document's scale all the same
+const SEND_PIXELS = 4096 * 4096;
 const MIN_EDGE = 15;
 const MAX_RATIO = 16;
 const NAME_MAX = 60;
@@ -37,6 +40,16 @@ export function splitSizeRefusal(w, h, model) {
     const pixels = w * h;
     if (Math.min(w, h) >= MIN_EDGE && pixels >= MIN_PIXELS && pixels <= MAX_PIXELS && Math.max(w, h) <= MAX_RATIO * Math.min(w, h)) return "";
     return `The picture is ${w} × ${h} (${(pixels / 1e6).toFixed(2)} megapixels): ${model} splits pictures of 512 × 512 to 6000 × 6000 in area, no steeper than 16:1.`;
+}
+
+/**
+ * The size a w x h source goes out at: as it is up to SEND_PIXELS, else scaled down to that area in its own shape.
+ * -> { w, h, scaled }.
+ */
+export function splitSendSize(w, h) {
+    if (w * h <= SEND_PIXELS) return { w, h, scaled: false };
+    const s = Math.sqrt(SEND_PIXELS / (w * h));
+    return { w: Math.max(1, Math.floor(w * s)), h: Math.max(1, Math.floor(h * s)), scaled: true };
 }
 
 /** The host a split falls back to when the chosen one has no layer mode. */
@@ -176,7 +189,9 @@ export function splitJob(app, editor, opts = {}) {
     const rect = layer
         ? { x: Math.round(layer.x), y: Math.round(layer.y), w: Math.max(1, Math.round(layer.w)), h: Math.max(1, Math.round(layer.h)) }
         : { x: 0, y: 0, w: editor.width, h: editor.height };
-    const no = splitSizeRefusal(rect.w, rect.h, model);
+    // a larger source goes scaled down (the answer is about 2K whatever is sent); what is too small or too steep is refused
+    const send = splitSendSize(rect.w, rect.h);
+    const no = splitSizeRefusal(send.w, send.h, model);
     if (no) throw refusal(no, "warn");
     const label = r.providerLabel || r.provider;
     const tier = opts.size == null || opts.size === "" ? "auto" : String(opts.size);
@@ -191,23 +206,40 @@ export function splitJob(app, editor, opts = {}) {
         throw refusal(`${model} finds its own number of layers, up to ${spec.max}: it takes no count.`);
     }
     if (opts.textRecognition && !spec.text) throw refusal(`${model} on ${label} has no Text recognition switch for a split.`);
-    return { model, r, spec, layer, rect, tier, count, textRecognition: !!opts.textRecognition && spec.text, prompt: String(opts.prompt == null ? "" : opts.prompt).trim() };
+    return { model, r, spec, layer, rect, send, tier, count, textRecognition: !!opts.textRecognition && spec.text, prompt: String(opts.prompt == null ? "" : opts.prompt).trim() };
 }
 
-/** The source's pixels as PNG bytes: the visible picture, or the layer at its size in the document with its transparency and mask. */
+/**
+ * The source's pixels as PNG bytes at the size it goes out at (`job.send`): the visible picture, or the layer at its size in
+ * the document with its transparency and mask; a larger one scaled down.
+ */
 async function sourceBytes(editor, job, canvasBytes) {
+    const { w, h, scaled } = job.send || { w: job.rect.w, h: job.rect.h, scaled: false };
     if (!job.layer) {
         // a paid request of the picture as it is: relight's full shadow maps first, as every other reader of a run's picture
         if (editor.relightSettled) await editor.relightSettled();
-        return canvasBytes(editor.flattenToCanvas({ forRun: true }));
+        if (!scaled) return canvasBytes(editor.flattenToCanvas({ forRun: true }));
+        // a larger picture as one pass of the composite at the scale it goes at (on tiles from their levels: no
+        // document-size canvas), then that pass to the size exactly
+        const sample = await editor.sampleRegionSettled("image", [0, 0, editor.width, editor.height], Math.min(1, Math.max(w / editor.width, h / editor.height)), { forRun: true });
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const x = c.getContext("2d");
+        x.imageSmoothingEnabled = true;
+        x.imageSmoothingQuality = "high";
+        x.drawImage(sample, 0, 0, w, h);
+        const bytes = await canvasBytes(c);
+        c.width = c.height = 0;
+        return bytes;
     }
     const c = document.createElement("canvas");
-    c.width = job.rect.w;
-    c.height = job.rect.h;
+    c.width = w;
+    c.height = h;
     const x = c.getContext("2d");
     x.imageSmoothingEnabled = true;
     x.imageSmoothingQuality = "high";
-    x.drawImage(editor.layerPixels(job.layer), 0, 0, job.rect.w, job.rect.h);
+    x.drawImage(editor.layerPixels(job.layer), 0, 0, w, h);
     const bytes = await canvasBytes(c);
     c.width = c.height = 0;
     return bytes;
@@ -337,11 +369,12 @@ async function runJob(app, editor, opts, deps) {
     let res;
     try {
         const what = job.layer ? `layer ${job.layer.name}` : "the picture";
-        editor.setStatus(`${SPLIT_LABEL}: sending ${what} (${job.rect.w} × ${job.rect.h}) to ${model} on ${label}${job.count ? `, up to ${job.count} layers` : ""} ...`);
+        const size = job.send && job.send.scaled ? `${job.rect.w} × ${job.rect.h}, scaled down to ${job.send.w} × ${job.send.h}` : `${job.rect.w} × ${job.rect.h}`;
+        editor.setStatus(`${SPLIT_LABEL}: sending ${what} (${size}) to ${model} on ${label}${job.count ? `, up to ${job.count} layers` : ""} ...`);
         const image = await sourceBytes(editor, job, deps.canvasBytes);
         const request = {
             provider: r.provider, model: r.model, kind: "layers", options: r.options, fields: null,
-            prompt: job.prompt, negative: "", seed: 0, image, mask: null, maskAlpha: null, width: job.rect.w, height: job.rect.h, references: [],
+            prompt: job.prompt, negative: "", seed: 0, image, mask: null, maskAlpha: null, width: job.send ? job.send.w : job.rect.w, height: job.send ? job.send.h : job.rect.h, references: [],
             params: { size: job.tier, count: job.count, text_recognition: job.textRecognition },
             timeoutMs: opts.timeoutMs || 0,
         };

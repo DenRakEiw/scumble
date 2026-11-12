@@ -340,7 +340,12 @@ async function edit(request, hooks = {}) {
     // job puts its note back (S6); any other provider run (except a local in-app helper crop) keeps the bytes locally
     // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own
     if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
-        if (ctx.jobNote && ctx.jobs) {
+        if (split) {
+            // a split's answer is its layers (out.bytes is only the base plate): keeping the base alone would open a
+            // picture without them and read as a recovered run (docs/BUGS.md)
+            const n = Array.isArray(out.layers) ? Math.max(0, out.layers.length - 1) : 0;
+            log.record({ level: "error", source: id, message: `${p.label}: the window that asked for the split went away before its layers came; the ${n} layer${n === 1 ? "" : "s"} (generated and charged) could not be kept` });
+        } else if (ctx.jobNote && ctx.jobs) {
             ctx.jobs.add(ctx.jobNote);
             log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
             jobsChanged(hooks);

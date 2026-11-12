@@ -71,8 +71,31 @@ function isTransientStatus(status) {
     return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-const POLL_FAILURES_MAX = 5;
+// A paid job's reads (its status, its result, its picture) that get no answer go on for GAP_MS in a row, past the
+// run's time too (a machine that slept past it reads first; a Wi-Fi or VPN that is back after a wake), as
+// comfycloud.js finishV2's STATUS_GAP_MS; any answer starts that count again. The gap is the longer of the time since
+// the first of them and the pauses taken (a clock that stops while the machine sleeps, a test's pauses that take no
+// time). A status read gives up after READ_MS (a connection a sleep left half-open).
+const TIMES = { gapMs: 120000, readMs: 30000, pauseMaxMs: 15000 };
 const RESULT_TRIES = 3;
+
+function gapWatch() {
+    let since = null, paused = 0;
+    return {
+        /** A read without an answer: its gap so far (before the pause that follows it). */
+        miss() {
+            if (since == null) since = performance.now();
+            return Math.max(paused, performance.now() - since);
+        },
+        paused(ms) { if (since != null) paused += ms; },
+        answered() { since = null; paused = 0; },
+        get open() { return since != null; },
+    };
+}
+
+function readSignal() {
+    return AbortSignal.timeout(TIMES.readMs);
+}
 const STOP_WAIT_MS = 2000;
 const STOP_TIMEOUT_MS = 10000;
 
@@ -192,17 +215,24 @@ async function downloadImage(url, ctx, opts = {}) {
     const key = ctx && ctx.key;
     const fetchFn = (u, init) => callFetch(ctx, u, init);
     let last = "";
-    for (let attempt = 1; attempt <= RESULT_TRIES; attempt++) {
+    // the picture is paid for: a download with no answer (a dropped connection, a 408 / 425 / 429 / 5xx) is tried
+    // again for the gap window (TIMES.gapMs), any other answer 3 times
+    const gap = gapWatch();
+    for (let attempt = 1; ; attempt++) {
         if (ctx && ctx.signal && ctx.signal.aborted) throw aborted();
         try {
             return await fetchImage(url, fetchFn, headers);
         } catch (err) {
             if (isAbort(err, ctx)) throw err;
             last = scrub(String((err && err.message) || err), key);
-            if (attempt < RESULT_TRIES) {
-                const wait = err && err.response ? retryAfterMs(err.response, 1500 * attempt) : 1500 * attempt;
-                await pause(wait, ctx);
-            }
+            const unanswered = !(err && err.response) || isTransientStatus(err.response.status);
+            let g = 0;
+            if (unanswered) g = gap.miss(); else gap.answered();
+            if (!(attempt < RESULT_TRIES || (unanswered && g < TIMES.gapMs))) break;
+            const step = Math.min(1500 * attempt, TIMES.pauseMaxMs);
+            const wait = err && err.response ? retryAfterMs(err.response, step) : step;
+            await pause(wait, ctx);
+            if (unanswered) gap.paused(wait);
         }
     }
     const tag = id ? ` (request ${id})` : "";
@@ -210,11 +240,14 @@ async function downloadImage(url, ctx, opts = {}) {
 }
 
 /**
- * Polls a submitted job until `done(state)` is true (modelled on bfl.js): up to 5 failed status reads in a row
- * (a thrown fetch, 408, 425, 429, 5xx, or a body that is not a status JSON object), reset by a good read, with a
- * backoff on `ctx.sleep` and `Retry-After` (above 0, capped at 60 s) respected; other 4xx answers (such as
- * 400/401/402/403/404/422) and provider-reported failures end at once; a Cancel stops at once; if `resultUrl` is
- * given, the result JSON is tried up to 3 times.
+ * Polls a submitted job until `done(state)` is true (modelled on bfl.js): failed status reads (a thrown fetch, a
+ * read past TIMES.readMs, 408, 425, 429, 5xx, or a body that is not a status JSON object) go on for the gap window
+ * (TIMES.gapMs) in a row, reset by a good read, with a backoff on `ctx.sleep` (1 s more per miss, at most 15 s) and
+ * `Retry-After` (above 0, capped at 60 s) respected; other 4xx answers (such as 400/401/402/403/404/422) and
+ * provider-reported failures end at once; a Cancel stops at once. The run's time (`waitMs`) is checked only after a
+ * read that was answered: a job read last without an answer is never called timed out (`timedOut` makes the callers
+ * ask the provider to stop it). If `resultUrl` is given, the result JSON is tried 3 times, and for the gap window
+ * while it gets no answer.
  */
 async function pollJob(ctx, opts) {
     const {
@@ -238,10 +271,23 @@ async function pollJob(ctx, opts) {
     let state = initial;
     let misses = 0;
     let nextWait = null;
+    let answered = true;   // the last read had an answer (the submit's, before the first read)
+    const gap = gapWatch();
+    const missed = (why, extra) => {
+        answered = false;
+        const g = gap.miss();
+        if (g >= TIMES.gapMs) {
+            throw Object.assign(new Error(scrub(`${who}${tag}: status poll failed for ${Math.round(g / 1000)} s (${why}); the job may still finish and be charged.`, key)), { unanswered: true });
+        }
+        misses++;
+        nextWait = extra != null ? extra : Math.min(1000 * misses, TIMES.pauseMaxMs);
+    };
 
     while (!done(state)) {
         const rem = waitMs - (Date.now() - t0);
-        if (rem <= 0) {
+        // past the run's time only after an answered read: a machine that slept past it, or a network that is
+        // gone, reads again first (the gap window bounds that)
+        if (rem <= 0 && answered) {
             throw Object.assign(
                 new Error(scrub(`${timeoutWho}: timed out after ${Math.round(waitMs / 60000)} minutes${tag}; the job may still finish and be charged.`, key)),
                 { timedOut: true }
@@ -249,21 +295,23 @@ async function pollJob(ctx, opts) {
         }
         const wait = nextWait != null ? nextWait : (typeof delay === "function" ? delay(state) : delay);
         nextWait = null;
-        await pause(Math.min(wait, rem), ctx);
+        const ms = rem > 0 ? Math.min(wait, rem) : wait;
+        await pause(ms, ctx);
+        if (!answered) gap.paused(ms);
         const pollUrl = typeof url === "function" ? url(state) : url;
-        let r;
+        let r, body;
         try {
-            r = await callFetch(ctx, pollUrl, { headers });
+            // each read with its own time: a connection a sleep left half-open does not hold the run
+            const signal = readSignal();
+            r = await callFetch(ctx, pollUrl, { headers, signal });
+            body = await readBody(r);
+            if (signal.aborted && !(ctx && ctx.signal && ctx.signal.aborted)) throw signal.reason;
         } catch (err) {
             if (isAbort(err, ctx)) throw err;
-            const why = scrub(String((err && err.message) || err), key);
-            if (++misses > POLL_FAILURES_MAX) {
-                throw new Error(scrub(`${who}${tag}: status poll failed (${why}); the job may still finish and be charged.`, key));
-            }
-            nextWait = 1000 * misses;
+            missed(scrub(String((err && err.message) || err), key));
             continue;
         }
-        const { json, text } = await readBody(r);
+        const { json, text } = body;
         const parsed = (!r.ok && isTransientStatus(r.status)) ? null : (parse ? parse(json, state) : (json && typeof json === "object" && !Array.isArray(json) ? json : null));
         if (!r.ok || !parsed) {
             const detail = errorText(r, text, json, key);
@@ -271,40 +319,49 @@ async function pollJob(ctx, opts) {
                 throw new Error(scrub(`${statusWho}${tag}: ${detail}`, key));
             }
             const why = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid status JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
-            if (++misses > POLL_FAILURES_MAX) {
-                throw new Error(scrub(`${who}${tag}: status poll failed (${why}); the job may still finish and be charged.`, key));
-            }
-            nextWait = retryAfterMs(r, 1000 * misses);
+            missed(why, retryAfterMs(r, Math.min(1000 * (misses + 1), TIMES.pauseMaxMs)));
             continue;
         }
         misses = 0;
+        answered = true;
+        gap.answered();
         state = parsed;
     }
 
     if (!resultUrl) return state;
 
+    // the job is done (and paid for): its result read with no answer goes on for the gap window, any other 3 times
     const resUrl = typeof resultUrl === "function" ? resultUrl(state) : resultUrl;
     let last = "";
-    for (let attempt = 1; attempt <= RESULT_TRIES; attempt++) {
-        let r;
+    const rgap = gapWatch();
+    for (let attempt = 1; ; attempt++) {
+        let r, wait, unanswered = true;
         try {
             r = await callFetch(ctx, resUrl, { headers });
         } catch (err) {
             if (isAbort(err, ctx)) throw err;
             last = scrub(String((err && err.message) || err), key);
-            if (attempt < RESULT_TRIES) await pause(1500 * attempt, ctx);
-            continue;
+            r = null;
         }
-        const { json, text } = await readBody(r);
-        if (!r.ok && !isTransientStatus(r.status)) {
-            throw new Error(scrub(`${resultWho}${tag}: ${errorText(r, text, json, key)}`, key));
+        if (r) {
+            const { json, text } = await readBody(r);
+            if (!r.ok && !isTransientStatus(r.status)) {
+                throw new Error(scrub(`${resultWho}${tag}: ${errorText(r, text, json, key)}`, key));
+            }
+            if (r.ok && json && typeof json === "object" && !Array.isArray(json)) {
+                return json;
+            }
+            const detail = errorText(r, text, json, key);
+            last = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid result JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
+            unanswered = !r.ok;
         }
-        if (r.ok && json && typeof json === "object" && !Array.isArray(json)) {
-            return json;
-        }
-        const detail = errorText(r, text, json, key);
-        last = !r.ok ? `HTTP ${r.status}${detail ? " " + detail : ""}` : `invalid result JSON${text ? ": " + scrub(text, key).slice(0, 200) : ""}`;
-        if (attempt < RESULT_TRIES) await pause(retryAfterMs(r, 1500 * attempt), ctx);
+        let g = 0;
+        if (unanswered) g = rgap.miss(); else rgap.answered();
+        if (!(attempt < RESULT_TRIES || (unanswered && g < TIMES.gapMs))) break;
+        const step = Math.min(1500 * attempt, TIMES.pauseMaxMs);
+        wait = r ? retryAfterMs(r, step) : step;
+        await pause(wait, ctx);
+        if (unanswered) rgap.paused(wait);
     }
     throw new Error(scrub(`${who}${tag}: result could not be read (${last}); the job may still finish and be charged.`, key));
 }
@@ -499,4 +556,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, askStop, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

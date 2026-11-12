@@ -667,7 +667,9 @@ async function remove(id) {
 
 /**
  * Write a user recipe: over the file a user recipe of the same id was read from (its `file`, which may differ from
- * `<id>.json`, so one id never lies in two files), else as `<id>.json`.
+ * `<id>.json`, so one id never lies in two files), else as `<id>.json`. A new id never writes over a file of the folder
+ * it did not read as that recipe (a name that differs only in case on Windows, a file holding another id, one that does
+ * not parse): that is refused.
  */
 async function save(recipe) {
     const id = String(recipe && recipe.id);
@@ -676,6 +678,13 @@ async function save(recipe) {
     const had = (await readDir(dir, "user")).find((x) => String(x.id) === id);
     const file = path.join(dir, had ? had.file : id + ".json");
     if (path.dirname(file) !== dir) throw new Error(`the recipe "${id.slice(0, 80)}" would land outside the recipes folder`);
+    if (!had) {
+        let names = [];
+        try { names = await fsp.readdir(dir); } catch (_) { names = []; }
+        const want = (id + ".json").toLowerCase();
+        const there = names.find((n) => n.toLowerCase() === want);
+        if (there) throw new Error(`your recipes folder already holds ${there}, which is not the recipe "${id.slice(0, 80)}": Scumble does not write over it (rename that file, or save under another name)`);
+    }
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(file, JSON.stringify(recipe, null, 2) + "\n", "utf8");
     return file;
@@ -685,4 +694,13 @@ function slug(name) {
     return String(name || "recipe").toLowerCase().replace(/\.json$/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "recipe";
 }
 
-module.exports = { FIXED_OUTPUTS, LIMITS_DEFAULT, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, list, localBoxes, lorasOf, normalize, remove, save, shippedPresets, slug, tailOutputs, userDir, withoutUpsampler };
+/** The user folder's recipe file names without `.json`, lowercased (a new id stays clear of them). */
+async function userFileStems() {
+    try {
+        return new Set((await fsp.readdir(userDir())).filter((n) => /\.json$/i.test(n)).map((n) => n.slice(0, -5).toLowerCase()));
+    } catch (_) {
+        return new Set();
+    }
+}
+
+module.exports = { FIXED_OUTPUTS, LIMITS_DEFAULT, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, list, localBoxes, lorasOf, normalize, remove, save, shippedPresets, slug, tailOutputs, userDir, userFileStems, withoutUpsampler };

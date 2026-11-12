@@ -8,6 +8,7 @@
 const path = require("node:path");
 const PROV = path.join(__dirname, "..", "electron", "main", "providers");
 const util = require(path.join(PROV, "util.js"));
+const GAP_MS = util._times.gapMs;
 const fal = require(path.join(PROV, "fal.js"));
 const replicate = require(path.join(PROV, "replicate.js"));
 const wavespeed = require(path.join(PROV, "wavespeed.js"));
@@ -298,6 +299,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 Buffer.compare(out.bytes, PNG) === 0 && g2.calls.submit === 1 && g2.calls.status === 12 && g2.sleeps.includes(3000),
                 `statuses=${g2.calls.status} submits=${g2.calls.submit}`);
         }
+        util._times.gapMs = 15000;   // the gap window the old count of 5 misses gave (1+2+3+4+5 s of pauses)
         // 5. Six failed reads in a row (5 + 1 more) fails, names the request id, says job may still finish and be charged, scrubs key, and sleeps [1000,2000,3000,4000,5000]
         {
             let g;
@@ -342,6 +344,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 && gCap.sleeps.every((ms) => ms <= 60000),
                 JSON.stringify(gCap.sleeps));
         }
+        util._times.gapMs = GAP_MS;
         // 6c. Fake-clock timeout clamps remaining wait, asks to stop if supported, and throws naming request id
         {
             const realNow = Date.now;
@@ -410,6 +413,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
             check(`${label}: 2 failed picture downloads then a good 3rd try lands the picture, POST sent once`,
                 Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.download === 3 && g.sleeps.includes(4000));
         }
+        util._times.gapMs = 4500;    // the gap window the old 3 tries gave (1.5+3 s of pauses)
         // 8. 3 failed picture downloads (HTTP 503 without Retry-After, and thrown fetch) sleeps [1500, 3000] and throws naming request id and saying job may still finish and be charged
         {
             let g;
@@ -432,6 +436,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
                 && JSON.stringify(gThrow.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
                 `${errThrow} | sleeps=${JSON.stringify(gThrow.sleeps)}`);
         }
+        util._times.gapMs = GAP_MS;
         // 9. Cancel during the status retry's sleep ends at once and sends no further request
         {
             const ac = new AbortController();
@@ -478,7 +483,7 @@ async function testPolledAdapter(label, makeRig, runFn, statusPendingFn, statusF
             const t0 = Date.now();
             const err = await throws(() => runFn(g.req, g.ctx));
             const elapsed = Date.now() - t0;
-            const doneOk = g.calls.cancel === undefined || (g.calls.cancel === 0 && g.ctx.jobDone === true && !g.ctx.cancelAsked);
+            const doneOk = (g.calls.cancel === undefined || g.calls.cancel === 0) && g.ctx.jobDone === true && !g.ctx.cancelAsked;   // every adapter, WaveSpeed too (wavespeed-cancel-words-after-completion)
             check(`${label}: Cancel during download retry sleep ends at once (${elapsed} ms < 500 ms), sends no stop, and marks jobDone`,
                 /cancelled|aborted/i.test(err || "") && elapsed < 500 && g.calls.submit === 1 && g.calls.download === 1 && g.calls.afterAbort === 0 && doneOk,
                 `err=${err} elapsed=${elapsed}ms calls=${JSON.stringify(g.calls)}`);
@@ -557,6 +562,7 @@ async function main() {
             check(`fal.js: HTTP ${code} on resultUrl is retried and lands the picture`,
                 Buffer.compare(out.bytes, PNG) === 0 && g.calls.result === 2);
         }
+        util._times.gapMs = 4500;    // the gap window the old 3 tries gave (1.5+3 s of pauses)
         // Result JSON fails all 3 times (HTTP 503 with Retry-After: 0, and thrown fetch) -> sleeps [1500, 3000], names request id and says job may still finish and be charged
         {
             let g;
@@ -579,6 +585,7 @@ async function main() {
                 && JSON.stringify(gThrow.sleeps.slice(-2)) === JSON.stringify([1500, 3000]),
                 `${errThrow} | sleeps=${JSON.stringify(gThrow.sleeps)}`);
         }
+        util._times.gapMs = GAP_MS;
         // Result JSON definite 422 / 403 is not retried and names request id
         for (const code of [403, 422]) {
             let g;
@@ -602,10 +609,12 @@ async function main() {
             const out = await fal[verb]({ ...gOk.req, kind: verb, ...extra }, gOk.ctx);
             check(`fal.${verb}: 2 failed downloads then 3rd try succeeds`, Buffer.compare(out.bytes, PNG) === 0 && gOk.calls.download === 3);
 
+            util._times.gapMs = 4500;    // the gap window the old 3 tries gave (1.5+3 s of pauses)
             const gFail = makeFalRig({ download: [() => html(502, "bad"), () => html(502, "bad"), () => html(502, "bad")] });
             const err = await throws(() => fal[verb]({ ...gFail.req, kind: verb, ...extra }, gFail.ctx));
             check(`fal.${verb}: 3 failed downloads throws naming ${gFail.id} and saying job may still finish and be charged`,
                 !!err && err.includes(gFail.id) && /may still finish and be charged/.test(err) && gFail.calls.download === 3, err);
+            util._times.gapMs = GAP_MS;
         }
     });
 
@@ -788,6 +797,7 @@ async function main() {
             check("comfyrouter.js: 2 failed asset downloads then 3rd try lands the picture, submit sent once",
                 Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.download === 3);
         }
+        util._times.gapMs = 4500;    // the gap window the old 3 tries gave (1.5+3 s of pauses)
         // 2. Comfy Router download: 3 failures throws naming request_id and saying job may still finish and be charged
         {
             const bad = () => html(503, `storage error ${KEY}`);
@@ -797,6 +807,7 @@ async function main() {
                 !!err && err.includes(g.rid) && /may still finish and be charged/.test(err) && !err.includes(KEY) && g.calls.submit === 1 && g.calls.download === 3,
                 err);
         }
+        util._times.gapMs = GAP_MS;
         // 3. Comfy Router download: Cancel during download retry sleep stops at once and sends no further request
         {
             const ac = new AbortController();
@@ -819,6 +830,7 @@ async function main() {
             check("comfypartner.js: 2 failed asset downloads then 3rd try lands the picture, generation POST sent once",
                 Buffer.compare(out.bytes, PNG) === 0 && g.calls.hy === 1 && g.calls.download === 3);
         }
+        util._times.gapMs = 4500;    // the gap window the old 3 tries gave (1.5+3 s of pauses)
         // 5. Comfy Partner API download: 3 failures throws naming request_id and saying job may still finish and be charged
         {
             const bad = () => html(502, `partner cdn error ${KEY}`);
@@ -828,6 +840,7 @@ async function main() {
                 !!err && err.includes(g.hyId) && /may still finish and be charged/.test(err) && !err.includes(KEY) && g.calls.hy === 1 && g.calls.download === 3,
                 err);
         }
+        util._times.gapMs = GAP_MS;
         // 6. Comfy Partner API download: Cancel during download retry sleep stops at once and sends no further request
         {
             const ac = new AbortController();
@@ -1123,6 +1136,107 @@ async function main() {
             check(`bfl.js: Cancel during picture download rethrows at once without retrying (calls.download=${gDl.calls.download})`,
                 !!errDl && gDl.calls.download === 1 && JSON.stringify(gDl.sleeps) === JSON.stringify([1000]),
                 JSON.stringify({ errDl, calls: gDl.calls, sleeps: gDl.sleeps }));
+        }
+    });
+
+    // review finding providers/polljob-deadline-before-reread (money): reads with no answer go on for the gap window,
+    // the run's time is checked only after an answered read, a read has its own time, no stop after an unanswered end
+    await section("pollJob / downloadImage: the gap window, the deadline after an answered read", async () => {
+        const realNow = Date.now;
+        // 1. The machine slept past the 15 minutes; the first read after the wake gets no answer (Wi-Fi coming back),
+        //    the next says COMPLETED: the picture lands and no stop is sent
+        try {
+            let fakeNow = 1_000_000;
+            Date.now = () => fakeNow;
+            let g;
+            g = makeFalRig({
+                status: [
+                    () => json(200, { status: "IN_PROGRESS" }),
+                    () => { throw new Error("getaddrinfo ENOTFOUND queue.fal.run"); },
+                    () => json(200, { status: "COMPLETED" }),
+                ],
+            });
+            let n = 0;
+            g.ctx.sleep = async (ms) => { g.sleeps.push(ms); if (++n === 2) fakeNow += 20 * 60 * 1000; else fakeNow += ms; };
+            const out = await withGlobalFetch(g.ctx.fetch, () => fal.edit(g.req, g.ctx));
+            check("fal.js: a sleep past the run's time, then one unanswered read, then COMPLETED lands the picture and sends no stop",
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.cancel === 0 && !g.ctx.cancelAsked,
+                JSON.stringify({ calls: g.calls, sleeps: g.sleeps }));
+        } catch (err) {
+            check("fal.js: a sleep past the run's time, then one unanswered read, then COMPLETED lands the picture and sends no stop", false, String(err && err.message || err));
+        } finally {
+            Date.now = realNow;
+        }
+        // 2. A network gone for about 30 s (seven thrown reads, 1+2+...+7 s of pauses) still lands the picture
+        {
+            const drop = () => { throw new Error("fetch failed: ECONNRESET"); };
+            const g = makeReplicateRig({ status: [drop, drop, drop, drop, drop, drop, drop, () => json(200, { status: "processing" })] });
+            const out = await withGlobalFetch(g.ctx.fetch, () => replicate.edit(g.req, g.ctx));
+            check("replicate.js: seven thrown status reads in a row (a network gone about 30 s) land the picture",
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.submit === 1 && g.calls.status === 9,
+                JSON.stringify({ calls: g.calls, sleeps: g.sleeps }));
+        }
+        // 3. Reads that stay unanswered past the run's time end after the gap window, with the pauses capped at 15 s,
+        //    as "status poll failed", not timed out, and with no stop sent
+        try {
+            let fakeNow = 1_000_000;
+            Date.now = () => fakeNow;
+            let g;
+            const down = () => { throw new Error(`ECONNREFUSED ${g.KEY}`); };
+            g = makeFalRig({ status: Array.from({ length: 40 }, () => down) });
+            g.ctx.sleep = async (ms) => { g.sleeps.push(ms); fakeNow += ms + 60 * 1000; };
+            const err = await throws(() => withGlobalFetch(g.ctx.fetch, () => fal.edit(g.req, g.ctx)));
+            const pauses = g.sleeps.slice(1);
+            check("fal.js: unanswered reads past the run's time end after the 120 s gap window as 'status poll failed', no timeout, no stop",
+                !!err && /status poll failed for \d+ s/.test(err) && !/timed out/.test(err) && err.includes(g.id) && !err.includes(g.KEY)
+                && g.calls.cancel === 0 && !g.ctx.cancelAsked
+                && pauses.reduce((a, b) => a + b, 0) >= 120000 && pauses.every((ms) => ms <= 15000) && g.calls.status === 16,
+                `${err} | status=${g.calls.status} sleeps=${JSON.stringify(g.sleeps)}`);
+        } finally {
+            Date.now = realNow;
+        }
+        // 4. A status read that never answers (a connection a sleep left half-open) gives up after its own time and is
+        //    read again
+        {
+            const savedRead = util._times.readMs;
+            util._times.readMs = 40;
+            try {
+                const g = makeWaveSpeedRig({});
+                const inner = g.ctx.fetch;
+                let hung = 0;
+                g.ctx.fetch = (u, init = {}) => {
+                    if (String(init.method || "GET").toUpperCase() === "GET" && /predictions\/[^/]+\/result/.test(String(u)) && hung++ === 0) {
+                        return new Promise((_, reject) => {
+                            if (!init.signal) return;   // no time of its own: this read hangs (the guard below ends the test)
+                            init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+                        });
+                    }
+                    return inner(u, init);
+                };
+                const guard = new Promise((resolve) => setTimeout(() => resolve("hung"), 3000));
+                const out = await Promise.race([wavespeed.edit(g.req, g.ctx).catch((e) => "error: " + e.message), guard]);
+                check("wavespeed.js: a status read that never answers gives up after its own time and the next read lands the picture",
+                    out && out.bytes && Buffer.compare(out.bytes, PNG) === 0, typeof out === "string" ? out : "");
+            } finally {
+                util._times.readMs = savedRead;
+            }
+        }
+        // 5. A finished picture whose download gets no answer six times (about 30 s) still lands
+        {
+            const drop = () => { throw new Error("CDN socket hang up"); };
+            const g = makeFalRig({ download: [drop, drop, drop, drop, () => html(503, "busy"), drop] });
+            const out = await withGlobalFetch(g.ctx.fetch, () => fal.edit(g.req, g.ctx));
+            check("fal.js: six unanswered picture downloads in a row (about 30 s) then a good one land the picture",
+                Buffer.compare(out.bytes, PNG) === 0 && g.calls.download === 7,
+                JSON.stringify({ calls: g.calls, sleeps: g.sleeps }));
+        }
+        // 6. A download answered with a refusal (403) still ends after 3 tries
+        {
+            const no = () => html(403, "forbidden");
+            const g = makeFalRig({ download: [no, no, no, no, no] });
+            const err = await throws(() => withGlobalFetch(g.ctx.fetch, () => fal.edit(g.req, g.ctx)));
+            check("fal.js: a picture download refused with 403 ends after 3 tries",
+                !!err && /may still finish and be charged/.test(err) && g.calls.download === 3, `${err} | ${JSON.stringify(g.calls)}`);
         }
     });
 

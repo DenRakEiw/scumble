@@ -380,6 +380,58 @@ try {
 }
 """
 
+SWITCH_DURING_UPLOADS = """
+// review finding host-gen/queue-settings-after-recipe-switch: a recipe picked while a run's pictures go up re-keys the
+// Settings rows to its own; the run queues the recipe it was started with, with that recipe's rows (Qwen's files, not
+// Klein's, which load from the same node ids "unet", "clip", "vae"), and its PNG workflow names that recipe.
+// ComfyUI is stubbed.
+const ed = ednow(window.__r);
+const doc = window.__r;
+const { api } = await import("./editor/host.js");
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, helper: ed.helperUsed };
+const QWEN = "qwen_image_edit_2_1_local", KLEIN = "flux2_klein_local";
+let sent = null;
+try {
+    const all = host.shell.recipes();
+    const q = all.find((x) => x.id === QWEN), k = all.find((x) => x.id === KLEIN);
+    const fileOf = (r, node, input) => String(r.prompt[node].inputs[input]);
+    const oi = {};
+    for (const n of [...(q.needs || []), ...(k.needs || [])]) oi[n] = { input: { required: {} } };
+    oi.UNETLoader = { input: { required: { unet_name: [[fileOf(q, "unet", "unet_name"), fileOf(k, "unet", "unet_name")]] } } };
+    oi.CLIPLoader = { input: { required: { clip_name: [[fileOf(q, "clip", "clip_name"), fileOf(k, "clip", "clip_name")]], type: [["flux2", "qwen_image"]] } } };
+    oi.VAELoader = { input: { required: { vae_name: [[fileOf(q, "vae", "vae_name"), fileOf(k, "vae", "vae_name")]] } } };
+    host.objectInfo = oi;
+    host.connected = true;
+    api.queuePrompt = async (n, body) => { sent = body; return { prompt_id: "gate-switch" }; };
+    ed.helperUsed = false;
+    await run("new_canvas", { doc, width: 512, height: 384 });
+    await run("select_rect", { doc, x: 64, y: 64, w: 200, h: 150 });
+    await run("set_prompt", { doc, text: "a red hat", negative: "" });
+    window.__shell.selectRecipe(QWEN);
+    if (!host.recipe || host.recipe.id !== QWEN) throw new Error("Qwen was not selected");
+    ed.settingsChanged();
+    // the uploads take a while: Klein is picked in the recipe select meanwhile
+    host.ensureOnServer = async () => {
+        window.__shell.selectRecipe(KLEIN);
+        ed.settingsChanged();
+        if (!host.recipe || host.recipe.id !== KLEIN) throw new Error("Klein was not selected during the uploads");
+        return null;
+    };
+    await host.queueGenerate(ed);
+    if (!sent) throw new Error("nothing was queued");
+    const o = sent.output;
+    const got = { unet: o.unet.inputs.unet_name, clip: o.clip.inputs.clip_name, vae: o.vae.inputs.vae_name, recipe: sent.workflow && sent.workflow.recipe };
+    const want = { unet: fileOf(q, "unet", "unet_name"), clip: fileOf(q, "clip", "clip_name"), vae: fileOf(q, "vae", "vae_name"), recipe: QWEN };
+    if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error("the queued run: " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+    if (!Object.values(o).some((n) => n && n.class_type === "TextEncodeQwenImage21")) throw new Error("not Qwen's graph");
+    return got;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; ed.helperUsed = saved.helper;
+    try { await run("set_prompt", { doc, text: "", negative: "" }); } catch (_) { /* gone */ }
+    if (window.__prev) window.__shell.selectRecipe(window.__prev);
+}
+"""
+
 RELIGHT_KEEPS = """
 // F3 (docs/PLAN_RELIGHT_FIXES.md): a relight recipe is never the window's recipe (the Relight panel and the relight
 // command pick it by the layer's route). Its id reaches selectRecipe from Settings > Recipes > Import and from a graph
@@ -493,6 +545,7 @@ async def run_all(c):
         await js("a_provider_recipe_without_a_provider_is_refused_and_writes_nothing", IMPORT_BAD % json.dumps(bad))
         await js("local_recipes_name_the_batch_pictures_and_trim_the_unused_slots", LOCAL_REFS)
         await js("a_file_the_server_lacks_stays_marked_and_refuses_the_run", MISSING_FILES)
+        await js("a_recipe_picked_during_the_uploads_leaves_the_queued_run_its_own_rows", SWITCH_DURING_UPLOADS)
         # F3: each relight step runs even when the one before failed, so a red run names both
         for name, body in (("a_relight_id_keeps_the_recipe_in_use_and_stores_nothing", RELIGHT_KEEPS % json.dumps(relight)),
                            ("relight_rows_have_no_provider_select", RELIGHT_ROWS)):

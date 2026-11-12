@@ -13,6 +13,13 @@ const FILE = "secrets.json";
 const READ_FAIL_COOLDOWN_MS = 2000;
 let readFailUntil = 0;
 let damagedNotice = null;
+// a damaged secrets.json that could not be set aside: its size and time, so it is not parsed, renamed (a 250 ms block
+// of the main process) and logged again on every read (settings.js does the same)
+let stuckDamaged = null;
+
+function stamp(p) {
+    try { const st = fs.statSync(p); return `${st.size}:${st.mtimeMs}`; } catch (_) { return null; }
+}
 
 function file() {
     return path.join(app.getPath("userData"), FILE);
@@ -40,6 +47,13 @@ function setAsideDamaged(p) {
 
 function readAll(forWrite = false) {
     const p = file();
+    if (stuckDamaged) {
+        if (stamp(p) === stuckDamaged) {
+            if (forWrite) throw new Error("secrets.json is damaged and could not be set aside; refusing to overwrite stored keys.");
+            return {};
+        }
+        stuckDamaged = null;
+    }
     const cooling = readFailUntil > Date.now();
     let raw;
     try {
@@ -68,6 +82,8 @@ function readAll(forWrite = false) {
             damagedNotice = `Your stored API keys were damaged and reset; the old file is kept as ${aside}, and keys must be entered again.`;
             return {};
         }
+        stuckDamaged = stamp(p);
+        damagedNotice = "Your stored API keys file (secrets.json) is damaged and could not be set aside, so no key can be read or saved until the file is moved or deleted.";
         if (forWrite) throw new Error("secrets.json is damaged and could not be set aside; refusing to overwrite stored keys.");
         return {};
     }

@@ -1091,7 +1091,8 @@ async function comfyRecipe(id) {
 async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
     const list = await listRecipes();
     const base = heldId ? list.find((r) => r.id === heldId) || null : null;
-    const ids = list.map((r) => r.id), date = new Date().toISOString().slice(0, 10);
+    // a new id stays clear of every file in the folder too (one that differs in case, holds another id, does not parse)
+    const ids = [...list.map((r) => r.id), ...(await recipes.userFileStems())], date = new Date().toISOString().slice(0, 10);
     const withCanvas = Object.values(output || {}).some((n) => n && n.class_type === "InpaintCanvas");
     const nodes = output && typeof output === "object" ? Object.values(output) : [];
     if (!nodes.length || !nodes.every((n) => n && typeof n === "object" && typeof n.class_type === "string")) throw new Error("ComfyUI's page answered no graph Scumble can read.");
@@ -1152,7 +1153,7 @@ function notifyDamagedStores() {
 }
 
 function installIpc() {
-    ipcMain.handle("settings:get", () => settings.get());
+    ipcMain.handle("settings:get", () => settings.get({ window: true }));   // the window seeds its maps from it
     // a write of `updates` may change the skipped version, which decides whether the downloaded one installs on quit
     ipcMain.handle("settings:set", (_e, patch) => {
         const s = settings.set(patch);

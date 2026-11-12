@@ -78,6 +78,14 @@ export const HostQueuePart = {
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error(comfyprompt.lacksNodesText(r, missing));
         if (upscale && !pass && !(editor.getBounds && editor.getBounds())) throw refusal("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        // the Settings rows of the click, for this recipe, before anything is awaited: a recipe picked during the uploads
+        // re-keys editor.settings to its own rows (both may load from nodes "unet", "clip", "vae"), so the rows are read
+        // by their target now; a row naming a file the server lacks refuses here, before anything is uploaded (issue #4)
+        const rows = new Map(this.rowValues(editor, this.settingTargets()));
+        {
+            const lacks = this.missingFilesRefusal(editor, r);
+            if (lacks) throw new Error(lacks);
+        }
         // the recipe's LoRA rows (item 50): more than five, or a file the server's list lacks, refuse here, before
         // anything is uploaded; spliced into the queued copy below
         const loraPlan = upscale ? null : await this.loraPlan(editor, r);
@@ -206,15 +214,10 @@ export const HostQueuePart = {
         delete canvas.inputs.result; delete canvas.inputs.result_local;
         delete canvas.inputs.result_source; delete canvas.inputs.result_source_local;
         canvas.inputs[r.mode === "api" ? "result_source" : "result_source_local"] = r.result;
-        {
-            // a row naming a file the server lacks refuses here, before anything is queued (issue #4)
-            const lacks = this.missingFilesRefusal(editor, r);
-            if (lacks) throw new Error(lacks);
-        }
         for (const s of r.settings || []) {
-            const entry = editor.settings[String(s.index)];
+            const value = rows.get(`${r.id}/${s.node}:${s.input}`);
             const node = prompt[s.node];
-            if (entry && entry.value != null && node && node.inputs) node.inputs[s.input] = entry.value;
+            if (value != null && node && node.inputs) node.inputs[s.input] = value;
         }
         if (factor != null && r.factor && r.factor.input) {
             const at = r.factor.input.indexOf("|"), node = prompt[r.factor.input.slice(0, at)];
@@ -260,7 +263,7 @@ export const HostQueuePart = {
             }
         }
         areaStop();
-        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo(lorasSent.length ? { loras: lorasSent } : null) });
+        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo(lorasSent.length ? { loras: lorasSent } : null, r) });
         editor.lastPromptId = res && res.prompt_id;
         // a run of one area of several (Each area): queued, so it counts as sent; its prompt is what the run waits for
         if (area && res && res.prompt_id != null) { area.sent = true; area.promptId = res.prompt_id; }
@@ -392,8 +395,7 @@ export const HostQueuePart = {
      * 50): the LoRAs the run loaded (a local run's extra_pnginfo) or a run would load (the export), spliced into the
      * queued copy only, so `prompt` never shows them; the key is left out when there are none.
      */
-    workflowInfo(extra = null) {
-        const r = this.recipe;
+    workflowInfo(extra = null, r = this.recipe) {
         const loras = extra && Array.isArray(extra.loras) && extra.loras.length ? { loras: extra.loras.map((l) => ({ name: l.name, strength: l.strength })) } : {};
         return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? withoutSecrets(r.prompt || null) : null, nodeParams: this.nodeParams, ...loras };
     },

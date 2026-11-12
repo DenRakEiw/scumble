@@ -157,6 +157,8 @@ export const HostGeneratePart = {
 
     // ---- brush tips: one library for every tab, stored as PNGs by electron/main/brushes.js ------
     brushLibrary: [],       // { id, name, canvas, spacing, source, saved } - the editors' brushTips array itself
+    /** @type {Promise<any> | null} the save in flight (saveBrushTips: one at a time) */
+    _brushSave: null,
 
     /** Load the stored tips into the shared library (once, at start). */
     async loadBrushTips() {
@@ -195,22 +197,36 @@ export const HostGeneratePart = {
         if (editor.syncTipControls) editor.syncTipControls();
     },
 
-    /** Persist the library (new tips as PNG, the index always) and refresh the other tabs' selects. */
-    async saveBrushTips(from) {
+    /**
+     * Persist the library (new tips as PNG, the index always) and refresh the other tabs' selects. One save at a time:
+     * main's save deletes every file its list does not hold, so two at once could delete a tip the other just wrote; a
+     * save asked while one runs goes after it, with the library as it is then.
+     */
+    saveBrushTips(from) {
+        const prev = this._brushSave || Promise.resolve();
+        const run = prev.catch(() => {}).then(() => this._saveBrushTipsNow(from));
+        this._brushSave = run;
+        return run;
+    },
+
+    async _saveBrushTipsNow(from) {
         if (!window.scumble || !window.scumble.brushes) return null;
         // the stored list was not read this session: saving this library would delete every stored tip (brushes.js save)
         if (this.brushTipsUnread) { console.warn("brush tips: the stored list was not read, nothing is saved"); return null; }
-        const tips = [];
-        for (const t of this.brushLibrary) {
+        const tips = [], written = [];
+        // over a copy: a tip removed or added while the PNGs are made does not shift this list (the next save takes it)
+        for (const t of [...this.brushLibrary]) {
             let png = null;
             if (!t.saved) {
                 const blob = await new Promise((resolve) => t.canvas.toBlob(resolve, "image/png"));
                 png = new Uint8Array(await blob.arrayBuffer());
+                written.push(t);
             }
             tips.push({ id: t.id, name: t.name, spacing: t.spacing || 0, source: t.source || "", png });
         }
         const r = await window.scumble.brushes.save(tips);
-        for (const t of this.brushLibrary) t.saved = true;
+        // only the tips whose PNG went in this save are on disk now (one added meanwhile is not)
+        for (const t of written) t.saved = true;
         for (const ed of this._editors) if (ed !== from) this.syncBrushTips(ed);
         return r;
     },

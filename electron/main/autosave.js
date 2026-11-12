@@ -26,6 +26,13 @@ const GENERATIONS = [
 const READ_FAIL_COOLDOWN_MS = 2000;
 const readFailUntil = new Map();
 const unreadableCurrent = new Set();
+// damaged files that could not be set aside, by path: their size and time, so one is not parsed, renamed (a 250 ms
+// block of the main process) and logged again on every read (settings.js does the same)
+const stuckDamaged = new Map();
+
+function stamp(p) {
+    try { const st = fs.statSync(p); return `${st.size}:${st.mtimeMs}`; } catch (_) { return null; }
+}
 
 function retrying(op, tries = 4) {
     for (let i = 0; ; i++) {
@@ -50,6 +57,10 @@ function setAsideDamaged(file) {
 function readState(file) {
     const key = path.resolve(file);
     const isCurrent = path.basename(key) === FILE;
+    if (stuckDamaged.has(key)) {
+        if (stamp(file) === stuckDamaged.get(key)) return { status: "damaged", data: null, aside: null };
+        stuckDamaged.delete(key);
+    }
     const cooling = (readFailUntil.get(key) || 0) > Date.now();
     let raw;
     try {
@@ -76,6 +87,7 @@ function readState(file) {
     } catch (err) {
         console.warn("autosave damaged:", file, err.message);
         const aside = setAsideDamaged(file);
+        if (!aside) stuckDamaged.set(key, stamp(file));
         if (aside && isCurrent) unreadableCurrent.delete(key);
         else if (!aside && isCurrent) unreadableCurrent.add(key);
         return { status: "damaged", data: null, aside };
