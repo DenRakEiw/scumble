@@ -1513,6 +1513,21 @@ async function main() {
             check("remove refuses an unsafe id and says when no recipe of the user's has the id", /bad recipe id/.test(bad || "") && /no recipe of yours/.test(none || "") && fs.existsSync(path.join(dir, "hand.json")), short({ bad, none }));
             await recipes.remove(".._settings");
             check("the made-safe recipe can be removed by its new id (its own file goes)", !fs.existsSync(path.join(dir, "hand.json")));
+            // review finding main-net/save-as-new-overwrites-user-file: a new id never writes over a file of the folder
+            // it did not read as that recipe (Save as new recipe from the ComfyUI window picked its id by list ids only)
+            const handText = JSON.stringify({ ...base, name: "My look by hand" }, null, 2);
+            fs.writeFileSync(path.join(dir, "MyLook.json"), handText);
+            fs.writeFileSync(path.join(dir, "broken.json"), "{ not json");
+            const caseRefused = await thrown(() => recipes.save({ ...base, id: "mylook", name: "Saved as new" }));
+            const brokenRefused = await thrown(() => recipes.save({ ...base, id: "broken", name: "Saved as new" }));
+            const stems = await recipes.userFileStems();
+            check("save refuses a new id whose file name is taken by a file it did not read as that recipe (another case, a broken file); both stay as they were, and the stems list both",
+                /already holds MyLook\.json/.test(caseRefused || "") && /already holds broken\.json/.test(brokenRefused || "")
+                && fs.readFileSync(path.join(dir, "MyLook.json"), "utf8") === handText && fs.readFileSync(path.join(dir, "broken.json"), "utf8") === "{ not json"
+                && stems.has("mylook") && stems.has("broken"),
+                short({ caseRefused, brokenRefused, stems: [...stems] }));
+            fs.unlinkSync(path.join(dir, "MyLook.json"));
+            fs.unlinkSync(path.join(dir, "broken.json"));
         } finally { console.warn = warn; }
     });
 
