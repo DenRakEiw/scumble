@@ -141,15 +141,20 @@ function requestBytes(chat, history) {
     return Buffer.byteLength(JSON.stringify(bodyFor(chat, history)), "utf8");
 }
 
-/** `usage` as the loop counts it, whatever the family calls the fields. */
+/**
+ * `usage` as the loop counts it, whatever the family calls the fields. `input_tokens` includes the cached tokens, so
+ * `input` is the rest (models.costOf prices the cached ones at their own rate, as chat.js does).
+ */
 function usageOf(usage) {
     const u = usage || {};
     const input = u.input_tokens_details || {};
     const output = u.output_tokens_details || {};
+    const cacheRead = Number(input.cached_tokens) || 0;
+    const cacheWrite = Number(input.cache_write_tokens) || 0;
     return {
-        input: Number(u.input_tokens) || 0,
-        cacheRead: Number(input.cached_tokens) || 0,
-        cacheWrite: Number(input.cache_write_tokens) || 0,
+        input: Math.max(0, (Number(u.input_tokens) || 0) - cacheRead - cacheWrite),
+        cacheRead,
+        cacheWrite,
         output: Number(u.output_tokens) || 0,
         reasoning: Number(output.reasoning_tokens) || 0,
     };

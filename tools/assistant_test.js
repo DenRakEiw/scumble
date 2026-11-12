@@ -1049,6 +1049,12 @@ async function main() {
                 && !cutNote.includes('L0 "Layer number 0')
                 && /\.\.\. \(60 layers; call list_layers for the rest\)/.test(cutNote),
                 short(note3));
+            // review of 2026-11-12: the undone and stopped lines survive the cut of a long layer list
+            const cutFlags = stateNote(docs, many, { pin: 1, undone: true, stopped: true });
+            check("state_note_keeps_undone_and_stopped_when_cut",
+                /\.\.\. \(60 layers; call list_layers for the rest\)/.test(cutFlags)
+                && /The user undid your last turn\./.test(cutFlags) && /your previous answer was stopped/.test(cutFlags),
+                cutFlags.slice(-200));
         }
         {
             const editor = new FakeEditor();
@@ -1132,6 +1138,47 @@ async function main() {
 
     // ---- 4. stop, caps and timeouts -------------------------------------------------------
     await section("4. stop, caps and timeouts", async () => {
+        {
+            // review of 2026-11-12: Stop while an ask card waits is a stop, not the user's decline of that call, and the
+            // next note says the answer was stopped; a chat deleted while its turn runs is not written back at its end
+            const editor = new FakeEditor();
+            const { a, events } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "flatten", input: { doc: 1 } }]),
+            ]);
+            const saved = [], removed = [];
+            a.deps.store = { save: async (chat) => { saved.push(chat.id); return {}; }, prune: async () => {}, remove: async (id) => { removed.push(id); } };
+            await a.connect();
+            a.chat = await a.newChat();
+            const id = a.chat.id;
+            const chat = a.chat;
+            const turn = a.send("flatten it");
+            await waitFor(() => events.some((e) => e.type === "ask"));
+            await a.deleteChat(id);
+            a.stop();
+            const out = await turn;
+            await new Promise((r) => setTimeout(r, 20));
+            const answer = lastResults(chat.history)[0];
+            const text = answer && answer.content && answer.content[0] ? answer.content[0].text : "";
+            check("stop_at_an_ask_is_no_decline_and_marks_the_chat_stopped",
+                out.reason === "stopped" && !/declined/.test(text) && /stopped/.test(text) && chat.stopped === true && !editor.calls.some((c) => c.name === "flatten"),
+                `${out.reason}, ${text}, stopped ${chat.stopped}`);
+            check("a_chat_deleted_during_its_turn_is_not_saved_again",
+                removed.includes(id) && !saved.includes(id), `saved ${JSON.stringify(saved)}, removed ${JSON.stringify(removed)}`);
+            // the events kept for a replay: no stream chunk, no picture, at most 2000 with the first message kept
+            a.events = [];
+            const seen = events.length;
+            a.emit("user", { text: "first" });
+            a.emit("text_delta", { text: "chunk" });
+            a.emit("tool_end", { call: "c9", name: "screenshot", image: "data:image/jpeg;base64,QUJD" });
+            for (let i = 0; i < 2100; i++) a.emit("note", { text: "n" + i });
+            const live = events.slice(seen);
+            check("the_kept_events_drop_chunks_and_pictures_and_are_capped",
+                a.events.length === 2000 && a.events[0].type === "user" && !a.events.some((e) => e.type === "text_delta")
+                && !a.events.some((e) => e.image) && a.events[a.events.length - 1].text === "n2099"
+                && live.some((e) => e.type === "text_delta") && live.some((e) => e.image),
+                `${a.events.length} kept, first ${a.events[0] && a.events[0].type}`);
+            await a.close();
+        }
         {
             // Stop while a tool call is in flight: every open call still gets an answer
             const editor = new FakeEditor();
@@ -3279,6 +3326,19 @@ async function main() {
             && or.amount === 0.0123 && local.amount === 0,
             [ds, ms, or, local].map((x) => JSON.stringify(x)).join(" "));
         {
+            // review of 2026-11-12: the Responses and Gemini totals include the cached tokens, Gemini's candidates leave
+            // out the thoughts (billed as output): a cached token is priced once, at the cache rate, and thoughts are priced
+            const ru = require(path.join(ROOT, "electron", "main", "assistant", "responses.js"))._usageOf({ input_tokens: 100000, input_tokens_details: { cached_tokens: 90000 }, output_tokens: 1000, output_tokens_details: { reasoning_tokens: 200 } });
+            const gu = require(path.join(ROOT, "electron", "main", "assistant", "gemini.js"))._usageOf({ promptTokenCount: 100000, cachedContentTokenCount: 90000, candidatesTokenCount: 1000, thoughtsTokenCount: 500 });
+            const rc = models.costOf("openai", "gpt-5.6-terra", ru), gc = models.costOf("gemini", "gemini-3.1-pro-preview", gu);
+            check("responses_and_gemini_usage_count_a_cached_token_once",
+                eq(ru, { input: 10000, cacheRead: 90000, cacheWrite: 0, output: 1000, reasoning: 200 })
+                && eq(gu, { input: 10000, cacheRead: 90000, cacheWrite: 0, output: 1500, reasoning: 500 })
+                && Math.abs(rc.amount - (10000 * 2 + 1000 * 12 + 90000 * 0.20) / 1e6) < 1e-12
+                && Math.abs(gc.amount - (10000 * 2 + 1500 * 12 + 90000 * 0.20) / 1e6) < 1e-12,
+                [ru, gu, rc, gc].map((x) => JSON.stringify(x)).join(" "));
+        }
+        {
             // the chat's running total takes the cost OpenRouter reported
             const editor = new FakeEditor();
             const { a } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }], { usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.002 } })], CHAT[0]);
@@ -3574,7 +3634,8 @@ async function main() {
                 && fetchImpl.sent[0].headers["x-goog-api-key"] === "test-gemini-0000"
                 && contents[0].role === "user" && contents[0].parts[0].text
                 && events.some((e) => e.type === "assistant:text" && /One layer/.test(e.text))
-                && a.chat.usage.input === 200 && a.chat.usage.output === 40 && a.chat.usage.reasoning === 10,
+                // output holds the thoughts too (candidatesTokenCount leaves them out): 2 x (20 + 5)
+                && a.chat.usage.input === 200 && a.chat.usage.output === 50 && a.chat.usage.reasoning === 10,
                 `${out.reason}, ${out.steps} step, ${fetchImpl.sent.length} requests`);
             check("thought_signatures_go_back_unchanged",
                 model.role === "model" && model.parts.length === 2
@@ -4288,6 +4349,13 @@ async function main() {
         const rows = await store.list();
         const broken = rows.find((r) => r.id === "cbroken");
         check("a_broken_file_is_a_row_not_a_throw", !!broken && broken.broken === true && rows.length === 2, JSON.stringify(rows.map((r) => r.id)));
+
+        // review of 2026-11-12: a save that holds fewer pictures than the last one takes the leftover files away
+        await store.save({ ...chat, history: history.slice(0, 2) }, { events: [events[0]] });
+        const shrunk = fs.readdirSync(store.folder("ctest1"));
+        const reread = await store.load("ctest1");
+        check("a_save_with_fewer_pictures_leaves_no_stale_files",
+            shrunk.length === 1 && eq(reread.history, history.slice(0, 2)), shrunk.join(", "));
 
         // the oldest goes above the limit, with its folder
         for (let i = 2; i <= 4; i++) {

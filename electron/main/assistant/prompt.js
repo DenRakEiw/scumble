@@ -73,13 +73,14 @@ function stateNote(docs, layers, opts = {}) {
         lines.push(`Layers of #${pin}, top first (${ls.length}):`);
         for (let i = ls.length - 1; i >= 0; i--) lines.push(layerLine(ls[i]));
     }
-    if (opts.undone) lines.push("The user undid your last turn.");
-    if (opts.stopped) lines.push("(your previous answer was stopped before it finished)");
     let note = lines.join("\n");
     if (note.length > 1500) {
         const keep = note.slice(0, 1400);
         note = keep.slice(0, keep.lastIndexOf("\n")) + `\n  ... (${ls.length} layers; call list_layers for the rest)`;
     }
+    // after the cut, so a long layer list never drops them
+    if (opts.undone) note += "\nThe user undid your last turn.";
+    if (opts.stopped) note += "\n(your previous answer was stopped before it finished)";
     return note;
 }
 
