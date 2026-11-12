@@ -559,7 +559,7 @@ Pick the model (Seedream 5.5, up to 99 layers and a base, or Seedream 5.0 Pro, w
 
 WaveSpeedAI, and Oxen.ai for some answers, give a layer no position: such a layer covers your whole picture when it has the picture's shape, and otherwise sits at its own shape in the middle of the picture (it is never stretched). The status line names these layers; move or scale them where they belong.
 
-The picture must be 512 × 512 to 6000 × 6000 in area and no steeper than 16:1; Scumble refuses anything else before it sends. The model answers at most about 2K, so on a larger picture the layers are scaled up to your picture and the status line says they are lower resolution than it. The feature needs a key for the provider that runs it (*Settings › API providers*); on BytePlus ModelArk Seedream 5.5 is in early access, and BytePlus has to let your account in first. Agents use the `split_layers` command.
+The picture must be at least 512 × 512 in area and no steeper than 16:1; Scumble refuses anything else before it sends. A picture larger than 4096 × 4096 in area (a large document, a large layer) goes scaled down to that in its own shape, and the layers land at your picture's size. The model answers at most about 2K, so on a larger picture the layers are scaled up to your picture and the status line says they are lower resolution than it. The feature needs a key for the provider that runs it (*Settings › API providers*); on BytePlus ModelArk Seedream 5.5 is in early access, and BytePlus has to let your account in first. Agents use the `split_layers` command.
 
 ## Documents: your work as a .scumble file
 

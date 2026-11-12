@@ -348,6 +348,34 @@ async function main() {
         await thrown(() => split.runSplitLayers(appFor({ seedream_5_5: "wavespeed" }), editor, { recipe: "seedream_5_5", count: 5 }, deps));
         check("the request and the run's row go to WaveSpeed with its variant's options, kind layers", !!sent && sent.request.provider === "wavespeed" && sent.token.provider === "wavespeed" && sent.request.kind === "layers" && sent.request.options.layers.model === "bytedance/seedream-v5.5/layer-decomposition" && sent.request.params.count === 5, short(sent && { provider: sent.request.provider, token: sent.token.provider }));
         check("the status line names the host it is sent to", (editor.said || []).some((t) => /^Split into layers: sending the picture \(1200 × 800\) to Seedream 5\.5 on WaveSpeedAI, up to 5 layers/.test(t)), short(editor.said));
+        // review finding host-gen/split-refuses-large-pictures: a picture larger than 4096 x 4096 in area goes scaled down
+        // in its own shape (a 15k document was refused); the layers still land at the document's scale (planLanding
+        // maps the answer's boxes to the source rect, whatever size went)
+        {
+            const s1 = split.splitSendSize(15000, 10000), s2 = split.splitSendSize(1200, 800), s3 = split.splitSendSize(4096, 4096);
+            check("splitSendSize: 15000 x 10000 goes at 4096 x 4096's area in its own shape; 1200 x 800 and exactly 4096 x 4096 go as they are",
+                s1.scaled && s1.w * s1.h <= 4096 * 4096 && s1.w * s1.h > 4096 * 4096 * 0.999 && Math.abs(s1.w / s1.h - 1.5) < 0.001 && !s2.scaled && s2.w === 1200 && !s3.scaled, short([s1, s2, s3]));
+            const big = { ...editor, providerPending: null, width: 15000, height: 10000, said: [], sampled: null, sampleRegionSettled: async (src, box, scale, o) => { big.sampled = { src, box, scale, o }; return {}; } };
+            const appBig = { ...appFor({ seedream_5_5: "wavespeed" }), editors: () => [big] };
+            const jb = split.splitJob(appBig, big, { recipe: "seedream_5_5", count: 5 });
+            check("a 15000 x 10000 document is not refused: the job keeps its rect and goes at the scaled size", jb.rect.w === 15000 && jb.send.scaled && jb.send.w === s1.w, short(jb.send));
+            const savedDoc = globalThis.document;
+            const drawn = [];
+            globalThis.document = { createElement: () => { const c = { width: 0, height: 0, getContext: () => ({ drawImage: (img, x, y, w, h) => drawn.push([c.width, c.height, w, h]) }) }; return c; } };
+            let sentBig = null;
+            try {
+                await thrown(() => split.runSplitLayers(appBig, big, { recipe: "seedream_5_5", count: 5 }, { ...deps, providerEdit: async (request) => { sentBig = request; throw new Error("stop here"); } }));
+            } finally { globalThis.document = savedDoc; }
+            check("... the request says the scaled size, the picture is one composite pass at that scale drawn to it exactly, and the status line says it was scaled down",
+                !!sentBig && sentBig.width === s1.w && sentBig.height === s1.h && big.sampled && big.sampled.src === "image" && eq(big.sampled.box, [0, 0, 15000, 10000]) && Math.abs(big.sampled.scale - s1.w / 15000) < 0.001 && big.sampled.o.forRun === true
+                && eq(drawn[0], [s1.w, s1.h, s1.w, s1.h]) && big.said.some((t) => /sending the picture \(15000 × 10000, scaled down to \d+ × \d+\)/.test(t)),
+                short({ w: sentBig && sentBig.width, h: sentBig && sentBig.height, sampled: big.sampled && big.sampled.scale, drawn: drawn[0], said: big.said }));
+            const plan = split.planLanding([{ base: true, name: "" }, { name: "dog", bounding_box: { absolute: [512, 256, 1024, 768] } }], jb.rect, 2048, 1365, new Set());
+            check("... and a box of the model's 2K answer lands at the document's scale", plan.rows[1].x === Math.round(512 * 15000 / 2048) && plan.rows[0].w === 15000, short(plan.rows.map((r) => [r.x, r.y, r.w, r.h])));
+            const tiny = (() => { try { split.splitJob(appBig, { ...big, providerPending: null, width: 400, height: 400 }, { recipe: "seedream_5_5", count: 5 }); return null; } catch (e) { return String(e.message); } })();
+            const steep = (() => { try { split.splitJob(appBig, { ...big, providerPending: null, width: 40000, height: 2000 }, { recipe: "seedream_5_5", count: 5 }); return null; } catch (e) { return String(e.message); } })();
+            check("... a picture too small or too steep is still refused", /512 × 512/.test(tiny || "") && /16:1/.test(steep || ""), short([tiny, steep]));
+        }
         // where boxless layers land
         const rect = { x: 50, y: 40, w: 2000, h: 1000 };
         const plan = split.planLanding([{ base: true, name: "" }, { full: true, name: "" }, { name: "dog", bounding_box: { absolute: [100, 50, 300, 250] } }], rect, 1000, 500, new Set());
