@@ -174,6 +174,9 @@ export class HistoryPart {
     snapshotLayer(l) {
         const c = { ...l };
         for (const k of LAYER_PENDING_KEYS) delete c[k];
+        // an upload still running: the record has the new pixels and the old file, so it stores its own (syncLayersOnce)
+        if (l._uploading) c.dirty = true;
+        if (l._maskUploading) c.maskDirty = true;
         if (l.text) c.text = JSON.parse(JSON.stringify(l.text));
         if (l.params && typeof l.params === "object") {
             c.params = { ...l.params };

@@ -2828,6 +2828,40 @@ await wait(80);
 if (b.layers.length !== before + 1) throw new Error("the button did not duplicate: " + b.status);
 return { before, after: b.layers.length };
 """),
+    ("a_copy_or_undo_record_taken_during_an_upload_stores_its_own_file", """
+// review 2026-11-12 canvas-core/sync-clean-before-upload-lands: syncLayersOnce marks a layer clean when its upload starts
+// and writes the new file after it; a duplicate or a `layers` undo record taken in between kept the old file, clean
+const b = ednow(window.__t);
+host.shell.activate(b);
+if (!b.syncLayers) return { skipped: "no syncLayers" };
+const L = b.addLayer({ name: "upload window", kind: "image", role: "none", ref: null, px: b.pixels.Layer.empty(64, 48), x: 4, y: 4, w: 64, h: 48, dirty: true });
+const fill = (r, g, bl, x, y, w, h) => { const d = new ImageData(w, h); for (let i = 0; i < w * h; i++) d.data.set([r, g, bl, 255], i * 4); L.px.writeRect(d, x, y); b.markLayerChanged(L); };
+fill(48, 128, 192, 0, 0, 64, 48);
+await b.syncLayers();
+const oldRef = JSON.stringify(L.ref);
+if (!L.ref || L.dirty) throw new Error("the first upload did not store the layer");
+// a new stroke, then the autosave's pass; catch the moment the layer is clean but its new file is not there yet
+fill(224, 64, 32, 8, 8, 30, 20);
+const pass = b.syncLayers();
+let n = 0;
+while (!(L.dirty === false && JSON.stringify(L.ref) === oldRef) && n < 5000) { await null; n++; }
+if (n >= 5000) throw new Error("never saw the upload window (the pass finished at once)");
+const seen = { spins: n, uploading: L._uploading, dirty: L.dirty, same: L === b.layers.find((l) => l.id === L.id) };
+const C = b.duplicateLayer(L);
+b.pushUndo({ kind: "layers", label: "Reorder" });
+await pass;
+const newRef = JSON.stringify(L.ref);
+if (newRef === oldRef) throw new Error("the stroke's upload gave no new file");
+// the copy either still waits for its own upload or got it in the same pass (it sits in the list the pass walks)
+if (!C.dirty && JSON.stringify(C.ref) !== newRef) throw new Error("the copy taken during the upload kept the old file and counts as stored: " + JSON.stringify({ dirty: C.dirty, ref: C.ref, seen }));
+const rec = b.undo[b.undo.length - 1].layers.find((l) => l.id === L.id);
+if (!rec || !rec.dirty) throw new Error("the undo record taken during the upload counts as stored with the old file");
+if ("_uploading" in C || "_uploading" in rec) throw new Error("the in-flight mark went into the copy or the record");
+await b.syncLayers();
+if (JSON.stringify(C.ref) !== newRef) throw new Error("the copy's own upload did not store the painted pixels: " + JSON.stringify(C.ref));
+b.removeLayer(C.id); b.removeLayer(L.id);
+return { spins: n, copy: C.ref && C.ref.filename };
+"""),
     ("erase_stroke_keeps_the_rest_of_the_layer_on_screen", """
 // A result layer on a large document, viewed zoomed out, so the screen is drawn from the
 // layer's cached display level. One erase stroke through a strip of it used to wipe the

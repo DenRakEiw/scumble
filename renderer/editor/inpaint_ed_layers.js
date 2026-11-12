@@ -302,10 +302,12 @@ export class LayersPart {
         if (!layer) { this.setStatus("Select a layer to duplicate."); return null; }
         this.pushUndo({ kind: "layers", label: "Duplicate layer" });
         this.layerCounter += 1;
+        // a layer whose upload is still running has new pixels and the old file: the copy stores its own (syncLayersOnce)
+        const pxDirty = !!layer.dirty || !!layer._uploading, maskDirty = !!layer.maskDirty || !!layer._maskUploading;
         const copy = {
             ...layer, id: "L" + Date.now().toString(36) + this.layerCounter, name: layer.name + " copy",
-            ref: layer.dirty ? null : layer.ref, dirty: !!layer.dirty || !layer.ref, exportRef: null, locked: false,
-            maskRef: layer.maskDirty ? null : layer.maskRef, maskDirty: !!layer.maskPx && (!!layer.maskDirty || !layer.maskRef), maskEdit: false,
+            ref: pxDirty ? null : layer.ref, dirty: pxDirty || !layer.ref, exportRef: null, locked: false,
+            maskRef: maskDirty ? null : layer.maskRef, maskDirty: !!layer.maskPx && (maskDirty || !layer.maskRef), maskEdit: false,
             _masked: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null, _textUndo: null, _undoPending: null,
             _relight: null, _bstats: null, _bstatsRun: null,
         };
