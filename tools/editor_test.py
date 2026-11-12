@@ -13931,6 +13931,193 @@ if (releaseDelta !== 1 || memAfterReleaseMB <= 0 || memAfterReleaseMB > 3) {
 }
 return { rustGrowBounds, rustShrinkBounds, rustGrowCalls, jsGrowCalls, releaseDelta, memAfterReleaseMB };
 """),
+    # review 2026-11-12 (lane editor-a): canvas-core/ask-second-question-orphans-first. A second question (Frequency
+    # Separation from the native menu over an open dialog) answers the first with null and leaves one backdrop
+    ("a_second_question_closes_the_first", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 300, height: 200, doc: doc.id });
+let first = "pending";
+ed.ask({ title: "one", message: "first" }).then((v) => { first = v === null ? "null" : "an answer"; });
+const second = ed.ask({ title: "two", message: "second" });
+await wait(50);
+const open = ed.root.querySelectorAll(".ipc-ask").length;
+ed.closeAsk();
+await second;
+await wait(20);
+const out = { first, open, left: ed.root.querySelectorAll(".ipc-ask").length, askOpen: !!ed.askOpen };
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (out.first !== "null" || out.open !== 1 || out.left !== 0 || out.askOpen) throw new Error("the first question was orphaned: " + JSON.stringify(out));
+return out;
+"""),
+    # canvas-core/loadfile-during-setvalue-mixes-documents: a picture opened into a tab whose document is still being
+    # restored (setValue, seconds at 15k) waits instead of landing between the restore's steps
+    ("an_open_during_a_restore_waits_for_it", """
+const src = await run("new_document");
+const es = ednow(src.id);
+host.shell.activate(es);
+await run("new_canvas", { width: 400, height: 300, doc: src.id });
+for (const r of [[20, 20, 80, 60], [150, 100, 90, 70]]) {
+    await run("add_paint_layer", { doc: src.id });
+    await run("select_rect", { x: r[0], y: r[1], w: r[2], h: r[3], doc: src.id });
+    es.fillSelection();
+}
+await run("select_none", { doc: src.id });
+await es.syncLayers();
+const state = es.getValue();
+const nLayers = es.layers.length;
+const dst = await run("new_document");
+const ed = ednow(dst.id);
+host.shell.activate(ed);
+const c = document.createElement("canvas"); c.width = 64; c.height = 48;
+c.getContext("2d").fillStyle = "#3080ff"; c.getContext("2d").fillRect(0, 0, 64, 48);
+const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+const restoring = ed.setValue(state);              // not awaited: the open comes while it runs
+const wasLoading = !!ed._loading;
+await ed.loadFile(new File([blob], "other.png", { type: "image/png" }));
+const said = ed.status;
+await restoring;
+for (let i = 0; i < 100 && ed._loading; i++) await wait(50);
+const out = { wasLoading, said, size: [ed.width, ed.height], layers: ed.layers.length, want: nLayers };
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: dst.id, force: true });
+await run("close_document", { doc: src.id, force: true });
+if (!out.wasLoading) throw new Error("setValue was not loading when the open came: " + JSON.stringify(out));
+if (!/still loading/.test(out.said || "")) throw new Error("the open did not wait for the restore: " + JSON.stringify(out));
+if (out.size[0] !== 400 || out.size[1] !== 300 || out.layers !== nLayers) throw new Error("the tab holds a mix of the two: " + JSON.stringify(out));
+return out;
+"""),
+    # tiles/flatten-commits-stale-composite: an edit that lands while Flatten encodes and uploads (here a layer added in
+    # the middle of its wait) is not dropped: Flatten refuses and says so
+    ("flatten_refuses_when_the_picture_changes_during_its_wait", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 320, height: 240, doc: doc.id });
+await run("add_paint_layer", { doc: doc.id });
+await run("select_rect", { x: 30, y: 30, w: 100, h: 80, doc: doc.id });
+ed.fillSelection();
+await run("select_none", { doc: doc.id });
+const base0 = ed.base, n0 = ed.undo.length;
+let added = null;
+const orig = ed.encodeComposite;
+ed.encodeComposite = async function (...args) {
+    const r = await orig.apply(this, args);
+    added = this.addPaintLayer();                    // a result or a new layer landing during the wait
+    return r;
+};
+try { await ed.flattenNow(); } finally { delete ed.encodeComposite; }
+const out = { kept: !!added && ed.layers.includes(added), baseKept: ed.base === base0, layers: ed.layers.length, said: ed.status, flattenPushed: ed.undo.some((s) => s.label === "Flatten") };
+// and without an edit it flattens as before
+await ed.flattenNow();
+out.flattenedAfter = ed.layers.length === 0 && ed.base !== base0;
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (!out.kept || !out.baseKept || out.flattenPushed || !/changed while/.test(out.said || "")) throw new Error("Flatten dropped what landed during its wait: " + JSON.stringify(out));
+if (!out.flattenedAfter) throw new Error("a plain Flatten did not flatten: " + JSON.stringify(out));
+return out;
+"""),
+    # canvas-tools/bucket-fill-untracked-undo-race: Ctrl+Z pressed while the bucket floods waits for the fill and takes
+    # it back; the step below and its redo are not lost
+    ("an_undo_during_a_bucket_fill_waits_for_it", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 300, height: 200, doc: doc.id });
+await run("add_paint_layer", { doc: doc.id });
+await run("select_rect", { x: 10, y: 10, w: 60, h: 40, doc: doc.id });
+ed.fillSelection();
+await run("select_none", { doc: doc.id });
+const below = ed.undo[ed.undo.length - 1].label;
+let undoing = null;
+const orig = ed.floodRegion;
+ed.floodRegion = async function (...args) {
+    const r = await orig.apply(this, args);
+    undoing = this.undoStep();                       // Ctrl+Z while the flood runs
+    await wait(80);
+    return r;
+};
+ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+try { await ed.bucketFill(200, 150); } finally { delete ed.floodRegion; }
+await undoing;
+await wait(50);
+const out = { below, top: ed.undo.length ? ed.undo[ed.undo.length - 1].label : null, redo: ed.redo.map((s) => s.label) };
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (out.top !== below || out.redo.length !== 1 || out.redo[0] !== "Bucket fill") throw new Error("the undo did not wait for the fill: " + JSON.stringify(out));
+return out;
+"""),
+    # canvas-tools/extend-drops-hidden-layers (and the noise border): Extend keeps a hidden layer as a layer moved by the
+    # offset; the noise fills the border, the picture keeps its pixels
+    ("extend_keeps_hidden_layers_moved_with_the_picture", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 300, height: 200, doc: doc.id });
+const H = await run("add_paint_layer", { doc: doc.id });
+await run("select_rect", { x: 40, y: 30, w: 50, h: 40, doc: doc.id });
+ed.fillSelection();
+await run("set_layer", { doc: doc.id, layer: H.id, visible: false });
+const V = await run("add_paint_layer", { doc: doc.id });
+await run("select_rect", { x: 150, y: 100, w: 30, h: 30, doc: doc.id });
+ed.fillSelection();
+await run("select_none", { doc: doc.id });
+const fill0 = ed.extendFillSel ? ed.extendFillSel.value : null;
+if (ed.extendFillSel) ed.extendFillSel.value = "noise";
+try { await ed.extendCanvasNow({ top: 20, right: 10, bottom: 30, left: 25 }); } finally { if (ed.extendFillSel) ed.extendFillSel.value = fill0; }
+const hl = ed.layers.find((l) => l.id === H.id);
+const px = (p, x, y) => Array.from(p.readRect(x, y, 1, 1).data);
+const out = { size: [ed.width, ed.height], kept: !!hl, hidden: hl ? !hl.visible : null, visibleGone: !ed.layers.some((l) => l.id === V.id), said: ed.status };
+if (hl) { out.hiddenBox = [hl.x, hl.y, hl.w, hl.h]; out.movedPixel = px(hl.px, 40 + 25 - hl.x + 5, 30 + 20 - hl.y + 5); out.oldPlace = px(hl.px, 40 - hl.x + 2, 30 - hl.y + 2); }
+const b = ed.base.px;
+out.border = px(b, 3, 3); out.borderRight = px(b, ed.width - 2, 100); out.inside = px(b, 25 + 5, 20 + 5);
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (!out.kept || !out.hidden || !out.visibleGone) throw new Error("Extend dropped the hidden layer: " + JSON.stringify(out));
+if (out.movedPixel[3] !== 255 || out.oldPlace[3] !== 0) throw new Error("the hidden layer did not move with the picture: " + JSON.stringify(out));
+if (out.border[3] !== 255 || out.borderRight[3] !== 255) throw new Error("the noise left the border empty: " + JSON.stringify(out));
+if (out.inside.slice(0, 3).some((v) => v !== 255)) throw new Error("the picture is not white where it was: " + JSON.stringify(out));
+if (!/hidden layer/.test(out.said || "")) throw new Error("the status does not name the hidden layer: " + JSON.stringify(out));
+return out;
+"""),
+    # canvas-tools/noop-click-pushes-undo-clears-redo: a click with the transform tool that moves nothing pushes no step,
+    # so the redo of the step before stays
+    ("a_click_that_moves_nothing_keeps_the_redo", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 300, height: 200, doc: doc.id });
+await run("add_paint_layer", { doc: doc.id });
+await run("select_rect", { x: 10, y: 10, w: 200, h: 150, doc: doc.id });
+ed.fillSelection();
+await run("select_none", { doc: doc.id });
+await ed.undoStep();                                 // the deselect goes to redo
+const redo0 = ed.redo.map((s) => s.label), undo0 = ed.undo.length;
+ed.setTool("transform");
+ed.draw();
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 31, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+ed.canvas.dispatchEvent(ev("pointerdown", 100, 80));
+await wait(30);
+ed.canvas.dispatchEvent(ev("pointerup", 100, 80));
+await wait(30);
+const out = { redo0, redo: ed.redo.map((s) => s.label), undo: ed.undo.length - undo0 };
+// a real drag still moves and pushes its step
+ed.canvas.dispatchEvent(ev("pointerdown", 100, 80));
+ed.canvas.dispatchEvent(ev("pointermove", 120, 90));
+ed.canvas.dispatchEvent(ev("pointerup", 120, 90));
+await wait(30);
+out.dragPushed = ed.undo.length - undo0;
+ed.setTool("brush");
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (out.redo.length !== 1 || out.undo !== 0) throw new Error("a click that moved nothing pushed a step: " + JSON.stringify(out));
+if (out.dragPushed !== 1) throw new Error("a drag did not push its move: " + JSON.stringify(out));
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
