@@ -45,6 +45,8 @@ class ComfyClient {
         this.wsWanted = false;
         this.retry = 0;
         this.status = { state: "disconnected", url: "", message: "not connected" };
+        this.connectGen = 0;      // a connect, a disconnect or a new URL makes the probe in flight stale
+        this.probeAbort = null;   // the probe in flight's requests
     }
 
     setUrl(url) {
@@ -197,12 +199,21 @@ class ComfyClient {
     async connect(url, headers) {
         if (url) this.setUrl(url);
         if (headers) this.setHeaders(headers);
+        // a connect started earlier (for another URL, a slow or stopped server) that answers after this one must not
+        // write its status or open its socket: each await checks this connect is still the newest
+        const gen = this.stale();
+        const u = this.url;
         if (!this.url) { this.setStatus({ state: "disconnected", message: "no URL" }); return this.status; }
+        const ac = new AbortController();
+        this.probeAbort = ac;
+        const current = () => gen === this.connectGen && this.url === u;
         this.setStatus({ state: "connecting", message: "connecting ..." });
         try {
-            const stats = await this.json("/system_stats");
+            const stats = await this.json("/system_stats", { signal: ac.signal });
+            if (!current()) return this.status;
             let node = false;
-            try { const r = await this.fetch("/object_info/InpaintCanvas"); node = r.status === 200 && Object.keys(await r.json()).length > 0; } catch (_) { node = false; }
+            try { const r = await this.fetch("/object_info/InpaintCanvas", { signal: ac.signal }); node = r.status === 200 && Object.keys(await r.json()).length > 0; } catch (_) { node = false; }
+            if (!current()) return this.status;
             const version = stats && stats.system ? stats.system.comfyui_version : "?";
             const gpus = ((stats && stats.devices) || []).map((d) => String((d && d.name) || "")).filter(Boolean);
             const devices = gpus.join(", ");
@@ -215,16 +226,26 @@ class ComfyClient {
             this.setStatus({ state: node ? "connected" : "missing-node", version, devices, gpus, os, node, remote, auth: !!Object.keys(this.headers).length,
                 message: node ? `ComfyUI ${version}` : `ComfyUI ${version}, Inpaint Canvas node pack not installed` });
         } catch (err) {
+            if (!current()) return this.status;
             // nothing listens there (a machine without ComfyUI): a calm line, not a red error; only ComfyUI recipes and
             // selection by text (SAM3 on the server) need it
             const code = String((err && ((err.cause && err.cause.code) || err.code)) || "");
             if (code === "ECONNREFUSED") this.setStatus({ state: "error", absent: true, message: "No ComfyUI running", hint: `Nothing answers at ${this.url}. ComfyUI recipes and selection by text need a ComfyUI; the API recipes and the rest of the editor work without one.` });
             else this.setStatus({ state: "error", message: "cannot reach " + this.url + ": " + (err.message || err) });
+        } finally {
+            if (this.probeAbort === ac) this.probeAbort = null;
         }
         return this.status;
     }
 
+    /** Makes the probe in flight stale (its requests aborted); -> the new generation. */
+    stale() {
+        if (this.probeAbort) { try { this.probeAbort.abort(); } catch (_) { /* gone */ } this.probeAbort = null; }
+        return ++this.connectGen;
+    }
+
     disconnect() {
+        this.stale();
         this.wsWanted = false;
         if (this.ws) { try { this.ws.close(); } catch (_) { /* ignore */ } this.ws = null; }
         this.setStatus({ state: "disconnected", message: "not connected" });
