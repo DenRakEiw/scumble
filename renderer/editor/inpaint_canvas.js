@@ -476,6 +476,9 @@ class InpaintEditor {
      * `set(key, { options, value, hidden, disabled, text })` changes a field without calling onChange again.
      */
     ask({ title = "", message = "", value = null, fields = null, linked = false, ok = "OK", cancel = "Cancel", danger = false, onChange = null } = {}) {
+        // one question at a time: an earlier one (asked again from the native menu while it is open) answers null as
+        // Cancel does, or its backdrop, its key listener and its caller's promise would stay behind for good
+        this.closeAsk();
         return new Promise((resolve) => {
             const wrap = el("div", "ipc-ask");
             const box = el("div", "ipc-askbox");
