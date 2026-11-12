@@ -128,6 +128,15 @@ async function main() {
         check("GPT Image 2 on the partner node: no model.complexity in either submitted workflow (a 2.6 field)",
             f.jobs.length === 2 && f.jobs.every((j) => { const p = Object.values(j.workflow).find((n) => n.class_type === "OpenAIGPTImageNodeV2"); return p && p.inputs.model === "gpt-image-2" && !("model.complexity" in p.inputs); }));
     }
+    // review finding providers/comfycloud-krea3-no-stretch-fit: Krea 3's preset a little off the crop answers in the
+    // preset's shape, and the run's info says stretch, so the stitch fits it back instead of cropping its sides
+    {
+        const f = fakeComfyV2({ outputs: saveOutput });
+        const out = await cloud.edit({ ...partnerReq({ width: 1300, height: 1000, references: [], mask: null, kind: "edit" }), model: "Krea 3", options: { node: "Krea3ImageNode" } }, ctxOf(f));
+        const node = Object.values((f.jobs[0] || {}).workflow || {}).find((n) => n.class_type === "Krea3ImageNode") || { inputs: {} };
+        check("Krea 3 Edit on Comfy Cloud v2: a 1.30:1 crop sent as 4:3, and the answer's info says stretch",
+            node.inputs["model.aspect_ratio"] === "4:3" && out.info.fit === "stretch", short({ aspect: node.inputs["model.aspect_ratio"], info: out.info }));
+    }
 
     // 2b. GPT Image 2.6 (the shipped Comfy Cloud variants, 2026-11-07) on v2: the 2.6 id, model.complexity from the row and
     // high without one (the node requires it), the crop's own size as Custom, the mask through ImageToMask (the crop

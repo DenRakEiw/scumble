@@ -322,6 +322,12 @@ async function main() {
         check("Planning ultra on an edit stays", u.inputs["model.thinking_mode"] === "ultra" && u.inputs["model.resolution"] === "1K", short(u.inputs));
         const odd = await graphOf(editReq("comfycloud", { width: 1000, height: 390, image: pngOf(1000, 390, "CROP") }));
         check("a crop no preset fits goes on auto", odd.inputs["model.aspect_ratio"] === "auto", odd.inputs["model.aspect_ratio"]);
+        // review finding providers/comfycloud-krea3-no-stretch-fit: a preset off the crop answers in the preset's shape,
+        // so the run's info says stretch (as Replicate's and the Router's do); auto says nothing
+        const near = await graphOf(editReq("comfycloud", { width: 1300, height: 1000, image: pngOf(1300, 1000, "CROP") }));
+        check("an edit sent as a preset a little off the crop (1.30:1 as 4:3) marks its answer as stretched; one exactly on its preset too; auto does not",
+            near.inputs["model.aspect_ratio"] === "4:3" && near.graph.fit === "stretch" && g.graph.fit === "stretch" && odd.graph.fit === undefined && !JSON.stringify(near.graph).includes("stretch"),
+            short({ near: [near.inputs["model.aspect_ratio"], near.graph.fit], planned: g.graph.fit, odd: odd.graph.fit }));
         check("the layout names the same keys", eq(cloud.layout(editReq("comfycloud", { references: [r1] })).pictures.map((p) => p.field), ["model.images.image_0", "model.images.image_1"]), short(cloud.layout(editReq("comfycloud", { references: [r1] })).pictures));
         check("eight pictures in all", cloud.layout(editReq("comfycloud")).max === 8, String(cloud.layout(editReq("comfycloud")).max));
         const nine = editReq("comfycloud", { references: new Array(8).fill(r1) });

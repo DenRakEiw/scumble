@@ -145,8 +145,11 @@ const SHAPES = {
         g.set("model", v.model); g.set("model.prompt", v.prompt);
         g.set("model.resolution", "2K"); g.set("model.thinking_mode", "fast"); g.set("model.precise_edit", false);
         g.set("model.seed", v.seed % KREA3_SEEDS);
-        g.set("model.aspect_ratio", g.crop
-            ? editAspect(v, { ratios: KREA3_ASPECTS }).aspect
+        // an edit's preset a little off the crop comes back in the preset's shape: the stitch stretches it back (fit)
+        const near = g.crop ? editAspect(v, { ratios: KREA3_ASPECTS }) : null;
+        if (near && near.fit) g.fit = { input: "model.aspect_ratio", value: near.aspect, fit: near.fit };
+        g.set("model.aspect_ratio", near
+            ? near.aspect
             : (KREA3_ASPECTS.includes(v.aspect) ? v.aspect : closestAspect(Math.max(1, +v.width || 1024), Math.max(1, +v.height || 1024), KREA3_ASPECTS)));
         g.images(KREA3_IMAGE, g.crop ? [g.crop, ...g.refs] : g.refs, 0);
     },
@@ -702,6 +705,8 @@ async function buildGraph(req, ctx, node) {
     for (const [k, v] of Object.entries(req.params)) { if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue; partner.inputs[k] = v; }
     if (AFTER_PARAMS[node]) AFTER_PARAMS[node](partner.inputs, vals);
     const pid = String(++n);
+    // the answer's fit when the shape chose a preset off the crop and no row changed it (not part of the graph sent)
+    if (g.fit && partner.inputs[g.fit.input] === g.fit.value) Object.defineProperty(graph, "fit", { value: g.fit.fit });
     graph[pid] = partner;
     graph[String(++n)] = { class_type: "SaveImage", inputs: { images: [pid, 0], filename_prefix: "scumble" } };
     return graph;
@@ -876,7 +881,7 @@ async function run(req, ctx, waitMs) {
             throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(rest).slice(0, 300) + ")");
         }
         const got = await download(ctx, file);
-        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id }, loras: loras.applied, notes: [...loras.notes, ...maskNotes(node, req)] };
+        return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id, ...(graph.fit ? { fit: graph.fit } : {}) }, loras: loras.applied, notes: [...loras.notes, ...maskNotes(node, req)] };
 }
 
 // ---- the Comfy API v2 through the SDK (docs/PLAN_COMFY_SDK.md 3.3, 3.6, 10) ------------------------------------------
@@ -1014,6 +1019,7 @@ async function runV2(req, ctx, waitMs) {
         return a;
     };
     const graph = await buildGraph(req, { ...ctx, upload }, node);
+    if (graph.fit) info.fit = graph.fit;   // a preset off the crop: the stitch stretches the answer back
     for (const [k, v] of files.fixes) {
         const i = k.indexOf("|"), n = graph[k.slice(0, i)];
         if (n && n.inputs) n.inputs[k.slice(i + 1)] = v;
