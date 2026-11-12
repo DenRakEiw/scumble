@@ -14118,6 +14118,36 @@ if (out.redo.length !== 1 || out.undo !== 0) throw new Error("a click that moved
 if (out.dragPushed !== 1) throw new Error("a drag did not push its move: " + JSON.stringify(out));
 return out;
 """),
+    # canvas-tools/stale-text-undo-snapshot: focusing the text field and leaving it without typing keeps no step; a later
+    # edit through the field is its own step, so its undo does not take back the Bold made in between
+    ("a_text_field_left_unchanged_keeps_no_stale_step", """
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 400, height: 200, doc: doc.id });
+const T = await run("add_text", { doc: doc.id, text: "abc", x: 20, y: 20, size: 30 });
+await wait(300);
+ed.activeLayerId = T.id; ed.renderLayers(); await wait(50);
+const field = () => Array.from(ed.root.querySelectorAll(".ipc-text textarea")).find((t) => t.value === "abc" || t.value === "abcd");
+let ta = field();
+if (!ta) throw new Error("no text field for the layer");
+ta.dispatchEvent(new FocusEvent("focus")); ta.dispatchEvent(new FocusEvent("blur"));      // in and out, nothing typed
+Array.from(ta.closest(".ipc-text").querySelectorAll("button")).find((b) => b.title === "Bold").click();
+await wait(300);
+ta = field();
+ta.dispatchEvent(new FocusEvent("focus"));
+ta.value = "abcd"; ta.dispatchEvent(new Event("input")); ta.dispatchEvent(new Event("change")); ta.dispatchEvent(new FocusEvent("blur"));
+await wait(300);
+const labels = ed.undo.slice(-2).map((s) => s.label);
+await ed.undoStep();
+await wait(300);
+const L = ed.layers.find((l) => l.id === T.id);
+const out = { labels, content: L.text.content, bold: !!L.text.bold, top: ed.undo.length ? ed.undo[ed.undo.length - 1].label : null };
+host.shell.activate(ednow(window.__t));
+await run("close_document", { doc: doc.id, force: true });
+if (out.content !== "abc" || !out.bold || out.top !== "Bold") throw new Error("the text edit's undo took back more than the edit: " + JSON.stringify(out));
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
