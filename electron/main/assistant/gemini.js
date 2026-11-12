@@ -192,16 +192,21 @@ function finalWords(status, bodyText) {
     return null;
 }
 
-/** `usage` as the loop counts it, whatever the family calls the fields. */
+/**
+ * `usage` as the loop counts it, whatever the family calls the fields. `promptTokenCount` includes the cached tokens
+ * (priced at their own rate by models.costOf), and `candidatesTokenCount` leaves out the thoughts, which are billed
+ * as output: `output` holds both, `reasoning` the thoughts' share of it.
+ */
 function usageOf(usage) {
     const u = usage || {};
     const cached = Number(u.cachedContentTokenCount) || 0;
+    const thoughts = Number(u.thoughtsTokenCount) || 0;
     return {
-        input: Number(u.promptTokenCount) || 0,
+        input: Math.max(0, (Number(u.promptTokenCount) || 0) - cached),
         cacheRead: cached,
         cacheWrite: 0,                                  // implicit caching: nothing is billed for the write
-        output: Number(u.candidatesTokenCount) || 0,
-        reasoning: Number(u.thoughtsTokenCount) || 0,
+        output: (Number(u.candidatesTokenCount) || 0) + thoughts,
+        reasoning: thoughts,
     };
 }
 

@@ -71,9 +71,10 @@ export function turnState() {
  * Put every document of the turn back. Each restore pushes the present state as one `turn` undo
  * step first, so Ctrl+Z takes the restore back and redo does it again.
  */
-export function restoreTurn() {
+export function restoreTurn(only) {
     const state = turnState();
     if (!state) return { ok: false, reason: "nothing to undo" };
+    if (only != null && state.turn !== only) return { ok: false, reason: "another turn is kept" };   // a card's own turn only
     const done = [];
     const missing = [];
     for (const [docId, entry] of record.docs) {

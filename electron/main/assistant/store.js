@@ -62,6 +62,11 @@ class Store {
         const tmp = this.file(chat.id) + ".tmp";
         await fsp.writeFile(tmp, JSON.stringify(record, null, 1), "utf8");
         await fsp.rename(tmp, this.file(chat.id));
+        // the pictures an earlier save wrote and this one no longer holds (the history keeps the last few) go
+        const keep = new Set(images.map((img) => img.name));
+        let names = [];
+        try { names = await fsp.readdir(this.folder(chat.id)); } catch (_) { /* no folder: no picture yet */ }
+        for (const name of names) if (!keep.has(name)) await fsp.rm(path.join(this.folder(chat.id), name), { force: true }).catch(() => {});
         return record;
     }
 

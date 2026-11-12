@@ -446,6 +446,57 @@ return { restored: out, reason: done.reason, detail: done.detail };""", timeout=
             raise RuntimeError("the turn after the restore did not run: " + json.dumps(out))
         return "the state note after a restore says the user undid the turn"
 
+    async def undo_card_is_its_own_turns(self):
+        """Review of 2026-11-12: a turn that only read gets no card, and an older turn's card never undoes a later turn."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "add_paint_layer", "args": {"name": "Card A"}}]}),
+            Turn(answer={"text": "ok"}),
+            Turn(answer={"tool_calls": [{"name": "list_layers", "args": {}}]}),
+            Turn(answer={"text": "gelesen"}),
+            Turn(answer={"tool_calls": [{"name": "add_paint_layer", "args": {"name": "Card C"}}]}),
+            Turn(answer={"text": "ok"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const cards = () => Array.from(d.querySelectorAll(".as-card.as-undo"));
+const turn = async (text) => {
+    await window.scumble.assistant.send(text);
+    for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+    await wait(200);
+};
+const n0 = cards().length;
+await turn("leg A an");
+const afterA = cards().length;
+const cardA = cards().pop();
+await turn("was liegt da?");
+const afterRead = cards().length;
+await turn("leg C an");
+const afterC = cards().length;
+const names = () => ed.layers.map((l) => l.name);
+const before = names();
+const button = cardA.querySelector("button");
+button.click();
+await wait(400);
+const after = names();
+return { n0, afterA, afterRead, afterC, before, after, disabled: button.disabled, reason: (cardA.querySelector(".as-reason") || {}).textContent || "" };""", timeout=240)
+        if out["afterA"] != out["n0"] + 1:
+            raise RuntimeError("the writing turn got no card: " + json.dumps(out))
+        if out["afterRead"] != out["afterA"]:
+            raise RuntimeError("a turn that only read got an undo card: " + json.dumps(out))
+        if out["afterC"] != out["afterRead"] + 1:
+            raise RuntimeError("the later writing turn got no card: " + json.dumps(out))
+        if out["after"] != out["before"] or "Card C" not in out["after"] or not out["disabled"]:
+            raise RuntimeError("turn A's card undid turn C: " + json.dumps(out))
+        return "a read-only turn has no card; turn A's card refused after turn C (" + out["reason"] + ")"
+
     async def undo_turn_on_canvas(self):
         """On the canvas backend there is no turn snapshot, and the panel says so."""
         out = await self.ev("""
@@ -1782,6 +1833,7 @@ async def main():
             await g.run_step("a_turn_of_thirty_five_steps_comes_back_whole", g.undo_long_turn)
             await g.run_step("a_turn_over_two_documents_restores_both", g.undo_turn_two_documents)
             await g.run_step("the_model_is_told_its_turn_was_undone", g.undo_turn_tells_the_model)
+            await g.run_step("an_undo_card_belongs_to_its_own_turn", g.undo_card_is_its_own_turns)
             await g.run_step("turn_undo_is_refused_on_the_canvas_backend", g.undo_turn_on_canvas)
             await g.run_step("the_reset_deletes_every_chat_and_keeps_the_keys", g.reset_all)
         except Exception as e:  # noqa: BLE001

@@ -25,6 +25,7 @@ const ADAPTERS = {
 
 /** A Gemini model takes the smaller cap wherever it runs: Google's own, or a `google/*` id through a gateway (§2 row 9). */
 const isGemini = (model) => /^(google\/|gemini-)/.test(String(model || ""));
+const EVENTS_MAX = 2000;            // the events a chat keeps for its replay (emit)
 
 const DEFAULTS = {
     model: DEFAULT_MODEL,
@@ -61,6 +62,7 @@ class Assistant {
         this.lastTurn = null;       // the last turn that changed a document ("Undo this turn", A7)
         this.toolsDirty = false;
         this.toolsChanged = null;
+        this.saves = new Set();     // the chat saves still writing (savesDone)
     }
 
     // ---- settings and keys ---------------------------------------------------------------
@@ -305,7 +307,16 @@ class Assistant {
 
     emit(type, data) {
         const event = { type, at: Date.now(), ...data };
-        this.events.push(event);
+        // what is kept for a replay (state(), the saved chat): no stream chunk (assistant:text brings the whole text,
+        // and the panel's replay skips them), no picture (state() never hands one out again), at most EVENTS_MAX with
+        // the chat's first message kept (its title)
+        if (type !== "text_delta") {
+            this.events.push(event.image ? { ...event, image: null } : event);
+            if (this.events.length > EVENTS_MAX) {
+                const first = this.events.findIndex((e) => e && e.type === "user");
+                this.events.splice(first >= 0 ? first + 1 : 0, this.events.length - EVENTS_MAX);
+            }
+        }
         if (this.deps.emit) this.deps.emit(event);
         return event;
     }
@@ -550,17 +561,30 @@ class Assistant {
 
     async deleteChat(id) {
         if (!this.deps.store) return false;
+        // a turn still running in it does not write it back when it ends, and a save already going ends first
+        if (this.chat && this.chat.id === id) this.chat.deleted = true;
+        await this.savesDone();
         await this.deps.store.remove(id);
         if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; }
         return true;
     }
 
-    /** The chat as it stands, on disk; called at the end of every turn. */
+    /** The chat as it stands, on disk; called at the end of every turn. A deleted chat is never written again. */
     async saveChat(chat) {
-        if (!this.deps.store || !chat || chat.readOnly) return null;
-        const saved = await this.deps.store.save(chat, { events: this.events });
-        await this.deps.store.prune(this.settings().keepChats);
-        return saved;
+        if (!this.deps.store || !chat || chat.readOnly || chat.deleted) return null;
+        const job = (async () => {
+            const saved = await this.deps.store.save(chat, { events: this.events });
+            await this.deps.store.prune(this.settings().keepChats);
+            return saved;
+        })();
+        this.saves.add(job);
+        job.then(() => this.saves.delete(job), () => this.saves.delete(job));
+        return job;
+    }
+
+    /** The chat saves still writing (a delete and the reset wait for them, so none lands after them). */
+    async savesDone() {
+        if (this.saves.size) await Promise.allSettled([...this.saves]);
     }
 
     /**
@@ -569,9 +593,11 @@ class Assistant {
      * to Settings > API providers, and the assistant never wrote them.
      */
     async resetAll() {
+        if (this.chat) this.chat.deleted = true;      // the running turn's end does not write it back
         this.stop();
         if (this.starting) await Promise.race([this.starting, new Promise((r) => setTimeout(r, 5000))]);
         if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+        await Promise.race([this.savesDone(), new Promise((r) => setTimeout(r, 5000))]);
         this.chat = null;
         this.events = [];
         this.lastTurn = null;
@@ -689,7 +715,7 @@ class Assistant {
 
         const cap = PROVIDERS[chat.provider].requestCap || (isGemini(chat.model) ? PROVIDERS.gemini.requestCap : adapter.REQUEST_CAP);
         for (;;) {
-            if (turn.stopped) return this.done(chat, turn, "stopped");
+            if (turn.stopped) { chat.stopped = true; return this.done(chat, turn, "stopped"); }
             const bytes = adapter.requestBytes(chat, chat.history);
             if (bytes > cap) return this.done(chat, turn, "full", `this chat is too long (${Math.round(bytes / 1048576)} MB); start a new chat`);
 
@@ -804,6 +830,8 @@ class Assistant {
         }
         if (decision.action === "ask") {
             const allowed = await this.ask(call, canonical, decision, turn);
+            // Stop answers the ask too (stop()): that is the user stopping the turn, not declining this call
+            if (!allowed && turn.stopped) return errorResult("not run: the user stopped the turn before answering");
             if (!allowed) {
                 this.lastWasDecline = true;
                 return errorResult("the user declined; do not reach the same effect another way");

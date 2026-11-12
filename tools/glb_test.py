@@ -147,6 +147,42 @@ if (info.objects.length !== 2) throw new Error("info lists " + info.objects.leng
 window.__gLayer2 = L2.id;
 return { second: [L2.x, L2.y, L2.w, L2.h], edited: [after.w, after.h], objects: info.objects.map((o) => o.name) };
 """),
+    ("place_and_edit_are_one_undo_step_each", """
+// review of 2026-11-12: a placement (the object and its depth layer) and an edit (pixels and placement of both) are one
+// Ctrl+Z each; an edit whose render keeps its size gets its old pixels back too
+const ed = ednow();
+const doc = window.__gDoc;
+const ids = () => ed.layers.map((l) => l.id).join(",");
+const sum = (id) => { const l = ed.layers.find((x) => x.id === id); const d = l.px.readRect(0, 0, l.px.width, l.px.height).data; let s = 0; for (let i = 0; i < d.length; i += 7) s += d[i]; return { box: [l.x, l.y, l.w, l.h], size: [l.px.width, l.px.height], s }; };
+await c("add_paint_layer", { name: "stroke", doc });
+const before = ids();
+const r = await c("glb.place", { filename: window.__gFile, position: { x: 0.7, y: 0.6 }, depth: 4, rotation: { x: 10, y: 20, z: 0 }, shadow: false, depth_layer: true, name: "undo probe", doc });
+if (!r.depthLayer) throw new Error("no depth layer");
+await c("undo", { doc });
+if (ids() !== before) throw new Error("one undo did not take the whole placement back: " + ids() + " vs " + before);
+if (!ed.layers.some((l) => l.name === "stroke")) throw new Error("the undo took the stroke layer too");
+await c("redo", { doc });
+// an edit that moves and turns it: one undo puts both layers back as they were
+const o0 = sum(r.layer.id), d0 = sum(r.depthLayer.id);
+await c("glb.edit", { layer: r.layer.id, position: { x: 0.4, y: 0.4 }, rotation: { x: 0, y: 60, z: 0 }, doc });
+const o1 = sum(r.layer.id);
+if (JSON.stringify(o1.box) === JSON.stringify(o0.box)) throw new Error("the edit did not move the object");
+await c("undo", { doc });
+const o2 = sum(r.layer.id), d2 = sum(r.depthLayer.id);
+if (JSON.stringify(o2) !== JSON.stringify(o0) || JSON.stringify(d2) !== JSON.stringify(d0)) throw new Error("one undo of the edit: " + JSON.stringify({ o0, o2, d0, d2 }));
+// an edit that keeps the render's size (the pose as placed, the light changed): the undo brings the old pixels back.
+// The pose is given again: the plugin's stored settings are not part of the layers step (an undo leaves the edit's)
+await c("glb.edit", { layer: r.layer.id, position: { x: 0.7, y: 0.6 }, depth: 4, rotation: { x: 10, y: 20, z: 0 }, light: { intensity: 0.2, ambient: 0.1 }, doc });
+const o3 = sum(r.layer.id);
+if (JSON.stringify(o3.size) !== JSON.stringify(o0.size) || o3.s === o0.s) throw new Error("the light edit: " + JSON.stringify({ o0, o3 }));
+await c("undo", { doc });
+const o4 = sum(r.layer.id);
+if (JSON.stringify(o4) !== JSON.stringify(o0)) throw new Error("one undo of a same-size edit: " + JSON.stringify({ o0, o4 }));
+await c("remove_layer", { layer: r.layer.id, doc });
+await c("remove_layer", { layer: r.depthLayer.id, doc });
+await c("remove_layer", { layer: "stroke", doc });
+return { placed: r.layer.id, edited: o1.box, sameSize: o3.size };
+"""),
     ("frame_follows_crop_resize_and_turn", """
 // PLAN_0_1_31 §7 (23b): a 3D object keeps its place through the whole picture's geometry changes. Its frame
 // (params.frame { w, h, m }: the upright render frame and the matrix from it to the document) takes every change's

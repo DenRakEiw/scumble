@@ -139,26 +139,46 @@ export function activate(scumble) {
         delete p.orient;
         const r = renderFor(doc, model, p);
         const layerName = name || (ref.filename || LAYER_NAME).replace(/\.(glb|gltf)$/i, "").replace(/(?:~[0-9a-f]{8,64}| \(\d+\))$/i, "") || LAYER_NAME;   // the store's hash or "(1)" suffix is not a name
+        const prev = existing ? entryOf(doc, layerId) : null;
+        const prevDepth = prev && prev.depthId && doc.layers().find((l) => l.id === prev.depthId);
+        // One undo step for the whole placement or edit (review of 2026-11-12): a "layers" step, taken before the first
+        // change, holds the layer list with each layer's placement and pixel objects. Nothing below pushes a step of its
+        // own, and no write goes into pixels the step holds: `replacePixels` gives a layer new ones. A depth layer that
+        // goes takes remove_layer's own "layers" step, taken first, as that one step.
+        if (existing && existing.locked) throw new Error(`${existing.name} is locked`);   // before the step: none stays empty
+        if (!r.depth && prevDepth) await doc.run("remove_layer", { layer: prevDepth.id });
+        else doc.editor.pushUndo({ kind: "layers", label: existing ? "Edit 3D object" : "3D object" });
+        const replacePixels = (id, data) => {
+            const px = doc.rawLayer(id).px;
+            // setPixels writes a picture of the same size into the layer's pixels; one of another size first makes new ones
+            if (px && px.width === data.width && px.height === data.height) doc.setPixels(id, new ImageData(data.width === 1 ? 2 : 1, 1), { undo: false });
+            doc.setPixels(id, data, { undo: false });
+        };
+        const placeAt = (id, x, y, w, h) => {
+            Object.assign(doc.rawLayer(id), { x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) });
+            doc.refresh(id);
+        };
         let layer;
         if (existing) {
-            doc.setPixels(layerId, imageDataOf(r.canvas));
-            layer = await doc.run("set_layer", { layer: layerId, x: Math.round(r.x), y: Math.round(r.y), w: Math.max(1, Math.round(r.w)), h: Math.max(1, Math.round(r.h)), active: true });
+            replacePixels(layerId, imageDataOf(r.canvas));
+            placeAt(layerId, r.x, r.y, r.w, r.h);
+            layer = await doc.run("set_layer", { layer: layerId, active: true });
         } else {
             layer = doc.addLayer(r.canvas, { name: layerName, x: r.x, y: r.y, w: r.w, h: r.h });
         }
-        const prev = entryOf(doc, layer.id);
         let depthLayer = null;
-        const prevDepth = prev && prev.depthId && doc.layers().find((l) => l.id === prev.depthId);
         if (r.depth) {
             if (prevDepth) {
-                doc.setPixels(prevDepth.id, imageDataOf(r.depth));
-                depthLayer = await doc.run("set_layer", { layer: prevDepth.id, x: 0, y: 0, w: doc.width, h: doc.height, active: false });
+                replacePixels(prevDepth.id, imageDataOf(r.depth));
+                placeAt(prevDepth.id, 0, 0, doc.width, doc.height);
+                depthLayer = doc.layer(prevDepth.id);
             } else {
                 depthLayer = doc.addLayer(r.depth, { name: `${layerName} depth`, x: 0, y: 0, w: doc.width, h: doc.height, activate: false });
-                depthLayer = await doc.run("set_layer", { layer: depthLayer.id, role: "control", visible: false });
+                // a control layer, hidden: on the raw layer (set_layer's role pushes a "layers" step of its own)
+                Object.assign(doc.rawLayer(depthLayer.id), { role: "control", visible: false });
+                doc.refresh(depthLayer.id);
+                depthLayer = doc.layer(depthLayer.id);
             }
-        } else if (prevDepth) {
-            await doc.run("remove_layer", { layer: prevDepth.id });
         }
         remember(doc, layer.id, { ref, name: layerName, params: p, depthId: depthLayer ? depthLayer.id : null });
         doc.status(`${layerName}: ${Math.round(r.w)} × ${Math.round(r.h)} at ${Math.round(r.x)}, ${Math.round(r.y)}${r.depth ? ", depth layer updated" : ""}. Edit it again under 3D object; T moves and scales it.`);
