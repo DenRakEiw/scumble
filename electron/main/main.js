@@ -1153,7 +1153,7 @@ function notifyDamagedStores() {
 }
 
 function installIpc() {
-    ipcMain.handle("settings:get", () => settings.get());
+    ipcMain.handle("settings:get", () => settings.get({ window: true }));   // the window seeds its maps from it
     // a write of `updates` may change the skipped version, which decides whether the downloaded one installs on quit
     ipcMain.handle("settings:set", (_e, patch) => {
         const s = settings.set(patch);

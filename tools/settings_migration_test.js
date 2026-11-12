@@ -248,8 +248,88 @@ async function recipeLoras() {
     }
 }
 
+// review findings main-docs/settings-pending-clobbers-stored-maps (data loss) and
+// main-docs/damaged-store-unrenamable-blocks-and-drops: while settings.json cannot be read the window gets the
+// defaults and its writes wait; once read, a stored map keeps its entries (the pending ones join them) and a stored
+// value of the user's is not replaced by one written from the defaults; a damaged file that cannot be set aside is not
+// parsed, renamed and logged again on every read, and the user is told.
+function unreadStore() {
+    const SET = path.join(dir, "settings.json");
+    const stored = {
+        recipe: "sdxl_inpaint",
+        recipeValues: { flux2_klein_local: { "0": "klein.safetensors" }, qwen_local: { "0": "qwen.safetensors" } },
+        recipeLoras: { flux2_klein_local: [{ name: "style.safetensors", strength: 1, on: true }] },
+        pluginData: { boxes: { last: 3 }, film: { look: "x" } },
+    };
+    const realRead = fs.readFileSync, realRename = fs.renameSync;
+    let busy = true, reads = 0;
+    fs.readFileSync = function (f, ...rest) {
+        if (String(f) === SET) { reads++; if (busy) throw Object.assign(new Error("EBUSY: held"), { code: "EBUSY" }); }
+        return realRead.call(this, f, ...rest);
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        let s = fresh(stored);
+        const seen = s.get({ window: true });
+        check("an unreadable store hands the window the defaults", seen.recipe === s.DEFAULTS.recipe && seen.recipeValues === undefined);
+        // what the window writes from that view: its one change of a recipe's rows, the default recipe, a plugin's data
+        s.set({ recipeValues: { zimage_local: { "0": "z.safetensors" } } });
+        s.set({ recipe: s.DEFAULTS.recipe, recipeByMode: { local: s.DEFAULTS.recipe } });
+        s.set({ pluginData: { boxes: { last: 4 } } });
+        busy = false;
+        const got = s.get();
+        check("once read: every stored recipe's rows stay and the window's change joins them",
+            eq(Object.keys(got.recipeValues).sort(), ["flux2_klein_local", "qwen_local", "zimage_local"]) && got.recipeValues.qwen_local["0"] === "qwen.safetensors", JSON.stringify(got.recipeValues));
+        check("... the recipe the user had picked is not replaced by the default written from the unread view; a key it did not hold takes the write",
+            got.recipe === "sdxl_inpaint" && eq(got.recipeByMode, { local: s.DEFAULTS.recipe }), JSON.stringify({ recipe: got.recipe, byMode: got.recipeByMode }));
+        check("... a plugin's data joins entry by entry", eq(got.pluginData, { boxes: { last: 4 }, film: { look: "x" } }), JSON.stringify(got.pluginData));
+        // the window's maps were seeded from the defaults: a whole map it writes later in the session joins the stored one
+        s.set({ recipeLoras: { qwen_local: [] } });
+        const disk = onDisk();
+        check("later in that session a map the window writes from its default-seeded copy joins the stored one (on disk too)",
+            eq(Object.keys(disk.recipeLoras).sort(), ["flux2_klein_local", "qwen_local"]) && Object.keys(disk.recipeValues).length === 3 && disk.recipe === "sdxl_inpaint", JSON.stringify(disk.recipeLoras));
+        // a session that read the store fine writes whole maps as before (an entry removed stays removed)
+        s = fresh(onDisk());
+        s.get({ window: true });
+        s.set({ recipeLoras: { qwen_local: [] } });
+        check("a session that read the store writes a whole map as it is (a removed entry stays removed)", eq(Object.keys(onDisk().recipeLoras), ["qwen_local"]), JSON.stringify(onDisk().recipeLoras));
+
+        // a damaged file that cannot be set aside: read and renamed once, then left alone until it changes; the user told
+        fs.writeFileSync(SET, "{damaged");
+        let renames = 0;
+        fs.renameSync = function (a, b) {
+            if (String(a) === SET) { renames++; throw Object.assign(new Error("EPERM: held"), { code: "EPERM" }); }
+            return realRename.call(this, a, b);
+        };
+        for (const k of Object.keys(require.cache)) if (k.includes(path.join("electron", "main"))) delete require.cache[k];
+        s = require(SETTINGS);
+        reads = 0;
+        const t0 = Date.now();
+        s.get();
+        const firstReads = reads, firstRenames = renames, firstMs = Date.now() - t0;
+        const t1 = Date.now();
+        for (let i = 0; i < 20; i++) s.get();
+        const laterMs = Date.now() - t1;
+        const notice = s.takeDamagedNotice();
+        check("a damaged settings.json that cannot be set aside is read and renamed once, not on each of 20 reads after (no 250 ms block each), and the user is told",
+            firstReads === 1 && firstRenames >= 1 && reads === firstReads && renames === firstRenames && laterMs < 100 && /could not be set aside/.test(notice || ""),
+            JSON.stringify({ firstReads, firstRenames, reads, renames, firstMs, laterMs, notice }));
+        s.set({ apiSize: "x4" });
+        check("... nothing is written over it", realRead.call(fs, SET, "utf8") === "{damaged");
+        fs.renameSync = realRename;
+        fs.writeFileSync(SET, JSON.stringify({ recipe: "qwen_local" }));
+        check("... a file that changed is read again", s.get().recipe === "qwen_local");
+    } finally {
+        fs.readFileSync = realRead;
+        fs.renameSync = realRename;
+        console.warn = warn;
+    }
+}
+
 (async () => {
     try {
+        unreadStore();
         embedRecipe();
         await realism();
         await relight();

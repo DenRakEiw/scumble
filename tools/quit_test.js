@@ -299,11 +299,14 @@ function bundle(tag, pics, empty = 0) {
                 readBusyLeft = 0;
                 const diskSettingsAfterBusy = JSON.parse(origReadFile.call(fs, settingsFile, "utf8"));
                 assert(diskSettingsAfterBusy.recipe === "sdxl_inpaint" && diskSettingsAfterBusy.apiSize === undefined, "persistent read error must not overwrite settings.json");
-                // Recovery via get() alone writes the pending patch merged with stored settings
+                // Recovery via get() alone writes the pending patch merged with stored settings: the writes were made from a
+                // view of the defaults, so a key stored at a value of its own keeps it (the recipe), one stored at its
+                // default or not at all takes the pending value (apiSize), a map joins entry by entry (review finding
+                // main-docs/settings-pending-clobbers-stored-maps)
                 const recovered = settings.get();
-                assert(recovered.recipe === "flux3_klein_local" && recovered.apiSize === "x2" && recovered.history.steps === 50, "recovered get() merges stored + pending");
+                assert(recovered.recipe === "sdxl_inpaint" && recovered.apiSize === "x2" && recovered.history.steps === 50, "recovered get() merges stored + pending, a stored value of the user's kept: " + JSON.stringify({ recipe: recovered.recipe, apiSize: recovered.apiSize }));
                 const freshAfterGetRecovery = freshStore("settings.js");
-                assert(freshAfterGetRecovery.get().recipe === "flux3_klein_local" && freshAfterGetRecovery.get().apiSize === "x2" && freshAfterGetRecovery.get().history.steps === 50, "get() recovery must persist pending patches to disk");
+                assert(freshAfterGetRecovery.get().recipe === "sdxl_inpaint" && freshAfterGetRecovery.get().apiSize === "x2" && freshAfterGetRecovery.get().history.steps === 50, "get() recovery must persist pending patches to disk");
 
                 // Persistent EBUSY on secrets.json: keys.get returns "", cooldown avoids repeated retry sleeps, and set / clear / set(name, "") all refuse
                 keys = freshStore("keys.js");

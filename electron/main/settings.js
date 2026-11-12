@@ -69,6 +69,9 @@ const DEFAULTS = {
 const READ_FAIL_COOLDOWN_MS = 2000;
 let readFailUntil = 0;
 let damagedNotice = null;
+// a damaged settings.json that could not be set aside (another program holds it, the folder refuses the rename): its
+// size and time, so it is not parsed, renamed (a 250 ms block of the main process) and logged again on every read
+let stuckDamaged = null;
 
 function file(name) {
     return path.join(app.getPath("userData"), name);
@@ -94,8 +97,16 @@ function setAsideDamaged(p) {
     }
 }
 
+function stamp(p) {
+    try { const st = fs.statSync(p); return `${st.size}:${st.mtimeMs}`; } catch (_) { return null; }
+}
+
 function readJson(name, fallback) {
     const p = file(name);
+    if (stuckDamaged) {
+        if (stamp(p) === stuckDamaged) return { ok: false, data: fallback };
+        stuckDamaged = null;   // the file changed (or went): read it again
+    }
     const cooling = readFailUntil > Date.now();
     let raw;
     try {
@@ -123,6 +134,9 @@ function readJson(name, fallback) {
             damagedNotice = `Your settings were damaged and reset to defaults; the old file is kept as ${aside}.`;
             return { ok: true, data: fallback };
         }
+        // kept unread until the file changes; the settings work from their defaults and nothing is written over it
+        stuckDamaged = stamp(p);
+        damagedNotice = `Your settings file (${path.basename(p)}) is damaged and could not be set aside, so Scumble works from its defaults and does not save settings until the file is moved or deleted.`;
         return { ok: false, data: fallback };
     }
 }
@@ -152,6 +166,29 @@ let cache = null;
 let loaded = false;
 let pending = {};
 let inSet = false;
+// the window was handed the defaults while settings.json could not be read: the maps it writes (recipeValues,
+// recipeLoras, recipePresets, pluginData ...) are built from those, so for the rest of the session a map it writes
+// joins the stored one entry by entry instead of replacing it (an entry it removes then comes back at the next start)
+let windowSawDefaults = false;
+
+const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const same = (a, b) => { try { return JSON.stringify(a) === JSON.stringify(b); } catch (_) { return false; } };
+
+/**
+ * The writes taken while the store was unread (`pending`), over what it holds once read: they were made from a view
+ * of the defaults, so a key the store holds at a value of its own keeps it (a map takes the pending entries over
+ * its own); a key it does not hold, or holds at its default, takes the pending value.
+ */
+function overStored(stored, patch) {
+    const out = {};
+    for (const [k, v] of Object.entries(patch)) {
+        const had = stored[k];
+        if (had === undefined || same(had, DEFAULTS[k])) out[k] = v;
+        else if (isMap(had) && isMap(v)) out[k] = { ...had, ...v };
+        else console.warn(`settings: "${k}" written while settings.json could not be read; the stored value is kept`);
+    }
+    return out;
+}
 
 /** The relight defaults the store before F3 wrote with every pick (77da63f..4192a6a; lora_strength 1 is 77da63f's 1.0). */
 const PRE_F3_RELIGHT = {
@@ -159,7 +196,8 @@ const PRE_F3_RELIGHT = {
     enable_hr_fix: [true], light_type: ["soft overcast daylight lighting"], lora_strength: [100, 1], steps: [4],
 };
 
-function get() {
+/** The settings; `opts.window`: the window's read (settings:get), which seeds its own maps from the answer. */
+function get(opts) {
     if (!loaded) {
         const { ok, data: stored } = readJson("settings.json", {});
         // 0.1.30 and 0.1.31 stored their default `embedRecipe: false` with every write (set() writes the whole object); it
@@ -176,7 +214,8 @@ function get() {
             stored.relight = flat;
         }
         const hadPending = Object.keys(pending).length > 0;
-        cache = { ...DEFAULTS, ...stored, ...pending };
+        cache = ok ? { ...DEFAULTS, ...stored, ...overStored(stored || {}, pending) } : { ...DEFAULTS, ...stored, ...pending };
+        if (!ok && opts && opts.window) windowSawDefaults = true;
         if (ok) {
             loaded = true;
             pending = {};
@@ -192,7 +231,12 @@ function set(patch) {
     inSet = true;
     let base;
     try { base = get(); } finally { inSet = false; }
-    cache = { ...base, ...(patch || {}) };
+    let p = patch || {};
+    if (loaded && windowSawDefaults) {
+        p = { ...p };
+        for (const [k, v] of Object.entries(p)) if (isMap(v) && isMap(base[k])) p[k] = { ...base[k], ...v };
+    }
+    cache = { ...base, ...p };
     if (loaded) writeJson("settings.json", cache);
     else pending = { ...pending, ...(patch || {}) };
     return cache;
