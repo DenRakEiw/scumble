@@ -47,7 +47,8 @@ export const HostRelightPart = {
         const readSig = (upTo) => {
             const parts = [editor.width, editor.height, editor.pixelVersion || 0, pv(editor.basePx), editor.compareShow || ""];
             for (const l of editor.layers.slice(0, upTo)) {
-                if (editor.isReference(l) || editor.isControl(l) || l === layer || (l.relightOf && l.relightOf === layer.id)) continue;
+                // by id: an undo or redo of a layers step during the run rebuilds every layer object
+                if (editor.isReference(l) || editor.isControl(l) || l.id === layer.id || (l.relightOf && l.relightOf === layer.id)) continue;
                 parts.push(l.id, editor.shown(l) ? 1 : 0, l.opacity, l.blend || "", l.clip ? 1 : 0, l.group || "", l.x, l.y, l.w, l.h, l.kind,
                     l.kind === "filter" ? `${l.filter}${JSON.stringify(l.params || {})}${objectId(l._lutData)}${objectId(l._plateImg)}` : "",
                     pv(l.px), pv(l.maskPx), l.maskOff ? 1 : 0, l.match ? `${l.match.strength}:${l.match.source}` : "");
@@ -91,8 +92,11 @@ export const HostRelightPart = {
                     picBytes = await canvasBytes(cFull);
                 }
             } finally {
-                layer.visible = wasVis;
-                for (const l of hiddenRelight) l.visible = true;
+                // the live layers by id: an undo or redo of a layers step during the read put copies in their place
+                const live = (l) => editor.layers.find((x) => x.id === l.id) || null;
+                const lr = live(layer);
+                if (lr) lr.visible = wasVis;
+                for (const l of hiddenRelight) { const h = live(l); if (h) h.visible = true; }
             }
 
             const longSide = Math.max(W, H);
@@ -349,13 +353,18 @@ export const HostRelightPart = {
             const top = editor.layers.length - 1;
             if (at < top) editor.moveLayer(pixelLayer.id, at - top, { undo: false });
 
-            layer.visible = false;
+            // the relight filter layer as it is now (by id: an undo or redo of a layers step during the run rebuilt every
+            // layer object, and hiding the one handed in would leave the live one relighting the relit pixels); gone: nothing to hide
+            const liveFilter = editor.layers.find((x) => x.id === layer.id) || null;
             const ms = Date.now() - token.started;
-            layer.params = {
-                ...layer.params,
-                last: { route, seed: out.seed, ms },
-            };
-            editor.markFilterChanged(layer);
+            if (liveFilter) {
+                liveFilter.visible = false;
+                liveFilter.params = {
+                    ...liveFilter.params,
+                    last: { route, seed: out.seed, ms },
+                };
+                editor.markFilterChanged(liveFilter);
+            }
             editor.renderLayers();
             editor.draw();
 

@@ -409,7 +409,13 @@ export const HostKeyPart = {
         if (screen === "green" || screen === "blue") return screen;
         if (prep.keyedScreen) return prep.keyedScreen;
         if (!prep.image) return null;
-        return keying.screenFromRing(prep.image, plan.bucket.w, plan.bucket.h, plan.content, hint, prep.weight || null).screen;
+        const guess = keying.screenFromRing(prep.image, plan.bucket.w, plan.bucket.h, plan.content, hint, prep.weight || null).screen;
+        // a layer's transparent parts were filled with the colour keyRead told from the ring without the hint: a guess
+        // that now says the other screen would key a blue fill as green (or the reverse), and the fill would land as
+        // opaque colour in the key layer. The screen is decided once: the dialog asks instead. (An opaque layer shows
+        // no fill, so its hinted guess stands.)
+        if (guess && prep.read && prep.read.layer && prep.read.fill && guess !== prep.read.fill && prep.weight && prep.weight.some((v) => v < 255)) return null;
+        return guess;
     },
 
     /**
