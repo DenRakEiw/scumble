@@ -1,0 +1,14 @@
+{
+  "name": "Lighthouse Academy",
+  "version": "1.0.0",
+  "description": "Supported by Lighthouse Academy: near-black panels, pale yellow type and a warm orange beam.",
+  "author": "Scumble",
+  "homepage": "https://www.lighthouseacademy.ai/",
+  "registers": ["skin"],
+  "skin": {
+    "css": "skin.css",
+    "background": "#0a0a0a",
+    "swatch": ["#0a0a0a", "#1a1a1a", "#262626", "#ffffb8", "#ffad4a"],
+    "tokens": 1
+  }
+}

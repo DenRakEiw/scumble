@@ -474,7 +474,7 @@ async function main() {
         need(theme, "inpaint_theme.js");
         need(skinsMod, "electron/main/skins.js");
         const out = [];
-        for (const [id, name] of [["skin_90s", "90s"], ["skin_duck", "Duck"], ["skin_comfy", "Comfy"], ["skin_blackforest", "Black Forest"]]) {
+        for (const [id, name] of [["skin_90s", "90s"], ["skin_duck", "Duck"], ["skin_comfy", "Comfy"], ["skin_blackforest", "Black Forest"], ["skin_lighthouse", "Lighthouse Academy"]]) {
             const dir = path.join(ROOT, "plugins", id);
             if (!fs.existsSync(path.join(dir, "plugin.json"))) throw new Error(`plugins/${id}/plugin.json is missing`);
             const m = JSON.parse(fs.readFileSync(path.join(dir, "plugin.json"), "utf8"));

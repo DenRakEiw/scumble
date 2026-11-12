@@ -1,0 +1,173 @@
+/* Lighthouse Academy - "Supported by Lighthouse Academy": the colours of lighthouseacademy.ai (read 2026-11-12):
+   near-black panels, pale yellow type (#ffffb8) and a warm orange beam (#ffad4a) for the main action of a place,
+   outlined orange for the others, small rounded corners. The one skin that carries someone else's logo, on the user's
+   word (2026-11-12, docs/SKINS.md section 10): logo.svg is Lighthouse Academy's own, shown in the tab row with
+   "Supported by". The fonts are system fonts (their headline face is not shipped); every other decoration is CSS. */
+
+:root {
+  --sc-bg: #0a0a0a;
+  --sc-chrome: #111111;
+  --sc-chrome-edge: #000000;
+  --sc-surface: #141414;
+  --sc-raised: #1a1a1a;
+  --sc-selected: #262626;
+  --sc-well: #080808;
+  --sc-field: #0d0d0d;
+  --sc-btn: #1a1a1a;
+  --sc-btn-hover: #262626;
+  --sc-border: #34342a;
+  --sc-line: #1f1f1c;
+  --sc-fg-strong: #ffffb8;
+  --sc-fg: #efeec6;
+  --sc-fg-2: #c9c8a2;
+  --sc-muted: #9a997e;
+  --sc-faint: #85846c;
+  --sc-accent: #ffad4a;
+  --sc-active: #ffad4a;
+  --sc-active-bg: #ffad4a;
+  --sc-on-active: #1a1a1a;
+  --sc-go: #ffad4a;
+  --sc-warn: #ffd37a;
+  --sc-ok: #a8d98f;
+  --sc-error: #ff7d66;
+  --sc-error-bg: #341a14;
+  --sc-link: #ffad4a;
+  --sc-backdrop: rgba(0, 0, 0, 0.66);
+  --sc-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  --sc-scheme: dark;
+  --sc-control: #ffad4a;
+  --sc-scrollbar: #34342a #0a0a0a;
+  --sc-font: Inter, "Segoe UI Variable Text", "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+  --sc-radius-sm: 5px;
+  --sc-radius: 6px;
+  --sc-radius-lg: 12px;
+}
+
+/* ---- 1. the top bars: plain near-black, the name in pale yellow; the tab row carries "Supported by" and the logo - */
+#shell-bar, #cb-bar { background: #0a0a0a; border-bottom: 1px solid #1f1f1c; }
+#shell-logo { color: #ffffb8; font-weight: 600; letter-spacing: -0.01em; }
+#shell-bar .dot.connected { background: #a8d98f; }
+.shell-tab { border-radius: 6px 6px 0 0; margin-top: 3px; border-right-color: transparent; }
+.shell-tab.active { background: #1a1a1a; box-shadow: inset 0 2px 0 #ffad4a; }
+#shell-tab-add { font-family: inherit; border-right-color: transparent; }
+#shell-tabs::after {
+  content: "Supported by";
+  flex: none;
+  margin-left: auto;
+  align-self: center;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 96px 0 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 184, 0.62);
+  white-space: nowrap;
+  pointer-events: none;
+  background: url("logo.svg") right 8px center / auto 22px no-repeat;
+}
+
+/* ---- 2. buttons: the main action filled orange with dark type, the others outlined in orange on hover ---------- */
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  background: #ffad4a;
+  border-color: #ffad4a;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+#gen-go:hover:not(:disabled), #up-go:hover:not(:disabled), .ipc-ib.ipc-primary:hover:not(:disabled) { background: #ffbe6d; border-color: #ffbe6d; }
+#shell-bar button:hover, #cb-bar button:hover { border-color: rgba(255, 173, 74, 0.55); color: #ffad4a; background: rgba(255, 173, 74, 0.1); }
+.ipc-ib.ipc-active { border-color: #ffad4a; }
+.ipc-depth-from-layer-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; cursor: pointer;
+  background: #1a1a1a; color: #efeec6; border: 1px solid #34342a; border-radius: 6px; font: 12px var(--sc-font);
+}
+.ipc-depth-from-layer-btn:hover { background: rgba(255, 173, 74, 0.1); border-color: rgba(255, 173, 74, 0.55); color: #ffad4a; }
+
+/* ---- 3. tools and the options bar: plain icons, the chosen tool in orange --------------------------------------- */
+.ipc-tools .ipc-ib { border-radius: 6px; background: transparent; border-color: transparent; }
+.ipc-tools .ipc-ib:hover, .ipc-tools .ipc-ib:active { background: #1f1f1c; border-color: #1f1f1c; color: #ffffb8; }
+.ipc-tools .ipc-ib.ipc-toggle-on { background: rgba(255, 173, 74, 0.1); border-color: rgba(255, 173, 74, 0.4); color: #ffad4a; }
+.ipc-tools .ipc-ib.ipc-active, .ipc-tools .ipc-ib.ipc-active:hover { background: #ffad4a; border-color: #ffad4a; color: #1a1a1a; }
+.ipc-tools .ipc-ib.ipc-active .ipc-tri { border-bottom-color: #1a1a1a; }
+.ipc-tools .ipc-grp { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 600; color: #9a997e; }
+.ipc-subbar { border-color: #1f1f1c; }
+.ipc-subbar .ipc-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---- 4. flyouts and context menus: plain rows, the row under the pointer with a faint orange wash -------------- */
+.ipc-flyout { padding: 6px; gap: 1px; border-color: #26261f; }
+.ipc-flyout .ipc-ib { background: transparent; border-color: transparent; border-radius: 5px; }
+.ipc-flyout .ipc-ib:hover { background: rgba(255, 173, 74, 0.1); border-color: transparent; color: #ffffb8; }
+.ipc-flyout .ipc-ib.ipc-active { background: #262626; border-color: #262626; color: #ffffb8; box-shadow: inset 3px 0 0 #ffad4a; }
+.ipc-flyout .ipc-ib:disabled, .ipc-flyout .ipc-ib:disabled:hover { background: transparent; border-color: transparent; color: #efeec6; }
+.ipc-flyout .ipc-sep { background: #1f1f1c; margin: 4px 6px; }
+.ipc-choices-group, .ipc-tippop .ipc-tp-label, .ipc-refpop .ipc-rp-head { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 600; }
+
+/* ---- 5. dialogs and panels: a thin warm frame, the title in pale yellow on a faint beam ------------------------- */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog { border: 1px solid #26261f; border-radius: 12px; }
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 {
+  margin: -16px -20px 4px;
+  padding: 18px 20px 14px;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.015em; color: #ffffb8;
+  background: radial-gradient(60% 180% at 0% 0%, rgba(255, 173, 74, 0.12), transparent 70%), #111111;
+  border-bottom: 1px solid #1f1f1c;
+}
+#log-dialog h2 { margin: -14px -18px 0; padding: 16px 18px 12px; }
+#shell-settings h2 + section { border-top-color: transparent; padding-top: 2px; }
+.ipc-askbox { border-color: #26261f; }
+.ipc-askbox .ipc-asktitle { color: #ffffb8; letter-spacing: -0.01em; }
+dialog.sc-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+
+/* ---- 6. labels in sentence case: the side panel's tabs and section heads, Settings' sections, Help's groups ---- */
+.ipc-tab { text-transform: none; font-size: 12px; font-weight: 600; letter-spacing: 0; }
+.ipc-tab.ipc-active { border-bottom-color: #ffad4a; }
+.ipc-side h4, .ipc-side summary {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: #efeec6;
+  background: #111111; border-top-color: #1f1f1c; border-bottom-color: #1f1f1c;
+}
+.ipc-side summary:hover { color: #ffffb8; }
+.ipc-side summary::before { color: #ffad4a; }
+#shell-settings h3 { text-transform: none; letter-spacing: -0.005em; font-size: 14px; font-weight: 650; color: #ffffb8; }
+.shell-recipe-family { text-transform: none; letter-spacing: 0; font-weight: 600; color: #c9c8a2; }
+.hp-group { text-transform: none; letter-spacing: 0; }
+.shell-group > summary { border-radius: 6px; }
+
+/* ---- 7. fields light up orange on focus; the fields the app leaves to the browser get the same well ------------- */
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus, .ipc-settings input[type=text]:focus, #shell-settings input:focus,
+#log-dialog .log-bar select:focus, #gen-template:focus, #gen-upsample:focus, .ipc-depth-detail-select:focus {
+  border-color: #ffad4a;
+  box-shadow: 0 0 0 2px rgba(255, 173, 74, 0.2);
+}
+#shell-settings select, #shell-settings input[type=text], #shell-settings input[type=number], #log-dialog .log-bar select,
+#log-dialog .log-bar input, #gen-template, #gen-upsample, .ipc-settings input[type=text] {
+  background: #0d0d0d; color: #efeec6; border: 1px solid #26261f; border-radius: 6px; padding: 3px 7px; font: inherit;
+}
+.ipc-settings input[type=text] { box-sizing: border-box; }
+.ipc-depth-detail-select {
+  background: #0d0d0d; color: #efeec6; border: 1px solid #26261f; border-radius: 6px; padding: 2px 5px; font: 11px var(--sc-font);
+}
+.ipc-depth-detail-label { color: #c9c8a2; }
+#gen-template, #gen-upsample { flex: 1 1 0; min-width: 0; }
+#gen-upsample-go { flex: none; }
+
+/* ---- 8. lists: the selected layer and undo step with an orange stripe ------------------------------------------- */
+.ipc-layer.ipc-selected, .ipc-undo-row.ipc-undo-current { box-shadow: inset 3px 0 0 #ffad4a; }
+.shell-recipe .shell-recipe-meta { color: #9a997e; }
+
+/* ---- 9. chat: what you wrote on an orange card with dark type, the answers on near-black ------------------------ */
+.as-bubble, .hp-bubble { border: 1px solid #26261f; border-radius: 10px; }
+.as-user, .hp-user { background: #ffad4a; border-color: #ffad4a; color: #1a1a1a; }
+.as-user code, .hp-user code { background: rgba(26, 26, 26, 0.08); border-color: rgba(26, 26, 26, 0.18); color: #1a1a1a; }
+.as-user a, .hp-user a { color: #3a2408; }
+.hp-hit { background: #ffad4a; color: #1a1a1a; }
+
+/* ---- 10. selection and keyboard focus -------------------------------------------------------------------------- */
+::selection { background: #ffad4a; color: #1a1a1a; }
+button:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #ffad4a;
+  outline-offset: 2px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid rgba(255, 173, 74, 0.6); outline-offset: 0; }

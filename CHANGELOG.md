@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **A new skin, Lighthouse Academy** (Settings › Appearance): near-black panels, pale yellow type and a warm orange, with "Supported by" and Lighthouse Academy's logo in the tab row.
 - **Seedream 5.5 now also runs on WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router and Oxen.ai**, and *Split into layers* runs on the provider you picked for it, so WaveSpeedAI and Oxen.ai can split too. A layer that comes back without a position keeps its own shape in the middle of the picture instead of being stretched, and the status line says so. Written from the providers' docs: none of these routes has run against the live API yet.
 - *Split into layers* on BytePlus ModelArk now gets the number of layers you ask for: the request counted the base as one of them, so asking for one layer was refused.
 - **Haze by depth without the GPU now matches the screen and the export.** Its depth edge used to sit more than a map pixel off at a zoomed-out view. A depth map is no longer uploaded to the GPU again on every pass of a haze, lens blur, limit or relight filter.

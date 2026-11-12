@@ -181,14 +181,14 @@ return { sheets: document.styleSheets.length, tokens: TOKENS.length, theme: vers
 STEPS["skins_are_listed_not_loaded"] = """
 closeSettings();
 const st = await window.scumble.appearance.get();
-for (const id of ["skin_90s", "skin_duck", "skin_comfy", "skin_blackforest"]) {
+for (const id of ["skin_90s", "skin_duck", "skin_comfy", "skin_blackforest", "skin_lighthouse"]) {
     const s = st.skins.find((x) => x.id === id);
     if (!s) throw new Error(id + " is not under Appearance: " + JSON.stringify(st.skins.map((x) => x.id)));
     if (s.error) throw new Error(id + ": " + s.error);
     if (s.source !== "builtin") throw new Error(id + " comes from " + s.source);
 }
 const lp = (await run("list_plugins")).plugins;
-for (const id of ["skin_90s", "skin_duck", "skin_comfy", "skin_blackforest"]) {
+for (const id of ["skin_90s", "skin_duck", "skin_comfy", "skin_blackforest", "skin_lighthouse"]) {
     const p = lp.find((x) => x.id === id);
     if (!p) throw new Error(id + " is not in list_plugins");
     if (p.kind !== "skin" || p.loaded !== false || p.enabled !== false || p.error !== null) throw new Error(id + " in list_plugins: " + JSON.stringify({ kind: p.kind, loaded: p.loaded, enabled: p.enabled, error: p.error }));
@@ -202,7 +202,7 @@ const radios = Array.from(document.querySelectorAll("#set-skins input[type=radio
 const users = st.skins.filter((s) => s.source !== "builtin").length;
 closeSettings();
 if (inPlugins.length) throw new Error("Settings > Plugins lists " + inPlugins.map((r) => r.name).join(", "));
-if (radios.length !== 1 + st.skins.length || (!users && radios.length !== 5)) throw new Error(radios.length + " radios for " + st.skins.length + " skins");
+if (radios.length !== 1 + st.skins.length || (!users && radios.length !== 6)) throw new Error(radios.length + " radios for " + st.skins.length + " skins");
 const def = radios.find((r) => r.value === "");
 if (!def || !def.checked) throw new Error("the Default radio is not the checked one");
 const manifest = await fetch("plugins/skin_90s/plugin.json"), sheet = await fetch("plugins/skin_90s/skin.css");
@@ -482,7 +482,7 @@ try {
     const p = ed._loraPanel;
     if (!p || p.section.hidden) throw new Error("no LoRAs section under flux3_klein_local");
     p.section.open = true;
-    for (const skin of ["", "skin_90s", "skin_duck", "skin_comfy", "skin_blackforest"]) {
+    for (const skin of ["", "skin_90s", "skin_duck", "skin_comfy", "skin_blackforest", "skin_lighthouse"]) {
         await skins.applySkin(skin);
         if ((root.dataset.skin || "") !== skin) throw new Error((skin || "the default look") + " is not in use");
         panel.renderAll(host);

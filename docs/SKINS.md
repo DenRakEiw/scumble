@@ -226,8 +226,8 @@ failed check.
 
 ## 9. The built-in skins
 
-All four set every token, use only system fonts and draw their decoration with CSS gradients: no pictures, no
-downloaded fonts. Read them as examples.
+All five set every token and use only system fonts; the first four draw their decoration with CSS gradients (no pictures, no
+downloaded fonts), Lighthouse Academy shows its logo as a picture. Read them as examples.
 
 - **90s** (`plugins/skin_90s`): a late-90s media player. Bevelled slate panels, black LCD readouts with green
   segment text and scan lines, a small spectrum next to the logo, a segmented progress meter, title-bar strips
@@ -245,6 +245,11 @@ downloaded fonts. Read them as examples.
   tabs and section heads, monospaced captions for layer kinds, shortcuts and recipe facts, what you wrote in the
   Assistant and Help as cream cards.
 
+- **Lighthouse Academy** (`plugins/skin_lighthouse`, 2026-11-12): the colours of lighthouseacademy.ai, near-black
+  panels, pale yellow type (#ffffb8) and a warm orange (#ffad4a) for the main action of a place and the chosen tool,
+  outlined orange for the others, small rounded corners; "Supported by" and Lighthouse Academy's logo at the right end
+  of the tab row. Section 10's second exception.
+
 ## 10. Names and artwork
 
 Do not ship other people's names, logos, wordmarks or artwork in a skin: not in its folder name, its
@@ -254,3 +259,9 @@ licence of any font file you put in the folder.
 
 The one exception is **Comfy**, named so on the user's word (2026-10-24): its folder and stylesheet still carry
 no logo, wordmark, font or picture of anyone else.
+
+The second is **Lighthouse Academy** (the user, 2026-11-12: "mache auch einen skin lighthouse academy mit dem logo von
+lighthouse und text 'Supported by lighthouse academy'"): it carries their name and their logo (`logo.svg`, their
+site's `/images/logo-full.svg` as served on 2026-11-12, 8,896 bytes, two paths, no script or link) with "Supported
+by". It says they support Scumble, so it ships in a release only with Lighthouse Academy's agreement, which the user
+obtains; their headline font is not in the folder.
