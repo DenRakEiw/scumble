@@ -1156,9 +1156,10 @@ export class SelectPart {
         r = Math.max(0.5, Math.min(512, +r || 0));
         const undoSnap = this.snapshot({ kind: "selection", label: "Feather selection" });
         this.pushUndoSnapshot(undoSnap);
+        const seq0 = this.selectionSeq, sel0 = this.sel;   // a change meanwhile (a marquee, a deselect) wins
         // a Gaussian blur of radius r is over at about three sigma; two pixels of slack on top
         const done = await this.selectionInWorker("feather", { radius: r }, { halo: Math.ceil(r * 3) + 2 });
-        if (done && done.stale) { this.dropStaleSelectionEdit(undoSnap, "Feather"); return; }
+        if ((done && done.stale) || this.selectionSeq !== seq0 || this.sel !== sel0) { this.dropStaleSelectionEdit(undoSnap, "Feather"); return; }
         if (!done) {
             const tmp = makeCanvas(this.width, this.height);
             const tctx = tmp.getContext("2d");
@@ -1418,8 +1419,9 @@ export class SelectPart {
         const grow = n > 0, r = Math.abs(n);
         const undoSnap = this.snapshot({ kind: "selection", label: grow ? "Grow selection" : "Shrink selection" });
         this.pushUndoSnapshot(undoSnap);
+        const seq0 = this.selectionSeq, sel0 = this.sel;   // a change meanwhile (a marquee, a deselect) wins
         const done = await this.selectionInWorker("grow", { n }, { halo: r + 2 });
-        if (done && done.stale) { this.dropStaleSelectionEdit(undoSnap, grow ? "Grow" : "Shrink"); return; }
+        if ((done && done.stale) || this.selectionSeq !== seq0 || this.sel !== sel0) { this.dropStaleSelectionEdit(undoSnap, grow ? "Grow" : "Shrink"); return; }
         let bounds = done ? done.bounds : undefined;
         if (!done) {
             const img = this.sel.readRect(0, 0, W, H);
@@ -1466,6 +1468,7 @@ export class SelectPart {
         if (!this.sel) return;
         const undoSnap = this.snapshot({ kind: "selection", label: "Invert selection" });
         this.pushUndoSnapshot(undoSnap);
+        const seq0 = this.selectionSeq, sel0 = this.sel;   // a change meanwhile (a marquee, a deselect) wins
         // The inverse of a selection covers everything it does not, so no bounding box can help.
         // On tiles the mask inverts its own tiles (C5): the worker's route makes a canvas, an
         // ImageBitmap and a write-back scratch of the whole mask, three times 600 MB at 15k.
@@ -1476,7 +1479,7 @@ export class SelectPart {
             return;
         }
         const done = await this.selectionInWorker("invert", {}, { whole: true });
-        if (done && done.stale) { this.dropStaleSelectionEdit(undoSnap, "Invert"); return; }
+        if ((done && done.stale) || this.selectionSeq !== seq0 || this.sel !== sel0) { this.dropStaleSelectionEdit(undoSnap, "Invert"); return; }
         if (!done) {
             const data = this.sel.readRect(0, 0, this.width, this.height);
             invertMask(data.data);
