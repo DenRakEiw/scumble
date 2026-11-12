@@ -106,6 +106,47 @@ export const HostDocumentsPart = {
     },
 
     /**
+     * A tab of its own for Generate new and New (issue #12), so a document with work in it stays as it is: a copy of
+     * `ed` that holds only its reference layers (out of their groups), on the picture they stand on, with its prompt,
+     * negative, generation and crop settings and its plugin data (the Boxes), and no history, selection, maps or
+     * file. Generate new then replaces that copy's picture, keeping the references, as it did in place. A tab without
+     * reference layers comes back empty. Resolves with the new editor, made active; null when no tab could be made.
+     * @param {any} ed
+     */
+    async newTabFrom(ed) {
+        if (!this.shell || !this.shell.newDocument) return null;
+        const refIds = new Set(ed && ed.base ? ed.layers.filter((l) => ed.isReference(l)).map((l) => l.id) : []);
+        if (!refIds.size) {
+            const fresh = this.shell.newDocument();
+            this.shell.activate(fresh);
+            return fresh;
+        }
+        // the references' pixels in the local store first, as a save does (an edited one would come back as it was)
+        await Promise.race([this.flushEditor(ed, () => {}, "copying"), new Promise((r) => setTimeout(r, 30000))]);
+        let st;
+        try { st = JSON.parse(ed.getValue()); } catch (_) { return null; }
+        st.layers = (st.layers || []).filter((l) => refIds.has(l.id)).map((l) => { const c = { ...l }; delete c.group; return c; });
+        st.groups = [];
+        st.history = [];
+        st.selection = null;
+        delete st.selectionBox;
+        st.selections = [];
+        delete st.guides;
+        st.seen = [];
+        st.depth = null;
+        delete st.maps;
+        const id = this.nextId++;
+        const plugins = ed.pluginData && Object.keys(ed.pluginData).length ? JSON.parse(JSON.stringify(ed.pluginData)) : undefined;
+        await this.restore(JSON.stringify({ version: 2, active: id, nextId: this.nextId, docs: [{ id, state: JSON.stringify(st), plugins }] }));
+        const fresh = this.editorById(id);
+        if (!fresh) return null;
+        this.shell.activate(fresh);
+        fresh.setStatus(`A new tab with the reference layer${refIds.size === 1 ? "" : "s"} of ${this.documentName(ed)}.`);
+        this.saveAll();
+        return fresh;
+    },
+
+    /**
      * A question about a document, in the app's own dialog (renderer/dialogs.js): `close` -> "save" | "discard" |
      * "cancel", `replace` -> "replace" | "cancel", `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel".
      * A test replaces this method in the page.

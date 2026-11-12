@@ -235,8 +235,9 @@ async def dialog_escape_closes_the_picker_first(c, pre):
 
 
 STEPS_26F_AFTER = [
-    # issue #12: Generate new takes the layers and the undo history with it, so the dialog asks first
-    ("asks_before_replacing", """
+    # issue #12: a tab with work in it stays as it is; Generate new and New open a tab of their own, which takes the
+    # reference layers along; a blank canvas takes the picture in place
+    ("new_picture_in_a_tab_of_its_own", """
 const d = await run("new_document");
 await run("new_canvas", { doc: d.id, width: 256, height: 256 });
 const ed = ednow(d.id);
@@ -246,40 +247,77 @@ const list = host.shell.recipes();
 const fake = __FAKE__;
 list.push(fake);
 const realAsk = host.askDocument, asked = [];
-let answer = "cancel";
-host.askDocument = async (q) => { asked.push(q); return answer; };
+host.askDocument = async (q) => { asked.push(q); return "cancel"; };
 const out = {};
+const tabsBefore = host.editors().length;
+const opened = [];
+const proto = Object.getPrototypeOf(ed), realNew = proto.newCanvas;
 try {
     await run("add_paint_layer", { doc: d.id, name: "work" });
-    const loss = host.replaceLoss(ed);
-    if (!loss || loss.layers !== 1) throw new Error("the loss with one layer: " + JSON.stringify(loss));
-    await run("set_prompt", { doc: d.id, text: "a quiet lake" });
-    await host.shell.openGenerateNew(ed);
+    const ref = await run("add_image_layer", { doc: d.id, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", role: "reference", name: "look" });
+    await run("set_prompt", { doc: d.id, text: "a quiet lake like @img1" });
     const pick = (id, v) => { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event("change")); };
+    await host.shell.openGenerateNew(ed);
     pick("gen-mode", "api");
     pick("gen-recipe", fake.id);
     pick("gen-provider", "loopback");
     await wait(150);
     document.getElementById("gen-go").click();
-    for (let i = 0; i < 100 && !asked.length; i++) await wait(20);
-    await wait(400);
-    if (asked.length !== 1 || asked[0].kind !== "replace" || asked[0].layers !== 1) throw new Error("the question: " + JSON.stringify(asked));
-    if (ed.layers.length !== 1 || ed.width !== 256) throw new Error("a cancelled question changed the tab: " + ed.layers.length + " " + ed.width);
-    out.cancelled = document.getElementById("gen-state").textContent;
-    if (!/Nothing was replaced/.test(out.cancelled)) throw new Error("the cancelled line: " + out.cancelled);
-    answer = "replace";
+    let fresh = null;
+    for (let i = 0; i < 600; i++) {
+        await wait(40);
+        fresh = host.editors().find((e) => e !== ed && !opened.includes(e) && e.node.id > d.id);
+        if (fresh && fresh.base && fresh.width !== 256) break;
+    }
+    if (asked.length) throw new Error("Generate new asked to replace: " + JSON.stringify(asked));
+    if (!fresh) throw new Error("no new tab");
+    opened.push(fresh);
+    if (host.editor !== fresh) throw new Error("the new tab is not in front");
+    if (ed.layers.length !== 2 || ed.width !== 256 || ed.layers[0].name !== "work") throw new Error("the first tab changed: " + ed.layers.map((l) => l.name) + " " + ed.width);
+    const kept = fresh.layers.map((l) => [l.name, l.role || "none", l.id]);
+    if (kept.length !== 1 || kept[0][0] !== "look" || kept[0][1] !== "reference" || kept[0][2] !== ref.id) throw new Error("the new tab's layers: " + JSON.stringify(kept));
+    if (fresh.width === 256) throw new Error("the new tab has no new picture");
+    if (fresh.docFile) throw new Error("the new tab took the file");
+    out.tab = { layers: kept.length, size: [fresh.width, fresh.height], prompt: fresh.promptText };
+    // a blank canvas takes Generate new in place
+    const b = await run("new_document");
+    await run("new_canvas", { doc: b.id, width: 256, height: 256 });
+    const blank = ednow(b.id);
+    opened.push(blank);
+    await run("set_prompt", { doc: b.id, text: "a quiet lake" });
+    host.shell.activate(blank);
+    const n0 = host.editors().length;
+    await host.shell.openGenerateNew(blank);
+    pick("gen-mode", "api");
+    pick("gen-recipe", fake.id);
+    pick("gen-provider", "loopback");
+    await wait(150);
     document.getElementById("gen-go").click();
-    for (let i = 0; i < 500 && (ed.layers.length || ed.width === 256); i++) await wait(40);
-    if (asked.length !== 2) throw new Error("asked " + asked.length + " times");
-    if (ed.layers.length || ed.width === 256) throw new Error("Replace did not run: " + ed.layers.length + " " + ed.width);
-    out.landed = [ed.width, ed.height];
+    for (let i = 0; i < 600 && blank.width === 256; i++) await wait(40);
+    if (host.editors().length !== n0) throw new Error("a blank canvas opened a new tab");
+    if (blank.width === 256) throw new Error("the blank canvas did not take the picture");
+    // New: a tab with work opens the canvas in a new tab, a cancelled New closes it again
+    host.shell.activate(ed);
+    const n1 = host.editors().length;
+    proto.newCanvas = async function () { /* the dialog cancelled */ };
+    await ed.newCanvasTab();
+    if (host.editors().length !== n1 || host.editor !== ed) throw new Error("a cancelled New left a tab or another tab in front: " + host.editors().length);
+    proto.newCanvas = function () { return realNew.call(this, "128x96"); };
+    await ed.newCanvasTab();
+    const made = host.editors().find((e) => !opened.includes(e) && e !== ed && e.width === 128);
+    if (!made || host.editors().length !== n1 + 1 || host.editor !== made) throw new Error("New did not open a tab of its own");
+    opened.push(made);
+    if (ed.layers.length !== 2 || ed.width !== 256) throw new Error("New changed the first tab");
+    out.newTab = [made.width, made.height];
 } finally {
+    proto.newCanvas = realNew;
     host.askDocument = realAsk;
     list.splice(list.indexOf(fake), 1);
     const g = document.getElementById("gen-dialog");
     if (g.open) g.close();
-    await run("close_document", { doc: d.id, remember: false }).catch(() => {});
+    for (const e of [...opened, ed]) await run("close_document", { doc: e.node.id, remember: false }).catch(() => {});
 }
+if (host.editors().length > tabsBefore) throw new Error("tabs left over: " + host.editors().length + " vs " + tabsBefore);
 return out;
 """.replace("__FAKE__", FAKE)),
     ("dialog_upsample_refs", """

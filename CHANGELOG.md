@@ -4,6 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Generate new and New open a tab of their own** when the current one holds work (issue #12): the document stays as it is, and the new tab takes its reference layers, prompt, settings and boxes along. A tab with nothing in it yet still takes the picture in place, and a New you cancel closes its tab again. For agents, `generate_new` and `new_canvas` work on the tab they name, as before.
 - **A new skin, Lighthouse Academy** (Settings › Appearance): near-black panels, pale yellow type and a warm orange, with "Supported by" and Lighthouse Academy's logo in the tab row.
 - **Seedream 5.5 now also runs on WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router and Oxen.ai**, and *Split into layers* runs on the provider you picked for it, so WaveSpeedAI and Oxen.ai can split too. A layer that comes back without a position keeps its own shape in the middle of the picture instead of being stretched, and the status line says so. Written from the providers' docs: none of these routes has run against the live API yet.
 - *Split into layers* on BytePlus ModelArk now gets the number of layers you ask for: the request counted the base as one of them, so asking for one layer was refused.

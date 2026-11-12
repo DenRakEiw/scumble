@@ -168,6 +168,7 @@ function applyHistoryDepth(ed) {
 
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
+    editor.newCanvasTab = () => newCanvasInTab(editor);   // New keeps a document with work in it (issue #12)
     editor.atlasMB = atlasMB;
     // a recipe brings its Settings rows here; the editor's own text speaks of wiring the node
     editor.noSettingsText = "This recipe has no settings of its own.";
@@ -178,6 +179,22 @@ function newDocument(id) {
     host.attachBrushTips(editor);      // the shared tip library and its save hook
     renderTabs();
     return editor;
+}
+
+/**
+ * The editor's New in the app (issue #12): a document with work in it stays as it is and the new canvas opens in a tab
+ * of its own (the editor's New button calls this through `editor.newCanvasTab`; the node's editor has none and asks to
+ * replace, as before). A tab with nothing to lose takes the canvas in place. A New cancelled in the new tab closes it.
+ */
+async function newCanvasInTab(editor) {
+    if (!host.replaceLoss(editor)) return editor.newCanvas();
+    const fresh = newDocument();
+    activate(fresh);
+    await fresh.newCanvas();
+    if (!fresh.base && host.editors().includes(fresh)) {
+        await closeDocument(fresh, { force: true, remember: false });
+        if (host.editors().includes(editor)) activate(editor);
+    }
 }
 
 function activate(editor) {
@@ -628,34 +645,44 @@ ui.genGo.addEventListener("click", async () => {
     if (!id) { ui.genState.textContent = "No model to run this on."; return; }
     const prompt = (genField.el.value || "").trim();
     if (!prompt) { ui.genState.textContent = "Write a prompt first."; genField.focus(); return; }
-    // the answer replaces the picture, its layers and the undo history: say so before anything is sent or paid (issue #12)
-    const loss = host.replaceLoss(ed);
-    if (loss && (await host.askDocument({ kind: "replace", name: docName(ed), layers: loss.layers })) !== "replace") {
-        ui.genState.textContent = "Nothing was replaced.";
-        return;
-    }
-    // which layer each token means at the click (a change after it refuses rather than re-points)
-    const refs = Object.fromEntries([...ed.refLabels()].map(([lid, n]) => ["img" + n, lid]));
-    const [w, h] = genSize();
+    // the answer replaces the picture, its layers and the undo history: a tab with work in it stays as it is and the
+    // new picture goes into a tab of its own, which takes the reference layers along (issue #12); a tab with nothing
+    // to lose (no picture yet, an untouched blank canvas) takes it in place
     ui.genGo.disabled = true;
+    let fresh = null;
+    if (host.replaceLoss(ed)) {
+        ui.genState.textContent = "opening a new tab ...";
+        try { fresh = await host.newTabFrom(ed); } catch (err) { console.warn("new tab", err); }
+        if (!fresh) { ui.genState.textContent = "Could not open a new tab for the picture."; ui.genGo.disabled = false; return; }
+    }
+    const target = fresh || ed;
+    // which layer each token means at the click (a change after it refuses rather than re-points); the new tab's
+    // reference layers keep their ids, so the tokens mean the same pictures there
+    const refs = Object.fromEntries([...target.refLabels()].map(([lid, n]) => ["img" + n, lid]));
+    const [w, h] = genSize();
     ui.genState.textContent = "running ...";
     try {
         await selectRecipe(id, ui.genProvider.value || undefined);
         // a chosen aspect goes along as itself (the same size as genSize), so a ratio channel is asked for
         // "3:2", not the reduced ratio of the rounded 1024 x 688 ("64:43")
         const args = genAspectFree()
-            ? { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 }
-            : { doc: ed.node.id, prompt, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
+            ? { doc: target.node.id, prompt, width: w, height: h, timeout: 900 }
+            : { doc: target.node.id, prompt, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
         if (Object.keys(refs).length) args.refs = refs;
         if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
         if (!ui.genAlphaRow.hidden && ui.genAlpha.checked) args.background = "transparent";
         const out = await commands.run("generate_new", args);
         ui.gen.close();
         ui.genState.textContent = "";
-        activate(ed);
+        activate(target);
         console.log("[generate_new]", out);
     } catch (err) {
         ui.genState.textContent = String(err.message || err);
+        // a run that failed leaves no tab behind: the document it came from is back in front, as it was
+        if (fresh && host.editors().includes(fresh)) {
+            await closeDocument(fresh, { force: true, remember: false });
+            if (host.editors().includes(ed)) activate(ed);
+        }
     } finally {
         ui.genGo.disabled = false;
     }
