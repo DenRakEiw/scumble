@@ -2283,7 +2283,21 @@ try {
     pick(rowSel(edB, "J"), "J");
     const sel2 = [...edB.settingsList.querySelectorAll("select")].find((x) => [...x.options].some((o) => o.textContent === "Recipe's own values"));
     pick(sel2, "\\u0000own");
-    if (edB.settings["1"].value !== own || Object.values(host.recipeValues.realism_pass)[0] !== own) throw new Error("the reset: " + edB.settings["1"].value + " " + JSON.stringify(host.recipeValues));
+    // the reset forgets the stored values (a later update of the recipe's defaults reaches you)
+    if (edB.settings["1"].value !== own || host.recipeValues.realism_pass) throw new Error("the reset: " + edB.settings["1"].value + " " + JSON.stringify(host.recipeValues));
+    // an API recipe has no Preset row: its way back is a button while values are kept for it
+    host.setRecipe(loopback);
+    const back = [...edB.settingsList.querySelectorAll("button")].find((x) => x.textContent === "Recipe's own values");
+    if (!back) throw new Error("no Recipe's own values for the API recipe");
+    back.click();
+    if (edB.settings["1"].value !== "low" || host.recipeValues.loopback_values) throw new Error("the API reset: " + edB.settings["1"].value + " " + JSON.stringify(host.recipeValues));
+    if ([...edB.settingsList.querySelectorAll("button")].some((x) => x.textContent === "Recipe's own values")) throw new Error("the button stays with nothing kept");
+    // a kept value the spec no longer holds is not used
+    host.recipeValues = { loopback_values: { "provider/loopback_values/loopback:quality": "ultra" } };
+    if (host.rememberedValue("loopback_values", "provider/loopback_values/loopback:quality", loopback.settings[0].spec) !== undefined) throw new Error("a dropped choice was kept");
+    if (host.keptFits(["INT", { min: 1, max: 50 }], 80) || !host.keptFits(["INT", { min: 1, max: 50 }], 20) || host.keptFits(["FLOAT", {}], "x") || !host.keptFits(null, "anything")) throw new Error("keptFits");
+    host.recipeValues = {};
+    host.setRecipe(host.shell.resolveRecipe(raw0));
     out.values = { own, picked };
     return out;
 } finally {

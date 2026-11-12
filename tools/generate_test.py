@@ -309,6 +309,17 @@ try {
     opened.push(made);
     if (ed.layers.length !== 2 || ed.width !== 256) throw new Error("New changed the first tab");
     out.newTab = [made.width, made.height];
+    // review of 2026-11-12: a tab with work and no reference layers still hands its prompt, negative and settings on
+    await run("set_layer", { doc: d.id, layer: ref.id, role: "none" });
+    await run("set_prompt", { doc: d.id, text: "a quiet lake", negative: "blurry, text" });
+    host.shell.activate(ed);
+    const before = host.editors().length;
+    const copy = await host.newTabFrom(ed);
+    if (!copy || host.editors().length !== before + 1) throw new Error("no tab without references");
+    opened.push(copy);
+    if (copy.layers.length || copy.promptText !== "a quiet lake" || copy.negativeText !== "blurry, text") throw new Error("the copy without references: " + JSON.stringify({ layers: copy.layers.length, p: copy.promptText, n: copy.negativeText }));
+    if (ed.layers.length !== 2) throw new Error("the first tab changed");
+    out.noRefs = { prompt: copy.promptText, negative: copy.negativeText };
 } finally {
     proto.newCanvas = realNew;
     host.askDocument = realAsk;

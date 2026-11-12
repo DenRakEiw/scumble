@@ -24,9 +24,35 @@ export const HostPresetsPart = {
     recipeValues: {},   // settings.recipeValues: { [recipeId]: { [target]: value } }, the Settings rows you last set
 
     /** The value you last set for a row of a recipe (its `target`, as the editor's settings entry holds it), or undefined. */
-    rememberedValue(recipeId, target) {
+    rememberedValue(recipeId, target, spec) {
         const mine = this.recipeValues && this.recipeValues[recipeId];
-        return mine && Object.prototype.hasOwnProperty.call(mine, target) ? mine[target] : undefined;
+        const v = mine && Object.prototype.hasOwnProperty.call(mine, target) ? mine[target] : undefined;
+        return v !== undefined && this.keptFits(spec, v) ? v : undefined;
+    },
+
+    /**
+     * Whether a kept value still fits the row's spec as the recipe (or the server) gives it now: a choice the list
+     * still holds, a number inside min / max. A recipe update that dropped a choice or narrowed a range gets its own
+     * value instead of the stale one. Without a spec (the server's list not read yet) the value is kept.
+     */
+    keptFits(spec, v) {
+        if (!Array.isArray(spec)) return true;
+        const [type, opts] = spec;
+        if (Array.isArray(type)) return !type.length || type.some((o) => o === v || String(o) === String(v));
+        if (type === "INT" || type === "FLOAT") {
+            if (typeof v !== "number" || !Number.isFinite(v)) return false;
+            if (opts && typeof opts.min === "number" && v < opts.min) return false;
+            if (opts && typeof opts.max === "number" && v > opts.max) return false;
+        }
+        if (type === "BOOLEAN" && typeof v !== "boolean") return false;
+        return true;
+    },
+
+    /** The stored values written now (a pick just before a quit, the reset): the 800 ms wait cancelled. */
+    flushRecipeValues() {
+        clearTimeout(this._valuesTimer);
+        this._valuesTimer = null;
+        return window.scumble.settings.set({ recipeValues: this.recipeValues }).catch((err) => console.warn("recipe values", err));
     },
 
     /**
@@ -46,9 +72,11 @@ export const HostPresetsPart = {
         if (!changed) return;
         this.recipeValues = { ...(this.recipeValues || {}), [r.id]: mine };
         clearTimeout(this._valuesTimer);
-        this._valuesTimer = setTimeout(() => {
-            window.scumble.settings.set({ recipeValues: this.recipeValues }).catch((err) => console.warn("recipe values", err));
-        }, 800);
+        this._valuesTimer = setTimeout(() => { this.flushRecipeValues(); }, 800);
+        if (!this._valuesFlushBound && typeof window !== "undefined" && window.addEventListener) {
+            this._valuesFlushBound = true;
+            window.addEventListener("beforeunload", () => { if (this._valuesTimer) this.flushRecipeValues(); });
+        }
     },
 
     /**
@@ -68,7 +96,7 @@ export const HostPresetsPart = {
 
     /**
      * Every Settings row of the selected recipe back to the recipe file's own value (the Preset row's "Recipe's own
-     * values"); the rows then count as set, so they are the recipe's values again.
+     * values"), and the recipe's stored values forgotten, so a later update of the recipe's defaults reaches you.
      * @param {any} editor
      */
     resetToRecipeValues(editor) {
@@ -83,7 +111,12 @@ export const HostPresetsPart = {
             if (!e || !t.widget) continue;
             if (e.value !== t.widget.value) { e.value = t.widget.value; n++; }
         }
-        this.rememberValues(editor, this.rowValues(editor, targets));
+        if (this.recipeValues && this.recipeValues[r.id]) {
+            const rest = { ...this.recipeValues };
+            delete rest[r.id];
+            this.recipeValues = rest;
+            this.flushRecipeValues();
+        }
         editor.renderSettings();
         editor.notifyChanged();
         const name = r.name || r.id;
@@ -392,7 +425,25 @@ export const HostPresetsPart = {
 
     renderPresets(editor, list, targets) {
         const row0 = this.presetRow(editor, targets);
-        if (!row0) return;
+        if (!row0) {
+            // no Preset row (an API recipe, a local one with fewer than two file combos): the way back to the recipe's
+            // own values still shows while values you set are kept for it
+            const r = this.recipe;
+            const mine = r && this.recipeValues && this.recipeValues[r.id];
+            if (!mine || !Object.keys(mine).length) return;
+            const lab = document.createElement("label");
+            lab.textContent = "Values";
+            lab.title = "The rows start with the values you last set for this recipe; this puts the recipe's own back.";
+            const row = document.createElement("div");
+            row.className = "ipc-preset-row";
+            const btn = document.createElement("button");
+            btn.type = "button"; btn.className = "ipc-ib"; btn.textContent = "Recipe's own values"; btn.title = lab.title;
+            btn.addEventListener("click", () => { this.resetToRecipeValues(editor); });
+            row.append(btn);
+            lab.appendChild(row);
+            list.appendChild(lab);
+            return;
+        }
         const { recipe: r, keyOf, shipped, own, presets, pts, matching } = row0;
         const lab = document.createElement("label");
         lab.textContent = "Preset";
@@ -604,7 +655,7 @@ export const HostPresetsPart = {
                 const spec = s.spec || ["STRING", {}];
                 const own = s.default !== undefined ? s.default : (spec[1] && spec[1].default !== undefined ? spec[1].default : (Array.isArray(spec[0]) ? spec[0][0] : undefined));
                 // a row starts with the value you last set for this recipe (issue #12), else the recipe's own
-                const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${nodeId}:${s.key}`);
+                const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${nodeId}:${s.key}`, spec);
                 const value = kept !== undefined ? kept : own;
                 out.push({
                     index: s.index, output: { name: `setting_${s.index}` },
@@ -624,7 +675,7 @@ export const HostPresetsPart = {
             const current = node.inputs ? node.inputs[s.input] : undefined;
             const own = s.default !== undefined ? s.default : (Array.isArray(current) ? undefined : current);
             // a row starts with the value you last set for this recipe (issue #12), else the recipe's own
-            const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${r.id}/${s.node}:${s.input}`);
+            const kept = this._ownValues ? undefined : this.rememberedValue(r.id, `${r.id}/${s.node}:${s.input}`, spec);
             const value = kept !== undefined ? kept : own;
             // the key names the recipe too: the editor keeps a stored value while the key stays the same, and Qwen
             // and Klein both load from nodes "unet", "clip" and "vae", so Klein was queued with Qwen's files

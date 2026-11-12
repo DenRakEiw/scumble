@@ -110,13 +110,15 @@ export const HostDocumentsPart = {
      * `ed` that holds only its reference layers (out of their groups), on the picture they stand on, with its prompt,
      * negative, generation and crop settings and its plugin data (the Boxes), and no history, selection, maps or
      * file. Generate new then replaces that copy's picture, keeping the references, as it did in place. A tab without
-     * reference layers comes back empty. Resolves with the new editor, made active; null when no tab could be made.
+     * reference layers comes back as a copy with no layers (the boxes, the negative and the Settings rows still go
+     * along); a tab without a picture as an empty one. Resolves with the new editor, made active; null when no tab
+     * could be made.
      * @param {any} ed
      */
     async newTabFrom(ed) {
         if (!this.shell || !this.shell.newDocument) return null;
         const refIds = new Set(ed && ed.base ? ed.layers.filter((l) => ed.isReference(l)).map((l) => l.id) : []);
-        if (!refIds.size) {
+        if (!ed || !ed.base) {
             const fresh = this.shell.newDocument();
             this.shell.activate(fresh);
             return fresh;
@@ -141,7 +143,9 @@ export const HostDocumentsPart = {
         const fresh = this.editorById(id);
         if (!fresh) return null;
         this.shell.activate(fresh);
-        fresh.setStatus(`A new tab with the reference layer${refIds.size === 1 ? "" : "s"} of ${this.documentName(ed)}.`);
+        fresh.setStatus(refIds.size
+            ? `A new tab with the reference layer${refIds.size === 1 ? "" : "s"} of ${this.documentName(ed)}.`
+            : `A new tab with the prompt and settings of ${this.documentName(ed)}.`);
         this.saveAll();
         return fresh;
     },
