@@ -331,6 +331,75 @@ try {
 if (host.editors().length > tabsBefore) throw new Error("tabs left over: " + host.editors().length + " vs " + tabsBefore);
 return out;
 """.replace("__FAKE__", FAKE)),
+    # review of 2026-11-12: a Generate new whose wait ran out while its render still runs on the user's ComfyUI keeps
+    # its new tab (the picture lands there); a New that fails in its new tab says why in the tab that stays
+    ("new_tab_kept_for_a_local_render", """
+const d = await run("new_document");
+await run("new_canvas", { doc: d.id, width: 256, height: 256 });
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const list = host.shell.recipes();
+const fake = __FAKE__;
+list.push(fake);
+const realRun = host.commands.run, pid = "gate-local-render-" + Date.now();
+const proto = Object.getPrototypeOf(ed), realNew = proto.newCanvas;
+const opened = [];
+const tabsBefore = host.editors().length;
+const out = {};
+try {
+    await run("add_paint_layer", { doc: d.id, name: "work" });
+    await run("set_prompt", { doc: d.id, text: "a quiet lake" });
+    // generate_new's local wait ran out with the prompt still queued on ComfyUI: it is in the tab's _localRuns
+    host.commands.run = async function (name, args) {
+        if (name !== "generate_new") return realRun.call(this, name, args);
+        const t = host.editors().find((e) => e.node.id === args.doc);
+        (t._localRuns || (t._localRuns = new Set())).add(pid);
+        t.runProgress.track(pid, 3);
+        throw new Error("no result arrived within 900 s");
+    };
+    const pick = (id, v) => { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event("change")); };
+    await host.shell.openGenerateNew(ed);
+    pick("gen-mode", "api");
+    pick("gen-recipe", fake.id);
+    pick("gen-provider", "loopback");
+    await wait(150);
+    document.getElementById("gen-go").click();
+    let fresh = null;
+    for (let i = 0; i < 300; i++) {
+        await wait(40);
+        if (!document.getElementById("gen-go").disabled) break;
+    }
+    fresh = host.editors().find((e) => e._localRuns && e._localRuns.has(pid));
+    if (fresh) opened.push(fresh);
+    if (!fresh) throw new Error("the new tab was closed under a render still running on ComfyUI");
+    out.kept = fresh.node.id;
+    fresh._localRuns.delete(pid);
+    fresh.runProgress.runs.delete(pid);
+    host.commands.run = realRun;
+    // New: the size refused in the new tab; the reason shows in the tab that stays
+    host.shell.activate(ed);
+    const n1 = host.editors().length;
+    proto.newCanvas = async function () { this.setStatus("Width and height must be at least 16 pixels.", "warn"); };
+    await ed.newCanvasTab();
+    if (host.editors().length !== n1 || host.editor !== ed) throw new Error("a failed New left a tab: " + host.editors().length);
+    if (!/at least 16 pixels/.test(ed.status)) throw new Error("the reason did not reach the tab that stays: " + ed.status);
+    out.reason = ed.status;
+    // a cancelled New says nothing in the tab that stays
+    ed.setStatus("before");
+    proto.newCanvas = async function () { this.setStatus("New canvas cancelled."); };
+    await ed.newCanvasTab();
+    if (ed.status !== "before") throw new Error("a cancelled New wrote into the tab that stays: " + ed.status);
+} finally {
+    host.commands.run = realRun;
+    proto.newCanvas = realNew;
+    list.splice(list.indexOf(fake), 1);
+    const g = document.getElementById("gen-dialog");
+    if (g.open) g.close();
+    for (const e of [...opened, ed]) { if (e._localRuns) e._localRuns.delete(pid); await run("close_document", { doc: e.node.id, remember: false }).catch(() => {}); }
+}
+if (host.editors().length > tabsBefore) throw new Error("tabs left over: " + host.editors().length + " vs " + tabsBefore);
+return out;
+""".replace("__FAKE__", FAKE)),
     ("dialog_upsample_refs", """
 const ed = ednow(window.__r);
 const fake = window.__genFake;

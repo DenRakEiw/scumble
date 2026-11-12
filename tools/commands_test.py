@@ -1783,6 +1783,34 @@ try {
     }
     if (!/is still working \\(a run on Loopback new: closing stops it, and the provider may still charge it\\)\\. Close it anyway\\?/.test(q0) || r0 !== false || !host.editors().includes(empty)) throw new Error("a tab with no picture and a run: " + JSON.stringify([q0, r0]));
     if (!/is still working \\(saving; a run on Loopback new: closing stops it, and the provider may still charge it\\)\\. Close it anyway\\?/.test(q1) || r1 !== false) throw new Error("a save beside the run: " + JSON.stringify([q1, r1]));
+    // review of 2026-11-12: a tab closed while its question is open (an agent's close_document, remember false) is not
+    // closed a second time by the question's Close: it stays off the closed list
+    const e1 = await c("new_document");
+    docs.push(e1.id);
+    await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: e1.id });
+    const twice = host.editorById(e1.id);
+    const twTok = { provider: "loopback", label: "Loopback twice", started: Date.now(), editor: twice };
+    host._providerRuns.add(twTok);
+    twice.providerPending = twTok;
+    const closed0 = host.closed.length;
+    let r2;
+    try {
+        const closing = host.shell.closeDocument(twice);
+        let box = null;
+        for (let k = 0; k < 60 && !(box = document.querySelector("dialog.sc-dialog[open]")); k++) await wait(50);
+        if (!box) throw new Error("no close question");
+        await c("close_document", { doc: e1.id, remember: false });
+        const ok = box.firstElementChild.shadowRoot.querySelector("button.danger");
+        if (!ok) throw new Error("no Close button");
+        ok.click();
+        r2 = await closing;
+    } finally {
+        dialogs.cancelAll();
+        host._providerRuns.delete(twTok);
+        if (twice.providerPending === twTok) twice.providerPending = null;
+        host.notifyProviderRuns();
+    }
+    if (r2 !== false || host.closed.length !== closed0 || host.editors().includes(twice)) throw new Error("the question closed a closed tab again: " + JSON.stringify({ r2, closed: host.closed.length - closed0 }));
     const d = await c("new_document");
     docs.push(d.id);
     await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });

@@ -193,8 +193,13 @@ async function newCanvasInTab(editor) {
     activate(fresh);
     await fresh.newCanvas();
     if (!fresh.base && host.editors().includes(fresh)) {
+        // the reason a New failed (a refused size, a failed upload) was the new tab's line: the tab that stays says it
+        const said = fresh.status && !/cancelled/i.test(fresh.status) ? { text: fresh.status, kind: fresh.statusKind } : null;
         await closeDocument(fresh, { force: true, remember: false });
-        if (host.editors().includes(editor)) activate(editor);
+        if (host.editors().includes(editor)) {
+            activate(editor);
+            if (said) editor.setStatus(said.text, said.kind || "warn");
+        }
     }
 }
 
@@ -211,6 +216,14 @@ function docName(editor) {
 
 function busy(editor) {
     return !!(editor.pending || editor.segmentPending || editor.cutoutPending || editor.upsamplePending || editor.objectsPending || editor._loading || editor.providerPending || editor._docSaving);
+}
+
+/**
+ * A render on the user's ComfyUI that this tab still waits for (busy() leaves it out): its result lands nowhere once
+ * the tab is closed. One the bar no longer follows (deleted from ComfyUI's queue or ended unseen) does not count.
+ */
+function localRendering(editor) {
+    return !!(editor._localRuns && [...editor._localRuns].some((id) => !editor.runProgress || editor.runProgress.wants(id)));
 }
 
 let tabSignature = "";
@@ -282,7 +295,7 @@ async function closeDocument(editor, { force = false, remember = true } = {}) {
     if (!editor || !host.editors().includes(editor)) return false;
     // a render on the user's ComfyUI counts (busy() leaves it out): its result lands nowhere once the tab is closed
     // (one the bar no longer follows, deleted from ComfyUI's queue or ended unseen, does not count)
-    const rendering = !!(editor._localRuns && [...editor._localRuns].some((id) => !editor.runProgress || editor.runProgress.wants(id)));
+    const rendering = localRendering(editor);
     // a run in the title row stops with the tab (host.removeEditor cancels it): an API run's provider may still charge
     // a job it already had, a picture run on the user's ComfyUI lands nothing. A tab with no picture asks too while a
     // run holds it (Generate new, whose paid job would stop unasked); a save going on is named beside the run
@@ -293,7 +306,10 @@ async function closeDocument(editor, { force = false, remember = true } = {}) {
             : runs.length ? "a run on your ComfyUI: closing stops it, and its result would be lost"
                 : rendering && !busy(editor) ? "a render on your ComfyUI; its result would be lost" : ""].filter(Boolean);
     const why = what.length ? ` (${what.join("; ")})` : "";
-    if (!force && (editor.base || runs.length) && (busy(editor) || rendering) && !(await dialogs.confirm(`${docName(editor)} is still working${why}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
+    if (!force && (editor.base || runs.length) && (busy(editor) || rendering)) {
+        if (!(await dialogs.confirm(`${docName(editor)} is still working${why}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
+        if (!host.editors().includes(editor)) return false;          // closed meanwhile (a second Ctrl+W, an agent)
+    }
     if (!force && editor.base && !editor._docSaving && host.documentDirty(editor)) {
         const choice = await host.askDocument({ kind: "close", name: editor.docFile ? editor.docFile.name : docName(editor), hasFile: !!editor.docFile });
         if (choice === "cancel" || !host.editors().includes(editor)) return false;
@@ -681,7 +697,7 @@ ui.genGo.addEventListener("click", async () => {
         ui.genState.textContent = String(err.message || err);
         // a run that failed leaves no tab behind: the document it came from is back in front, as it was; a run still
         // going there (the wait timed out on a busy queue) keeps its tab, so its answer has a place to land
-        if (fresh && host.editors().includes(fresh) && !busy(fresh)) {
+        if (fresh && host.editors().includes(fresh) && !busy(fresh) && !localRendering(fresh)) {
             await closeDocument(fresh, { force: true, remember: false });
             if (host.editors().includes(ed)) activate(ed);
         }
