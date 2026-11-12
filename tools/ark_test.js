@@ -788,8 +788,9 @@ async function main() {
         let currentSettings = { ark: { base: BASE } };
         let currentKey = KEY;
         const logged = [];
+        const userDir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-ark-index-"));
         Module._load = function (request, parent, ...rest) {
-            if (request === "electron") return { nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toJPEG: () => jpegOf(1500000, "NATIVE"), toBitmap: () => Buffer.alloc(8, 255) }) } };
+            if (request === "electron") return { app: { getPath: () => userDir }, nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, toJPEG: () => jpegOf(1500000, "NATIVE"), toBitmap: () => Buffer.alloc(8, 255) }) } };
             if (parent && parent.filename === idxPath) {
                 if (request === "../log") return { record: (x) => logged.push(x) };
                 if (request === "../keys") return { get: (id) => (id === "ark" ? currentKey : ""), describe: (id) => ({ set: id === "ark" }) };
@@ -840,6 +841,20 @@ async function main() {
         const x7 = await viaIndex(base);
         check("index.edit without a stored key: refused before any call, naming ModelArk", !!x7.err && /No API key for BytePlus ModelArk/.test(x7.err) && x7.s.calls.length === 0, x7.err);
         currentKey = KEY;
+        // a split whose window went away during the run (review finding providers/split-pagegone-keeps-base-only):
+        // its base plate alone is not kept as a recovered picture, and the log says the layers could not be kept
+        {
+            const sLay = fakeServer({ answers: [layerAnswer] });
+            globalThis.fetch = sLay.fetch;
+            let lErr = null;
+            try { await index.edit(layerReq(variant("seedream_5_5")), { pageGone: () => true }); } catch (e) { lErr = String(e && e.message || e); } finally { globalThis.fetch = realFetch; }
+            const kept = fs.existsSync(path.join(userDir, "results")) ? fs.readdirSync(path.join(userDir, "results")) : [];
+            const said = logged.find((l) => /went away before its layers came/.test(l.message || ""));
+            check("index.edit: a split whose window went away keeps no base-only picture and logs that its 2 layers could not be kept",
+                !lErr && kept.length === 0 && !!said && /the 2 layers \(generated and charged\) could not be kept/.test(said.message) && !logged.some((l) => /the picture is kept/.test(l.message || "")),
+                short({ lErr, kept, said: said && said.message }));
+        }
+        fs.rmSync(userDir, { recursive: true, force: true });
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY) && !JSON.stringify(logged).includes(REAL_KEY), `${logged.length} records`);
     });
 

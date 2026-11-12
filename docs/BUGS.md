@@ -51,7 +51,7 @@ Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directo
 
 ### A *Split into layers* run is lost if its window reloads or crashes during the run (found 2026-11-10, read)
 
-`providers/index.js` keeps a paid picture for a page that went away only when the answer has `out.bytes` (`main/MAIN-2`); a split answers with several layers and no `bytes`, so the charged answer is dropped and the new page never asks for it. *View > Reload* still asks first, since the run counts in `runningCount`. Not worth holding up the feature, but a split can cost many pictures: keep the layers the same way when this is reworked.
+`providers/index.js` keeps a paid picture for a page that went away (`main/MAIN-2`) as one picture the new page opens as a document; a split answers with its layers (its `bytes` are only the base plate), so the charged answer is dropped and the new page never asks for it. Since the review of 2026-11-12 (`providers/split-pagegone-keeps-base-only`) the base plate is no longer kept alone as if the run were recovered: the log says plainly that the layers could not be kept. *View > Reload* still asks first, since the run counts in `runningCount`. Not worth holding up the feature, but a split can cost many pictures: keep the layers the same way when this is reworked.
 
 ### Panning over a filter layer costs about 3 ms more per frame since the filter fix (found 2026-11-09, measured)
 
