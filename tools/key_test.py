@@ -187,6 +187,25 @@ ok(stub.calls.length === 0, "nothing reached the engine", stub.calls.length);
 return { msg };
 """),
 
+    ("screen decided once", r"""
+// review_full_2026-11-12 relight-depth-key/key-layer-fill-vs-screen-mismatch: a layer source on Auto had its transparent
+// parts filled with the colour told without the hint; a hinted guess of the other screen asks instead of keying the
+// fill as the other colour (which landed as opaque fill colour in the key layer)
+const bw = 40, bh = 30, n = bw * bh;
+const plan = { bucket: { w: bw, h: bh }, content: [0, 0, bw, bh] };
+const image = new Uint8ClampedArray(n * 4);
+for (let i = 0; i < n; i++) { image[i * 4] = 10; image[i * 4 + 1] = 40; image[i * 4 + 2] = 200; image[i * 4 + 3] = 255; }
+const holes = new Uint8Array(n).fill(255); holes[(15 * bw) + 20] = 0;   // one transparent pixel inside
+const opaque = new Uint8Array(n).fill(255);
+const layer = { id: "Lx" };
+const prep = (fill, weight) => ({ image, weight, keyedScreen: null, read: { layer, fill, upTo: null } });
+ok(host.keyScreenColour(plan, prep("green", holes), null, "auto") === null, "a hinted blue over a green fill asks");
+ok(host.keyScreenColour(plan, prep("blue", holes), null, "auto") === "blue", "a blue fill and a blue guess key blue");
+ok(host.keyScreenColour(plan, prep("green", opaque), null, "auto") === "blue", "an opaque layer shows no fill: its guess stands");
+ok(host.keyScreenColour(plan, prep("green", holes), null, "green") === "green", "a screen asked for is sent as asked");
+ok(host.keyScreenColour(plan, { image, weight: null, keyedScreen: null, read: { layer: null, fill: null, upTo: null } }, null, "auto") === "blue", "the picture as the source guesses as before");
+return "ok";
+"""),
     ("picture", r"""
 const ed = ednow(window.__keyDoc);
 engineOn();

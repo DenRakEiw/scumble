@@ -11537,6 +11537,25 @@ try {
 }
 return out;
 """),
+    ("frequency_separation_stops_when_the_picture_changes_during_its_read", """
+// review_full_2026-11-12 filters/freqsep-stale-box-after-await: a geometry change (a crop, a turn, an undo of one)
+// while the picture is read leaves the box off what it was cut from: no layers land, a plain line says why
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const n0 = ed.layers.length, u0 = ed.undo.length;
+    const p = ed.frequencySeparation({ radius: 4 });
+    ed.geometrySeq++;   // what a crop, a turn or their undo does to the document meanwhile
+    const r = await p;
+    if (r !== null || ed.layers.length !== n0 || ed.undo.length !== u0) throw new Error("the split landed after the picture changed: " + JSON.stringify(r));
+    if (!/picture changed/.test(ed.status || "")) throw new Error("no word: " + ed.status);
+    const ok = await ed.frequencySeparation({ radius: 4 });
+    if (!ok || ed.layers.length !== n0 + 2) throw new Error("a split without a change did not land");
+    return { ok: true };
+} finally { await run("close_document", { doc: d.id, force: true }); }
+"""),
     ("frequency_separation_gives_the_picture_back_on_every_path", """
 // PLAN_0_1_31 §4 step 8: the low and the high layer (linear light) of a frequency separation recompose the picture byte
 // for byte: the worker stack (the kernel's op 13), the Canvas 2D flatten (the CPU emulation) and the screen (the GL
@@ -12457,6 +12476,31 @@ try {
     out.events = seen.map((x) => x.kind);
     out.ok = true;
 } finally { host.off("geometry", onGeom); await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
+    ("blur_keeps_half_transparent_alpha", """
+// review_full_2026-11-12 filters/blur-backing-raises-alpha: the blur of a constant is that constant, alpha included: a
+// uniform alpha-128 area stays at 128 (a backing with the source raised it to 192), and an opaque picture stays opaque
+// at every pixel, also a picture smaller than the blur's reach (its mirrored pad is mirrored again)
+const F = await import("./editor/inpaint_filters.js");
+const fx = await import("/plugins/effects/common.js");
+const film = await import("/plugins/film/common.js");
+const mk = (w, h, fill) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d"); x.fillStyle = fill; x.fillRect(0, 0, w, h); return c; };
+const read = (c) => { const x = c.getContext ? c.getContext("2d") : null; return x.getImageData(0, 0, c.width, c.height).data; };
+const out = {};
+const blurs = { editor: (c, r) => F.applyFilter("blur", c, { radius: r }, { scale: 1, cpu: true }), effects: (c, r) => fx.blur(c, r), film: (c, r) => film.blur(c, r) };
+for (const [name, blur] of Object.entries(blurs)) {
+    const half = read(blur(mk(200, 150, "rgba(200,100,50,0.5)"), 6));
+    const a = half[(75 * 200 + 100) * 4 + 3], edge = half[(2 * 200 + 2) * 4 + 3];
+    if (Math.abs(a - 128) > 1 || Math.abs(edge - 128) > 1) throw new Error(name + ": a uniform alpha-128 area came out at " + a + " (centre), " + edge + " (corner)");
+    for (const [w, h, r] of [[300, 200, 4], [300, 200, 25], [40, 30, 30], [7, 5, 12]]) {
+        const d = read(blur(mk(w, h, "rgb(30,160,90)"), r));
+        let min = 255;
+        for (let i = 3; i < d.length; i += 4) if (d[i] < min) min = d[i];
+        if (min !== 255) throw new Error(name + ": an opaque " + w + " x " + h + " picture blurred by " + r + " has alpha down to " + min);
+    }
+    out[name] = { centre: a, corner: edge };
+}
 return out;
 """),
     ("filter_sizes_in_pixels_follow_a_resize", """

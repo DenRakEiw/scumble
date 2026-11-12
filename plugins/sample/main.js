@@ -95,6 +95,7 @@ export function activate(scumble) {
 
     // ---- tool: colour probe ---------------------------------------------------------------------
     const TILE = 256;
+    const PROBE_TILES = 16;   // the squares kept (256 KB each): the last ones the cursor went over, the oldest dropped first
     const probe = (doc, ev) => {
         if (!doc.loaded || !ev.inside) return;
         if (!probeCache || probeCache.doc !== doc.id) probeCache = { doc: doc.id, tiles: new Map() };
@@ -102,11 +103,13 @@ export function activate(scumble) {
         // one read per 256 px square the cursor enters, not the whole picture per change and not one pixel per hover
         const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE), key = tx + "," + ty;
         let img = probeCache.tiles.get(key);
-        if (!img) {
+        if (img) probeCache.tiles.delete(key);   // to the back of the Map's order: the most recent
+        else {
             const box = [tx * TILE, ty * TILE, Math.min(doc.width, (tx + 1) * TILE), Math.min(doc.height, (ty + 1) * TILE)];
             img = doc.flatten({ box, exact: true }).getContext("2d").getImageData(0, 0, box[2] - box[0], box[3] - box[1]);
-            probeCache.tiles.set(key, img);
+            while (probeCache.tiles.size >= PROBE_TILES) probeCache.tiles.delete(probeCache.tiles.keys().next().value);
         }
+        probeCache.tiles.set(key, img);
         const i = ((y - ty * TILE) * img.width + (x - tx * TILE)) * 4, d = img.data;
         const hex = "#" + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("");
         doc.status(`${x}, ${y}: rgb(${d[i]}, ${d[i + 1]}, ${d[i + 2]}) ${hex}${ev.button === 0 && ev.raw.type === "pointerdown" ? " (copied)" : ""}`);

@@ -1897,6 +1897,31 @@ JS = r"""
             host.setRelightSettings({ light_type: undefined });   // the profile ends as it began: no pick
         }
     }
+    // review_full_2026-11-12 relight-depth-key/relight-whole-stale-layer-object: an undo of a layers step while a
+    // generative route waits rebuilds every layer object; the landing hides the live relight filter layer, not the one
+    // handed in, or the relight lands twice on the screen and in exports
+    {
+        const zsSaved = host.relightSend;
+        try {
+            const ans = document.createElement("canvas"); ans.width = zW; ans.height = zH;
+            const ax = ans.getContext("2d"); ax.fillStyle = "#c08040"; ax.fillRect(0, 0, zW, zH);
+            const ansBytes = new Uint8Array(await (await new Promise((r) => ans.toBlob(r, "image/png"))).arrayBuffer());
+            const zIn = docZ.layers.find((l) => l.id === zFx.id);
+            zIn.visible = true; zIn.params.route = "fal-bria";
+            host.relightSend = async () => {
+                docZ.applySnapshot(docZ.snapshot({ kind: "layers" }));   // what an undo of a layers step does meanwhile
+                return { bytes: ansBytes, mime: "image/png", seed: 7 };
+            };
+            let zsErr = null, zsRes = null;
+            try { zsRes = await host.relightWhole(docZ, zIn, { route: "fal-bria" }); } catch (e) { zsErr = String(e && e.message); }
+            const liveFx = docZ.layers.find((l) => l.id === zFx.id);
+            check("z: a relight landing after a layers undo hides the live relight layer",
+                !zsErr && !!zsRes && !!zsRes.layer && liveFx !== zIn && liveFx.visible === false && !!(liveFx.params.last && liveFx.params.last.seed === 7),
+                { err: zsErr, rebuilt: liveFx !== zIn, visible: liveFx && liveFx.visible, last: liveFx && liveFx.params.last });
+        } finally {
+            host.relightSend = zsSaved;
+        }
+    }
     await commands.run("close_document", { doc: docZ.id, force: true });
 
     // -------------------------------------------------------------------------

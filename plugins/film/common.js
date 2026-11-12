@@ -127,6 +127,33 @@ export function loop(src, fn, extra) {
 }
 
 /**
+ * `src` with `need` px of mirrored copies on every side. Where `need` is larger than the picture the mirrored copy is
+ * mirrored again (one step at most the size reached so far), so any blur radius sees the picture reflected.
+ */
+function mirrorPadded(src, need) {
+    let cur = src, done = 0;
+    while (done < need) {
+        const W = cur.width, H = cur.height;
+        const pad = Math.min(need - done, W, H);
+        const PW = W + 2 * pad, PH = H + 2 * pad;
+        const padded = makeCanvas(PW, PH);
+        const p = padded.getContext("2d");
+        p.drawImage(cur, pad, pad);
+        p.save(); p.translate(pad, 0); p.scale(-1, 1); p.drawImage(cur, 0, 0, pad, H, 0, pad, pad, H); p.restore();
+        p.save(); p.translate(PW, 0); p.scale(-1, 1); p.drawImage(cur, W - pad, 0, pad, H, 0, pad, pad, H); p.restore();
+        p.save(); p.translate(0, pad); p.scale(1, -1); p.drawImage(cur, 0, 0, W, pad, pad, 0, W, pad); p.restore();
+        p.save(); p.translate(0, PH); p.scale(1, -1); p.drawImage(cur, 0, H - pad, W, pad, pad, 0, W, pad); p.restore();
+        p.save(); p.translate(pad, pad); p.scale(-1, -1); p.drawImage(cur, 0, 0, pad, pad, 0, 0, pad, pad); p.restore();
+        p.save(); p.translate(PW, pad); p.scale(-1, -1); p.drawImage(cur, W - pad, 0, pad, pad, 0, 0, pad, pad); p.restore();
+        p.save(); p.translate(pad, PH); p.scale(-1, -1); p.drawImage(cur, 0, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
+        p.save(); p.translate(PW, PH); p.scale(-1, -1); p.drawImage(cur, W - pad, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
+        cur = padded;
+        done += pad;
+    }
+    return cur;
+}
+
+/**
  * Gaussian blur through ctx.filter on a canvas padded with mirrored copies of the source, so
  * edges blur into themselves. sigma in pixels of `src` (scale it with info.scale first).
  */
@@ -134,27 +161,16 @@ export function blur(src, sigma) {
     src = toCanvas(src);   // ctx.filter needs a canvas: this is the one place a GPU chain touches down
     const W = src.width, H = src.height;
     if (sigma < 0.05) return copyCanvas(src);
-    const pad = Math.min(W, H, Math.ceil(sigma * 3) + 2);
-    const PW = W + 2 * pad, PH = H + 2 * pad;
-    const padded = makeCanvas(PW, PH);
-    const p = padded.getContext("2d");
-    p.drawImage(src, pad, pad);
-    p.save(); p.translate(pad, 0); p.scale(-1, 1); p.drawImage(src, 0, 0, pad, H, 0, pad, pad, H); p.restore();
-    p.save(); p.translate(PW, 0); p.scale(-1, 1); p.drawImage(src, W - pad, 0, pad, H, 0, pad, pad, H); p.restore();
-    p.save(); p.translate(0, pad); p.scale(1, -1); p.drawImage(src, 0, 0, W, pad, pad, 0, W, pad); p.restore();
-    p.save(); p.translate(0, PH); p.scale(1, -1); p.drawImage(src, 0, H - pad, W, pad, pad, 0, W, pad); p.restore();
-    p.save(); p.translate(pad, pad); p.scale(-1, -1); p.drawImage(src, 0, 0, pad, pad, 0, 0, pad, pad); p.restore();
-    p.save(); p.translate(PW, pad); p.scale(-1, -1); p.drawImage(src, W - pad, 0, pad, pad, 0, 0, pad, pad); p.restore();
-    p.save(); p.translate(pad, PH); p.scale(-1, -1); p.drawImage(src, 0, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
-    p.save(); p.translate(PW, PH); p.scale(-1, -1); p.drawImage(src, W - pad, H - pad, pad, pad, 0, 0, pad, pad); p.restore();
+    // the mirrored pad covers the whole kernel (3 sigma), also where sigma is larger than the picture (the mirrored
+    // copy is mirrored again), so the result's alpha is the blur's own: an opaque picture stays opaque and nothing is
+    // backed behind it (a backing with the source raised every half-transparent pixel to a + a_src (1 - a))
+    const pad = Math.ceil(sigma * 3) + 2;
+    const padded = mirrorPadded(src, pad);
     const out = makeCanvas(W, H);
     const o = out.getContext("2d");
     try { o.filter = `blur(${sigma}px)`; } catch (_) { /* no filter support */ }
     o.drawImage(padded, -pad, -pad);
     o.filter = "none";
-    o.globalCompositeOperation = "destination-over";
-    o.drawImage(src, 0, 0);
-    o.globalCompositeOperation = "source-over";
     return out;
 }
 

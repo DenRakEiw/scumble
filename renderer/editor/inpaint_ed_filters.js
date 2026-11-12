@@ -178,7 +178,15 @@ export class FiltersPart {
         const r = radius > 0 ? Math.max(1, Math.min(200, Math.round(radius))) : Math.max(2, Math.round(Math.min(this.width, this.height) * 0.004));
         markStep("freqsep", "start", { w, h, radius: r });   // the K0b harness (docs/PLAN_WASM_BUILD.md §4.9): read, split (the blur in it since K27), written
         this.setStatus(`Frequency separation (${r} px) ...`);
+        // the picture as it was when the box was taken: a crop, a turn, an undo or a new picture during the read moves
+        // the box off what it was cut from (an undo can bring the size back, so the size and the base count too)
+        const seq = this.geometrySeq, W0 = this.width, H0 = this.height, base0 = this.base;
         const src = await this.readBoxBytes(box, { forRun: true });
+        if (this.geometrySeq !== seq || this.width !== W0 || this.height !== H0 || this.base !== base0) {
+            markStep("freqsep", "done");
+            this.setStatus("Frequency separation stopped: the picture changed while it was read. Run it again.");
+            return null;
+        }
         const I = new Uint8ClampedArray(w * h * 4);
         I.set(src.data.subarray ? src.data.subarray(0, w * h * 4) : src.data);
         markStep("freqsep", "read");

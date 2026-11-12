@@ -917,37 +917,53 @@ function curvesControl(layer, param, callbacks) {
 // ---------------------------------------------------------------------------
 
 /**
+ * `src` with `need` px of mirrored copies on every side. Where `need` is larger than the picture the mirrored copy is
+ * mirrored again (one step at most the size reached so far), so any blur radius sees the picture reflected.
+ */
+function mirrorPadded(src, need) {
+    let cur = src, done = 0;
+    while (done < need) {
+        const W = cur.width, H = cur.height;
+        const pad = Math.min(need - done, W, H);
+        const PW = W + 2 * pad, PH = H + 2 * pad;
+        const padded = makeCanvas(PW, PH);
+        const pctx = padded.getContext("2d");
+        pctx.drawImage(cur, pad, pad);
+        // mirrored strips: left / right, top / bottom, then the four corners
+        pctx.save(); pctx.translate(pad, 0); pctx.scale(-1, 1); pctx.drawImage(cur, 0, 0, pad, H, 0, pad, pad, H); pctx.restore();
+        pctx.save(); pctx.translate(PW, 0); pctx.scale(-1, 1); pctx.drawImage(cur, W - pad, 0, pad, H, 0, pad, pad, H); pctx.restore();
+        pctx.save(); pctx.translate(0, pad); pctx.scale(1, -1); pctx.drawImage(cur, 0, 0, W, pad, pad, 0, W, pad); pctx.restore();
+        pctx.save(); pctx.translate(0, PH); pctx.scale(1, -1); pctx.drawImage(cur, 0, H - pad, W, pad, pad, 0, W, pad); pctx.restore();
+        pctx.save(); pctx.translate(pad, pad); pctx.scale(-1, -1); pctx.drawImage(cur, 0, 0, pad, pad, 0, 0, pad, pad); pctx.restore();
+        pctx.save(); pctx.translate(PW, pad); pctx.scale(-1, -1); pctx.drawImage(cur, W - pad, 0, pad, pad, 0, 0, pad, pad); pctx.restore();
+        pctx.save(); pctx.translate(pad, PH); pctx.scale(-1, -1); pctx.drawImage(cur, 0, H - pad, pad, pad, 0, 0, pad, pad); pctx.restore();
+        pctx.save(); pctx.translate(PW, PH); pctx.scale(-1, -1); pctx.drawImage(cur, W - pad, H - pad, pad, pad, 0, 0, pad, pad); pctx.restore();
+        cur = padded;
+        done += pad;
+    }
+    return cur;
+}
+
+/**
  * ctx.filter blur on a canvas padded with mirrored copies of the source, so
  * the picture edges blur into themselves instead of into transparency; the
- * result is cropped back and the (all but exactly opaque) fringe is backed
- * with the source so alpha stays 255.
+ * result is cropped back. The pad covers the whole kernel, so an opaque
+ * picture stays at alpha 255 and a half-transparent one keeps its own alpha.
  */
 function applyBlur(src, p, info) {
     const W = src.width, H = src.height;
     const sigma = Math.max(0, (p.radius ?? 4) * (info.scale || 1));
     if (sigma < 0.05) return copyCanvas(src);
-    const pad = Math.min(W, H, Math.ceil(sigma * 3) + 2);
-    const PW = W + 2 * pad, PH = H + 2 * pad;
-    const padded = makeCanvas(PW, PH);
-    const pctx = padded.getContext("2d");
-    pctx.drawImage(src, pad, pad);
-    // mirrored strips: left / right, top / bottom, then the four corners
-    pctx.save(); pctx.translate(pad, 0); pctx.scale(-1, 1); pctx.drawImage(src, 0, 0, pad, H, 0, pad, pad, H); pctx.restore();
-    pctx.save(); pctx.translate(PW, 0); pctx.scale(-1, 1); pctx.drawImage(src, W - pad, 0, pad, H, 0, pad, pad, H); pctx.restore();
-    pctx.save(); pctx.translate(0, pad); pctx.scale(1, -1); pctx.drawImage(src, 0, 0, W, pad, pad, 0, W, pad); pctx.restore();
-    pctx.save(); pctx.translate(0, PH); pctx.scale(1, -1); pctx.drawImage(src, 0, H - pad, W, pad, pad, 0, W, pad); pctx.restore();
-    pctx.save(); pctx.translate(pad, pad); pctx.scale(-1, -1); pctx.drawImage(src, 0, 0, pad, pad, 0, 0, pad, pad); pctx.restore();
-    pctx.save(); pctx.translate(PW, pad); pctx.scale(-1, -1); pctx.drawImage(src, W - pad, 0, pad, pad, 0, 0, pad, pad); pctx.restore();
-    pctx.save(); pctx.translate(pad, PH); pctx.scale(-1, -1); pctx.drawImage(src, 0, H - pad, pad, pad, 0, 0, pad, pad); pctx.restore();
-    pctx.save(); pctx.translate(PW, PH); pctx.scale(-1, -1); pctx.drawImage(src, W - pad, H - pad, pad, pad, 0, 0, pad, pad); pctx.restore();
+    // the mirrored pad covers the whole kernel (3 sigma), also where sigma is larger than the picture (the mirrored
+    // copy is mirrored again), so the result's alpha is the blur's own: an opaque picture stays opaque and nothing is
+    // backed behind it (a backing with the source raised every half-transparent pixel to a + a_src (1 - a))
+    const pad = Math.ceil(sigma * 3) + 2;
+    const padded = mirrorPadded(src, pad);
     const out = makeCanvas(W, H);
     const octx = out.getContext("2d");
     try { octx.filter = `blur(${sigma}px)`; } catch (_) { /* no filter support: unblurred copy */ }
     octx.drawImage(padded, -pad, -pad);
     octx.filter = "none";
-    octx.globalCompositeOperation = "destination-over";
-    octx.drawImage(src, 0, 0);
-    octx.globalCompositeOperation = "source-over";
     return out;
 }
 

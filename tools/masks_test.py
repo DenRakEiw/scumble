@@ -377,6 +377,68 @@ await run("remove_layer", { doc: window.__masksDoc, layer: lA.id });
 return { ok: true, pasteLabel: pasteAction.label };
 """),
 
+    ("case8_mask_lands_on_the_live_layer", """
+// review_full_2026-11-12 canvas-select/mask-from-layer-writes-detached-target and inapp-cutout-lands-on-stale-layer:
+// a layers step undone while the mask is made rebuilds every layer object; the mask goes onto the live copy
+const ed = ednow(window.__masksDoc);
+const P = ed.addLayer({ name: "PaintP_Live", kind: "paint", ref: null, px: ed.pixels.Layer.empty(300, 200), x: 0, y: 0, w: 600, h: 400, dirty: true });
+const mc = document.createElement("canvas"); mc.width = 300; mc.height = 200;
+const mx = mc.getContext("2d"); mx.fillStyle = "#ffffff"; mx.fillRect(0, 0, 150, 200);
+P.maskPx = ed.pixels.Mask.fromCanvas(mc); ed.markMaskChanged(P);
+const lF = await run("add_filter", { doc: window.__masksDoc, type: "levels", name: "FilterF_Live" });
+const F0 = ed.layers.find((l) => l.id === lF.id);
+const p = ed.maskFromLayer(F0, P);   // different geometry: awaits the resample
+ed.applySnapshot(ed.snapshot({ kind: "layers" }));   // what an undo of a layers step does meanwhile
+const ok = await p;
+const F1 = ed.layers.find((l) => l.id === lF.id);
+if (F1 === F0) throw new Error("the layers were not rebuilt");
+if (!ok || !F1.maskPx) throw new Error("the pasted mask did not land on the live layer");
+// the cutout: the pending layer captured at the click, the layers rebuilt before the model's answer
+const Q = ed.layers.find((l) => l.id === P.id);
+const grey = document.createElement("canvas"); grey.width = 300; grey.height = 200;
+const gx = grey.getContext("2d"); gx.fillStyle = "#000"; gx.fillRect(0, 0, 300, 200); gx.fillStyle = "#fff"; gx.fillRect(0, 0, 100, 200);
+const pending = { layer: Q, backend: { label: "test model" } };
+ed.cutoutPending = pending;
+ed.applySnapshot(ed.snapshot({ kind: "layers" }));
+const applied = await ed.applyCutoutImage(grey, pending);
+const Q1 = ed.layers.find((l) => l.id === P.id);
+if (!applied || Q1 === Q) throw new Error("the cutout was not applied (" + applied + ")");
+const a = (x) => Q1.maskPx.readRect(x, 100, 1, 1).data[3];
+if (a(50) !== 255 || a(200) !== 0) throw new Error("the cutout's mask is not on the live layer: " + a(50) + " / " + a(200));
+// a deleted layer: refused with a word, no undo step
+const before = ed.undo.length;
+const R = ed.layers.find((l) => l.id === P.id);
+const pend2 = { layer: R, backend: { label: "test model" } };
+ed.cutoutPending = pend2;
+await run("remove_layer", { doc: window.__masksDoc, layer: lF.id });
+await run("remove_layer", { doc: window.__masksDoc, layer: P.id });
+const after = ed.undo.length;
+const gone = await ed.applyCutoutImage(grey, pend2);
+if (gone !== false || ed.undo.length !== after) throw new Error("a cutout for a deleted layer was applied");
+return { ok: true, undoSteps: [before, after] };
+"""),
+
+    ("case9_apply_mask_on_text_makes_pixels", """
+// review_full_2026-11-12 canvas-select/apply-mask-on-text-layer-undone-by-next-edit: applying a mask on a text layer
+// turns it into pixels, so a later text render cannot bring the hidden parts back; undo brings the text back
+const ed = ednow(window.__masksDoc);
+const t = await run("add_text", { doc: window.__masksDoc, text: "SALE", x: 100, y: 100, size: 80 });
+await wait(300);
+const id = t.id || (t.layer && t.layer.id);
+await run("select_rect", { doc: window.__masksDoc, x: 0, y: 0, w: 150, h: 600 });
+await run("set_mask", { doc: window.__masksDoc, layer: id, op: "from_selection" });
+await run("set_mask", { doc: window.__masksDoc, layer: id, op: "apply" });
+const L = ed.layers.find((l) => l.id === id);
+if (L.kind !== "paint" || L.text) throw new Error("the text layer stayed kind " + L.kind + " after Apply mask");
+if (L.maskPx) throw new Error("the mask is still there");
+await run("undo", { doc: window.__masksDoc });
+const L2 = ed.layers.find((l) => l.id === id);
+if (L2.kind !== "text" || !L2.text || !L2.maskPx) throw new Error("undo did not bring the text and its mask back: " + L2.kind);
+await run("remove_layer", { doc: window.__masksDoc, layer: id });
+await run("select_none", { doc: window.__masksDoc });
+return { ok: true };
+"""),
+
     ("case7_locks", """
 const ed = ednow(window.__masksDoc);
 const lA = await run("add_filter", { doc: window.__masksDoc, type: "levels", name: "LockA" });

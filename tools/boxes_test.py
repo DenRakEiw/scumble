@@ -949,6 +949,55 @@ try {
     host.setRecipe(prev);
 }
 """),
+    ("box_descriptions_follow_the_references_and_copy_rows_names_them_by_label", """
+// review_full_2026-11-12 prompt-refs/box-desc-tokens-not-remapped and prompt-refs/copyrows-from-ref-order: a reorder of
+// the references rewrites a box description's @img token with the prompt's, so it keeps naming its picture; Copy rows
+// names a From box's picture by the reference's label (@img1 = ref_image_1, the top of the list), as its tokens do
+const main = window.__bDoc;
+const d = await c("new_document");
+window.__bDoc = d.id;
+const ed = ednow();
+host.shell.activate(ed);
+const kept = navigator.clipboard && navigator.clipboard.writeText;
+let copied = null;
+try {
+    await c("new_canvas", { width: 800, height: 600, doc: d.id });
+    const A = await c("add_paint_layer", { name: "Hat", doc: d.id });
+    await c("set_layer", { layer: A.id, role: "reference", doc: d.id });
+    const B = await c("add_paint_layer", { name: "Lamp", doc: d.id });
+    await c("set_layer", { layer: B.id, role: "reference", doc: d.id });
+    const label = async (id) => (await c("list_layers", D())).layers.find((l) => l.id === id).label;
+    if (await label(A.id) !== "img1" || await label(B.id) !== "img2") throw new Error("the hat on top is not @img1: " + await label(A.id));
+    await c("set_prompt", { text: "the hat from @img1 on the table", doc: d.id });
+    await c("boxes.add", { id: "hat_1", rect: [100, 100, 300, 300], desc: "the hat from @img1", doc: d.id });
+    const descNow = () => ed.pluginData.boxes.boxes.find((b) => b.id === "hat_1").desc;
+    await c("move_layer", { layer: B.id, to: "top", doc: d.id });
+    if (await label(A.id) !== "img2") throw new Error("the hat is not @img2 after the move: " + await label(A.id));
+    if (descNow() !== "the hat from @img2") throw new Error("the box description was not remapped: " + descNow() + " (prompt: " + ed.promptText + ")");
+    // what a run gets: the hat's picture (and only the hat's: the lamp goes as another index)
+    const refsSent = [{ index: 1, layerId: B.id, name: "Lamp", frame: { x: 0, y: 0, w: 800, h: 600 } }, { index: 2, layerId: A.id, name: "Hat", frame: { x: 0, y: 0, w: 800, h: 600 } }];
+    const got = await P.collectBoxes(ed, { mode: "edit", recipe: "flux3", provider: "bfl", model: "flux-3-image", schema: "flux3", frame: { x: 0, y: 0, w: 800, h: 600 }, selection: null, references: refsSent }, []);
+    const sent = got.boxes.find((b) => b.id === "hat_1");
+    if (!sent || sent.desc !== "the hat from {@ref:2}") throw new Error("the run would name another picture: " + JSON.stringify(sent));
+    await c("move_layer", { layer: A.id, to: "top", doc: d.id });
+    const desc = descNow();
+    if (await label(A.id) !== "img1" || desc !== "the hat from @img1") throw new Error("back on top: " + desc);
+    // Copy rows: a From box of the hat (@img1) is ref_image_1
+    await c("boxes.add", { id: "hat_2", kind: "from", rect: [400, 100, 600, 300], layer: A.id, doc: d.id });
+    if (navigator.clipboard) navigator.clipboard.writeText = async (t) => { copied = t; };
+    const btn = Array.from(ed.panes.gen.querySelectorAll("button")).find((b) => b.textContent.trim() === "Copy rows");
+    if (!btn) throw new Error("no Copy rows button");
+    btn.click();
+    await wait(50);
+    const m = /"from":\\s*"(ref_image_\\d+)"/.exec(copied || "");
+    if (!m || m[1] !== "ref_image_1") throw new Error("Copy rows names the hat as " + (m && m[1]) + ": " + String(copied).slice(0, 300));
+    return { desc, from: m[1] };
+} finally {
+    if (navigator.clipboard && kept) navigator.clipboard.writeText = kept;
+    await c("close_document", { doc: d.id, force: true });
+    window.__bDoc = main;
+}
+"""),
 ]
 
 
