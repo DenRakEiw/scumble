@@ -288,10 +288,18 @@ export class ShapePart {
         this.setStatus(n > 1 ? `Colour ${hex} picked, the mean of ${n} pixels.` : `Colour ${hex} picked.`);
     }
 
-    /** Bucket: fill the area of similar colour under (ix, iy) on the active layer, within the selection. */
-    async bucketFill(ix, iy) {
+    /**
+     * Bucket: fill the area of similar colour under (ix, iy) on the active layer, within the selection. The flood takes
+     * seconds at 15k: an undo pressed meanwhile waits for the fill (trackEdit) instead of taking back the step below.
+     */
+    bucketFill(ix, iy) {
+        return this.trackEdit(this.bucketFillNow(ix, iy));
+    }
+
+    async bucketFillNow(ix, iy) {
         if (!this.width) return;
         let layer = this.activeLayer();
+        const gen = this.historyGen;
         if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
         const x = Math.floor(ix), y = Math.floor(iy);
@@ -304,6 +312,12 @@ export class ShapePart {
         const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, color, clip: true, tiles });
         const fill = r.shape, n = r.count;
         if (!n) { if (r.close) fill.close(); this.setStatus("Nothing to fill here (outside the selection?)."); return; }
+        // an edit or a removed layer during the flood: the region was found in a picture that is not there any more
+        if (this.historyGen !== gen || (layer && !this.layers.includes(layer))) {
+            if (r.close) fill.close();
+            this.setStatus("The picture changed while filling; nothing was filled.");
+            return;
+        }
         if (!layer) layer = this.addPaintLayer();
         // the undo step is a copy of the box the fill can touch, in the layer's own pixels
         const target = layer.px;
@@ -315,7 +329,7 @@ export class ShapePart {
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const [rx, ry, rw, rh] = r.tiles && r.bounds ? [r.bounds[0], r.bounds[1], r.bounds[2] - r.bounds[0], r.bounds[3] - r.bounds[1]] : [r.x, r.y, r.w, r.h];
         const lx = (rx - layer.x) * sx, ly = (ry - layer.y) * sy, lw = rw * sx, lh = rh * sy;
-        this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }), { label: "Bucket fill" });
+        this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }), { tracked: true, label: "Bucket fill" });
         // the fill is r.w x r.h at (r.x, r.y), scaled into the layer's pixels: it covers the box, nothing outside
         const box = [Math.floor(lx), Math.floor(ly), Math.ceil(lx + lw), Math.ceil(ly + lh)];
         const op = layer.alphaLock ? "source-atop" : "source-over";
