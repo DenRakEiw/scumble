@@ -362,6 +362,26 @@ export class FiltersPart {
         return layer;
     }
 
+    /**
+     * *Layer › New Deep Paint Layer* (SP5): the surface maps first when the picture has none (Compute Surface Maps' run,
+     * with its sentences), then the layer, active, with the brush picked. Null when the maps could not be made (the status
+     * line says why).
+     */
+    async newDeepPaintLayer() {
+        if (!this.width) { this.setStatus("Load an image first."); return null; }
+        if (!this.hasSurfaceMaps()) {
+            try { await this.computeSurfaceMaps(); } catch (_) { return null; }   // the status line says why
+            if (!this.hasSurfaceMaps()) return null;   // dropped by a turn or a crop meanwhile
+        }
+        const layer = this.addSurfaceLayer();
+        if (!layer) return null;
+        this.activeLayerId = layer.id;
+        this.setTool("paint");
+        this.renderLayers();
+        this.setStatus(`${layer.name} added. Paint on it: the colour takes the picture's light and reflections. Alt+click picks the surface's own colour.`);
+        return layer;
+    }
+
     /** A filter layer whose own pixels are an input (Deep paint): the brush and the eraser paint into its `px`. */
     hasOwnPixels(layer) {
         return !!(layer && layer.kind === "filter" && layer.px && FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels);

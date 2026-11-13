@@ -350,6 +350,33 @@ own pixels per pass (`getImageData` in `ownPixelsFor`) and their upload: the lev
 into a texture), not done. Next: SP5 (the brush's UX: *New Deep paint layer*, the eyedropper's albedo, the colour mask
 and the selection limit, MCP).
 
+**SP5 built 2026-11-13: the Deep paint brush's UX** (the user: "baue weiter"; the user's look is still to come).
+**Layer › New Deep Paint Layer** (`main.js`, shell `new-deep-paint-layer`, `newDeepPaintLayer()` in
+`inpaint_ed_filters.js`): Compute Surface Maps' run first when the picture has none (its sentences in the status line),
+then the layer, active, with the brush. Adding a layer is no undo step, as every layer's add. **The eyedropper**
+(`pickColor`, `inpaint_ed_shape.js`): on a Deep paint layer with Sample "image" it reads the picture below the layer
+(`sampleRegion` with `upTo`) and takes the light and the reflections out, `surfaceAlbedo` (`inpaint_surfacefx.js`):
+P = (B - k R) / (S sScale) in linear light, clamped, at the pixel's centre (`sampleMapPx`, the filter's sample
+position), per pixel of the Size box before the mean; the status line says "Surface colour". Painted back with the same
+k it gives the picture within 2 levels (the 8-bit step of P times the light). **Fill, Delete (clear) and the bucket**
+take a Deep paint layer as a paint layer (`hasOwnPixels` at their refusals; smudge, tone, clone, heal, Remove, the
+gradient and the transform still refuse it). **The colour mask and the selection limit needed nothing:** a stroke clips
+to the selection as on any layer, and the filter layer's Limit block (Depth, Luminosity, Colour; `inpaint_limit.js`, the
+input colour is the picture below) and its mask work on Deep paint as on any filter layer. **MCP `add_surface_layer`**
+(`commands_edit.js`; 121 tools, 101 core; AUTO in the assistant's policy, 900 s with `compute`): `color` fills the
+current selection on the new layer (its own undo step; refused without a selection, before any layer is made),
+`opacity`, `reflections` (Keep reflections 0-100), `name`, `compute` (the maps first; refused without them otherwise).
+Agents have no stroke command, so select + `color` is their brush; `set_filter`'s `limit` and `set_mask` limit it.
+**Tests:** `deeppaint_test.py`'s SP5 block: the eyedropper's colour against the formula's inverse in the test's own
+bilinear within a level and not the picture's (at x 40, where the light is 0.36), painted back within 2 levels; a
+selection clips a stroke; Fill on the layer by the formula; the bucket paints the layer; a luma limit: the picture
+byte for byte where the weight is 0, the paint where it is 1 (both over 1,000 pixels); the menu's layer active with the
+brush; `add_surface_layer` refused without the maps and with a colour but no selection, the layer with its name, k 0.5
+and the fill by the formula with k 0.5. Gates `deeppaint commands editor brush lint types` PASS on both backends
+(`sp5-g`), `mcp assistant help` on tiles; `docs/COMMANDS.md` regenerated. Normal tier: no mutation round. Not done:
+a button in the layer list (the menu only), the node's host needs no new member (the menu and the command are the
+app's). Next: the user's look (a hand test), then SP6 (the light brush).
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

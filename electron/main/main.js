@@ -796,6 +796,8 @@ function buildMenu() {
             label: "&Layer",
             submenu: [
                 { label: "New Relight Layer", click: () => send("menu", "new-relight-layer") },
+                // Deep paint (docs/PLAN_SURFACE_PAINT.md SP5): the surface maps first when the picture has none
+                { label: "New Deep Paint Layer", click: () => send("menu", "new-deep-paint-layer") },
                 { type: "separator" },
                 { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
                 { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },

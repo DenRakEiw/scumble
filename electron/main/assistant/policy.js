@@ -63,7 +63,7 @@ const POLICY = {
     list_settings: AUTO, apply_preset: AUTO,
 
     // ---- layers -------------------------------------------------------------------------
-    add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
+    add_paint_layer: AUTO, add_filter: AUTO, add_surface_layer: AUTO, add_text: AUTO, set_active_layer: AUTO,
     move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, match_edges: AUTO, align_layers: AUTO,
     group_layers: AUTO, ungroup_layers: AUTO,
     set_group: (call) => (call.args && call.args.locked === false ? ASK("unlocks a group you locked") : AUTO()),
@@ -495,7 +495,7 @@ function clamp(call, opts = {}) {
         args.timeout = clampInt(args.timeout, 5, 3600, TIMEOUT_DEFAULTS[name]);
     }
     if (name === "select_point") args.timeout = 600;   // the command ignores it; the Bridge waits by it
-    if (name === "depth_map" || name === "surface_maps") args.timeout = 900;
+    if (name === "depth_map" || name === "surface_maps" || (name === "add_surface_layer" && args.compute)) args.timeout = 900;
     return { ...call, args };
 }
 

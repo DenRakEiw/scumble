@@ -1261,7 +1261,7 @@ export class SelectPart {
         if (!layer) layer = this.addPaintLayer();
         if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
-        if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels to fill. Use \"mask from selection\" to limit the filter instead."); return; }
+        if (layer.kind === "filter" && !onMask && !this.hasOwnPixels(layer)) { this.setStatus("Filter layers have no pixels to fill. Use \"mask from selection\" to limit the filter instead."); return; }
         this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Fill mask" } : { kind: "layer", id: layer.id, label: "Fill selection" });
         // a mask is replaced, not written (rule 2): the `mask` step restores by replacing it, and an
         // older `layers` / `canvas` step still holds the old object, which has to stay as it was
@@ -1396,7 +1396,7 @@ export class SelectPart {
         if (!layer) { this.setStatus("The base layer cannot be erased. Select a layer, or paint on the base first to get a layer."); return; }
         if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
-        if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels. Use \"mask from selection\" to limit the filter instead."); return; }
+        if (layer.kind === "filter" && !onMask && !this.hasOwnPixels(layer)) { this.setStatus("Filter layers have no pixels. Use \"mask from selection\" to limit the filter instead."); return; }
         this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Hide in mask" } : { kind: "layer", id: layer.id, label: "Clear pixels" });
         if (onMask) layer.maskPx = layer.maskPx.clone();   // replaced, as in fillSelection (rule 2)
         const target = onMask ? layer.maskPx : layer.px;

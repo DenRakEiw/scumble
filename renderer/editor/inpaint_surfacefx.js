@@ -10,7 +10,7 @@
 // GPU as two RGBA8 textures (`rgb16Views`: R lo, R hi, G lo, G hi / B lo, B hi) read with texelFetch, so the shader's
 // bilinear step is the CPU twin's (`rgb16Bilinear`) on the same 16-bit values.
 import { registerGLFilter } from "./inpaint_filters_gl.js";
-import { passToMap } from "./inpaint_maps.js";
+import { passToMap, sampleMapPx } from "./inpaint_maps.js";
 import { SRGB_TO_LIN, linToSrgb255 } from "./inpaint_surface.js";
 import { makeCanvas } from "./inpaint_pixels.js";
 
@@ -72,6 +72,33 @@ export function rgb16Bilinear(d, w, h, x, y, out) {
 export function surfaceK(params) {
     const v = params && params.reflections !== undefined ? Number(params.reflections) : 100;
     return Number.isFinite(v) ? Math.max(0, Math.min(1, v / 100)) : 1;
+}
+
+/**
+ * The surface's own colour under a picture pixel (Deep paint's eyedropper, SP5): the paint P that the layer turns into
+ * the pixel `rgb` (sRGB 0..255) at document point (docX, docY), from the formula's inverse in linear light,
+ * P = (B - k R) / (S sScale), clamped to 0..1 and back to sRGB 0..255 into `out`. Painted back with the same k it gives
+ * the pixel again, up to the 8-bit step of P times the light; where the light is 0 the colour is black, and where the
+ * picture is darker than k R or brighter than S sScale + k R the clamp shows (no paint reaches it).
+ * @param {any} maps the document's maps (shading, residual)
+ * @param {number} k Keep reflections, 0..1
+ * @param {ArrayLike<number>} rgb
+ * @param {number} docX
+ * @param {number} docY
+ * @param {number[]} [out]
+ */
+export function surfaceAlbedo(maps, k, rgb, docX, docY, out = [0, 0, 0]) {
+    const S = maps && maps.shading, R = maps && maps.residual;
+    if (!S || !R) { out[0] = rgb[0]; out[1] = rgb[1]; out[2] = rgb[2]; return out; }
+    const sScale = (S.meta && S.meta.sScale) || 1;
+    const s = sampleMapPx(S, docX, docY), r = sampleMapPx(R, docX, docY);
+    for (let c = 0; c < 3; c++) {
+        const den = s[c] * sScale;
+        let v = den > 1e-6 ? (SRGB_TO_LIN[rgb[c]] - k * r[c]) / den : 0;
+        v = v < 0 ? 0 : v > 1 ? 1 : v;
+        out[c] = Math.round(linToSrgb255(v));
+    }
+    return out;
 }
 
 /** Whether the surface filter can run: both maps present and the layer's own pixels handed over. */

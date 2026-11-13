@@ -923,6 +923,19 @@ Change a filter layer's parameters (or its type), in one undo step as the layer 
 | `type` | string | new filter type id |
 | `params` | object | parameter values {key: value} |
 
+### `add_surface_layer` *(image)*
+
+Add a Deep paint layer on top of the stack: what is painted on it lands as the surface's own colour under the picture's light and reflections (the surface maps of surface_maps; refused without them unless compute). color fills the current selection on it (an undo step of its own after the layer's; refused without a selection), at opacity; the brush, the eraser and the bucket paint on it in the app. reflections is Keep reflections 0..100 (default 100: highlights stay over the paint); set_filter's params.limit restricts it by depth, luma or colour as any filter layer, set_mask by a mask. The layer becomes active.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `color` | string | fill the current selection on the layer with this colour (#rrggbb) |
+| `opacity` | number | the fill's opacity 0..1 (default `1`) |
+| `reflections` | integer | Keep reflections, 0..100 |
+| `name` | string | layer name (default Deep paint n) |
+| `compute` | boolean | compute the surface maps first when the picture has none (default `false`) |
+
 ### `add_text` *(image)*
 
 Add a text layer at x,y (top left of the text; with an angle the corner the text starts at). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).

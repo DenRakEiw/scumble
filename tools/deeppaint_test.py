@@ -12,6 +12,9 @@ On synthetic maps (the light a ramp across, 0.3 .. 1.2 after sScale; the reflect
   * the brush and the eraser on the layer (SP4b): the live stroke on the screen before the release with nothing in the
     layer yet, the committed stroke by the formula with no explicit cache reset, its undo (the bytes back) and redo;
     another filter layer still refuses the brush;
+  * SP5: the eyedropper on the layer picks the surface's own colour ((B - k R) / (S sScale)) and painted back it gives
+    the picture; a selection limits a stroke; Fill and the bucket paint the layer; a luma limit keeps the paint off the
+    lighter picture; Layer › New Deep Paint Layer and MCP add_surface_layer (color fills the selection, k, refusals);
   * the type picker: set_filter and add_filter refuse to turn anything into or out of Deep paint;
   * .scumble save and open and the autosave restore give the same bytes; the header asks for reader 7.
 
@@ -64,6 +67,8 @@ JS = r"""
 
     // no maps: refused
     check("no layer without the maps", ed.addSurfaceLayer() === null && /surface maps/i.test(ed.status), ed.status);
+    const nm = await shell.commands.call("add_surface_layer", { doc: ed.node.id });
+    check("add_surface_layer refuses without the maps", !nm.ok && /surface_maps/.test(JSON.stringify(nm)), nm);
 
     // the maps: S ramps across (stored 0.25 .. 1 of sScale 1.2), R ramps down (0 .. 0.08); smaller than the picture
     const mw = 80, mh = 50, n = mw * mh;
@@ -290,6 +295,102 @@ JS = r"""
         await shell.commands.call("undo", { doc: ed.node.id });
         await settle(ed);
         check("the eraser's undo: the paint back", diff(await all(), ref).max === 0, diff(await all(), ref));
+
+        // SP5: the eyedropper on the layer picks the surface's own colour, (B - k R) / (S sScale); painted back it is the picture
+        const undoTo = async (n) => { while (ed.undo.length > n) { await shell.commands.call("undo", { doc: ed.node.id }); } await settle(ed); };
+        const at = (d, x, y) => Array.from(d.slice(4 * (y * W + x), 4 * (y * W + x) + 3));
+        const hexOf = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+        {
+            const px = 40, py = 60, mx = (px + 0.5) * mw / W, my = (py + 0.5) * mh / H;
+            const want = [0, 1, 2].map((c) => Math.round(srgb(Math.max(0, Math.min(1, (lin(bd[4 * (py * W + px) + c]) - bil(rd, mx, my, c)) / (bil(sd, mx, my, c) * sScale))))));
+            ed.fillOpts = { ...(ed.fillOpts || {}), sample: "image" };
+            ed.eyedropperSize = 1;
+            ed.pickColor(px, py);
+            const got = hexOf(ed.color);
+            check("the eyedropper on Deep paint: the surface's own colour", got.every((v, c) => Math.abs(v - want[c]) <= 1) && /Surface colour/.test(ed.status), { got, want, status: ed.status });
+            const plain = at(bd, px, py);
+            check("the surface colour is not the picture's", got.some((v, c) => Math.abs(v - plain[c]) > 10), { got, plain });
+            const n1 = ed.undo.length;
+            ed.setTool("paint"); ed.brushSize = 24; ed.hardness = 1; ed.brushOpacity = 1;
+            await stroke(px - 20, py, px + 20);
+            await settle(ed);
+            const back = at(await all(), px, py);
+            check("painted back it gives the picture", back.every((v, c) => Math.abs(v - plain[c]) <= 2), { back, plain });
+            await undoTo(n1);
+        }
+
+        // the selection limits the brush; Fill and the bucket paint the layer
+        {
+            const n1 = ed.undo.length;
+            await shell.commands.call("select_rect", { doc: ed.node.id, x: 60, y: 300, w: 100, h: 60 });
+            ed.color = "#28c83c"; ed.brushSize = 40;
+            await stroke(40, 330, 280);
+            await settle(ed);
+            check("the selection limits the stroke", cur().px.readRect(100, 330, 1, 1).data[3] === 255 && cur().px.readRect(220, 330, 1, 1).data[3] === 0);
+            await shell.commands.call("select_rect", { doc: ed.node.id, x: 520, y: 280, w: 80, h: 80 });
+            ed.color = "#3070d0"; ed.brushOpacity = 1;
+            ed.fillSelection();
+            await settle(ed);
+            const fp = Array.from(cur().px.readRect(560, 320, 1, 1).data);
+            check("Fill paints the selection on the layer", fp[3] === 255 && Math.abs(fp[2] - 0xd0) <= 1 && cur().px.readRect(510, 320, 1, 1).data[3] === 0, fp);
+            const fd = (await cur().px.readRect(0, 0, W, H)).data;
+            const ef = expect(fd), gf = await all();
+            check("the fill by the formula", Math.abs(gf[4 * (320 * W + 560) + 2] - ef[4 * (320 * W + 560) + 2]) <= 1, [gf[4 * (320 * W + 560) + 2], ef[4 * (320 * W + 560) + 2]]);
+            await shell.commands.call("select_none", { doc: ed.node.id });
+            ed.color = "#c0c020";
+            await ed.bucketFill(30, 380);
+            await settle(ed);
+            check("the bucket paints the layer", cur().px.readRect(30, 380, 1, 1).data[3] > 0, ed.status);
+            await undoTo(n1);
+            check("their undo: the paint as before", diff(await all(), ref).max === 0, diff(await all(), ref));
+        }
+
+        // a luminosity limit keeps the paint off the lighter picture, as any filter layer's
+        {
+            const n1 = ed.undo.length;
+            const { limitWeight, normalizeStoredLimit } = await import("./editor/inpaint_weights.js");
+            const lim = { source: "luma", lo: 0, hi: 0.45, fLo: 0, fHi: 0 };
+            await shell.commands.call("set_filter", { doc: ed.node.id, layer: cur().id, params: { limit: lim } });
+            await settle(ed);
+            const nl = normalizeStoredLimit(lim), got = await all();
+            let zero = 0, one = 0, bad = 0;
+            for (let i = 0; i < W * H; i++) {
+                if (!pd[4 * i + 3]) continue;
+                const w = limitWeight(nl, bd[4 * i] / 255, bd[4 * i + 1] / 255, bd[4 * i + 2] / 255);
+                for (let c = 0; c < 3; c++) {
+                    if (w === 0) { if (got[4 * i + c] !== bd[4 * i + c]) bad++; }
+                    else if (w === 1) { if (Math.abs(got[4 * i + c] - ref[4 * i + c]) > 1) bad++; }
+                }
+                if (w === 0) zero++; else if (w === 1) one++;
+            }
+            check("a luma limit: the picture where it is 0, the paint where it is 1", bad === 0 && zero > 1000 && one > 1000, { bad, zero, one });
+            await undoTo(n1);
+            check("the limit's undo", diff(await all(), ref).max === 0);
+        }
+
+        // the menu's New Deep Paint Layer and MCP's add_surface_layer
+        {
+            const nl = await ed.newDeepPaintLayer();
+            check("New Deep Paint Layer: active, the brush", nl && nl.filter === "surface" && ed.activeLayerId === nl.id && ed.tool === "paint", nl && [ed.tool]);
+            if (nl) await shell.commands.call("remove_layer", { doc: ed.node.id, layer: nl.id });   // adding a layer is no undo step
+            const r0 = await shell.commands.call("add_surface_layer", { doc: ed.node.id, color: "#3070d0" });
+            check("add_surface_layer with color refuses without a selection", !r0.ok && /select/i.test(JSON.stringify(r0)), r0);
+            await shell.commands.call("select_rect", { doc: ed.node.id, x: 520, y: 280, w: 80, h: 80 });
+            const r1 = await shell.commands.call("add_surface_layer", { doc: ed.node.id, color: "#3070d0", reflections: 50, name: "Blue" });
+            await settle(ed);
+            const nb = r1.ok && ed.layers.find((l) => l.id === r1.result.id);
+            check("add_surface_layer: the layer, its name, k, active", nb && nb.filter === "surface" && nb.name === "Blue" && nb.params.reflections === 50 && ed.activeLayerId === nb.id, r1);
+            const bp = nb && Array.from(nb.px.readRect(560, 320, 1, 1).data);
+            check("add_surface_layer: color fills the selection", bp && bp[3] === 255 && Math.abs(bp[2] - 0xd0) <= 1 && nb.px.readRect(510, 320, 1, 1).data[3] === 0, bp);
+            const one = new Uint8ClampedArray(W * H * 4);
+            if (nb) one.set((await nb.px.readRect(0, 0, W, H)).data);
+            const eb = expect(one, 0.5), gb = await all();
+            check("add_surface_layer: by the formula with k 0.5", [0, 1, 2].every((c) => Math.abs(gb[4 * (320 * W + 560) + c] - eb[4 * (320 * W + 560) + c]) <= 1), [at(gb, 560, 320), at(eb, 560, 320)]);
+            await shell.commands.call("select_none", { doc: ed.node.id });
+            if (nb) await shell.commands.call("remove_layer", { doc: ed.node.id, layer: nb.id });
+            await settle(ed);
+            check("after the menu and the command: the paint as before", ed.layers.filter((l) => l.filter === "surface").length === 1 && diff(await all(), ref).max === 0, { layers: ed.layers.map((l) => l.name), d: diff(await all(), ref), undo: ed.undo.slice(-4).map((u) => u.kind + ":" + (u.label || "")) });
+        }
 
         // a filter layer without pixels of its own still refuses the brush
         const g = ed.addFilterLayer("grain");

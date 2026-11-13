@@ -74,6 +74,41 @@ export const EditCommandsPart = {
             return layerSummary(ed, l);
         },
     },
+    // Deep paint (docs/PLAN_SURFACE_PAINT.md SP5)
+    add_surface_layer: {
+        needsImage: true,
+        description: "Add a Deep paint layer on top of the stack: what is painted on it lands as the surface's own colour under the picture's light and reflections (the surface maps of surface_maps; refused without them unless compute). color fills the current selection on it (an undo step of its own after the layer's; refused without a selection), at opacity; the brush, the eraser and the bucket paint on it in the app. reflections is Keep reflections 0..100 (default 100: highlights stay over the paint); set_filter's params.limit restricts it by depth, luma or colour as any filter layer, set_mask by a mask. The layer becomes active.",
+        params: {
+            color: P.str("fill the current selection on the layer with this colour (#rrggbb)"),
+            opacity: P.num("the fill's opacity 0..1", { default: 1, minimum: 0, maximum: 1 }),
+            reflections: P.int("Keep reflections, 0..100", { minimum: 0, maximum: 100 }),
+            name: P.str("layer name (default Deep paint n)"),
+            compute: P.bool("compute the surface maps first when the picture has none", { default: false }),
+        },
+        async run(ed, a) {
+            const hex = a.color != null && a.color !== "" ? String(a.color).trim().toLowerCase() : null;
+            if (hex && !/^#[0-9a-f]{6}$/.test(hex)) throw new Error(`color "${a.color}" is not #rrggbb`);
+            if (hex && !(ed.sel && ed.getBounds())) throw new Error("nothing is selected for color to fill: select first (select_by_text, select_rect, select_range ...)");
+            const vals = a.reflections != null ? checkParams("surface", { reflections: a.reflections }, { width: ed.width, height: ed.height }) : null;
+            if (!ed.hasSurfaceMaps()) {
+                if (a.compute === true || a.compute === "true") await ed.computeSurfaceMaps();
+                if (!ed.hasSurfaceMaps()) throw new Error("Deep paint needs the surface maps: run surface_maps first, or pass compute: true");
+            }
+            const l = ed.addSurfaceLayer();
+            if (!l) throw new Error(ed.status);
+            ed.activeLayerId = l.id;
+            if (vals) writeParams(ed, l, vals);
+            if (a.name) l.name = String(a.name);
+            if (hex) {
+                const keep = { color: ed.color, opacity: ed.brushOpacity };
+                ed.color = hex;
+                ed.brushOpacity = a.opacity != null ? Math.max(0, Math.min(1, +a.opacity)) : 1;
+                try { ed.fillSelection(); } finally { ed.color = keep.color; ed.brushOpacity = keep.opacity; }
+            }
+            touch(ed);
+            return layerSummary(ed, l);
+        },
+    },
     set_filter: {
         description: "Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.limit restricts where the filter acts (by depth, luma or colour; fill layers take depth only). params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.",
         params: { layer: P.layer("", { required: true }), type: P.str("new filter type id"), params: P.obj("parameter values {key: value}") },
