@@ -347,8 +347,24 @@ export class FiltersPart {
         return layer;
     }
 
+    /**
+     * A Deep paint layer (docs/PLAN_SURFACE_PAINT.md SP4): a filter layer `surface` over the whole picture whose own
+     * pixels are the paint. Needs the surface maps. -> the layer, or null (the status line says why)
+     */
+    addSurfaceLayer() {
+        if (!this.width) { this.setStatus("Load an image first."); return null; }
+        if (!this.hasSurfaceMaps()) { this.setStatus("Deep paint needs the surface maps: Image › Surface Maps › Compute Surface Maps.", "warn"); return null; }
+        const layer = this.addFilterLayer("surface");
+        if (!layer) return null;
+        layer.name = `Deep paint ${this.filterCounter}`;
+        this.renderLayers();
+        this.setStatus(`${layer.name} added. What you paint on it takes the picture's light and reflections.`);
+        return layer;
+    }
+
     setFilterType(layer, id) {
         if (!FILTERS[id] || layer.filter === id) return;
+        if (FILTERS[id].ownPixels || (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels)) return;   // Deep paint keeps its type
         this.pushUndo({ kind: "filter", id: layer.id, label: "Filter type" });
         // a fill switched to a gradient keeps its colour (to transparent) and back; other types start in the paint colour
         const was = layer.filter, prev = layer.params || {};
@@ -510,6 +526,7 @@ export class FiltersPart {
         if (readsMap) {
             baseKey.push(this.mapsVersion || 0);
         }
+        if (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels) baseKey.push(layer.px ? layer.px.version : -1);
         const isEffectView = this.effectViewOf(layer, forRun);
         if (isEffectView) baseKey.push(true);
         if (layer.params && layer.params.limit) baseKey.push(!!plain);
@@ -549,6 +566,9 @@ export class FiltersPart {
             if (!this._lastFilterInfoBySite) this._lastFilterInfoBySite = {};
             this._lastFilterInfoBySite[pass.site] = info;
         }
+        // a layer whose own pixels are an input (Deep paint): its pixels for the pass, asked for once the filter knows
+        // its input's size (a scratch of that size with the pass's transform, as the filter mask's region view)
+        if (def && def.ownPixels) info.own = (w, h) => this.ownPixelsFor(layer, pass, w, h);
         if (layer.filter === "relight") {
             info.layer = layer;
             info.relight = layer._relight;
@@ -558,6 +578,38 @@ export class FiltersPart {
         }
         if (this._filterInfoHook) this._filterInfoHook(info, layer, pass);
         return info;
+    }
+
+    /**
+     * A filter layer's own pixels (Deep paint's paint) for a pass `w` x `h` whose corner is `pass.origin` in the
+     * picture at `pass.full` / the picture's size: straight RGBA8 `{ data, width, height }`, from the tiles at the pass's
+     * level (the region view's way) or the canvas backend's pixels. Read back once per pass and filter.
+     */
+    ownPixelsFor(layer, pass, w, h) {
+        const W = this.width, H = this.height;
+        if (!layer.px || !(w > 0) || !(h > 0) || !W || !H) return null;
+        const full = pass.full || [w, h];
+        const sx = full[0] / W, sy = full[1] / H;
+        const o = pass.origin || [0, 0];
+        const x0 = o[0] / sx, y0 = o[1] / sy;
+        const c = this.passScratch("_ownPixels", w, h);
+        const ctx = c.getContext("2d");
+        ctx.save();
+        try {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            ctx.clearRect(0, 0, w, h);
+            if (isTilePixels(layer.px)) {
+                ctx.setTransform(sx, 0, 0, sy, -x0 * sx, -y0 * sy);
+                this.drawTilesInto(ctx, layer.px, 0, 0, W, H, { x: x0, y: y0, w: w / sx, h: h / sy, sx, sy });
+            } else {
+                layer.px.drawTo(ctx, x0, y0, w / sx, h / sy, 0, 0, w, h);
+            }
+        } finally {
+            ctx.restore();
+        }
+        return ctx.getImageData(0, 0, w, h);
     }
 
     /**

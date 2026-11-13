@@ -18,6 +18,7 @@ import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, col
 import { registerHazeGL, registerDehazeGL } from "./inpaint_depthfx.js";
 import { registerLensBlurGL } from "./inpaint_lensblur.js";
 import { registerRelightGL } from "./inpaint_relight.js";
+import { registerSurfaceGL } from "./inpaint_surfacefx.js";
 import { colorGradeTables, gradeIdentity, HSL_GLSL, HSL_UNIFORMS, hslUniforms, hslIdentity } from "./inpaint_grade.js";
 import {
     VIBRANCE_GLSL, VIBRANCE_UNIFORMS, vibranceUniforms, vibranceIdentity,
@@ -971,6 +972,7 @@ try { registerHazeGL(); } catch (_) {}
 try { registerDehazeGL(); } catch (_) {}
 try { registerLensBlurGL(); } catch (_) {}
 try { registerRelightGL(); } catch (_) {}
+try { registerSurfaceGL(); } catch (_) {}
 
 export function unregisterGLFilter(id) {
     const pg = PLUGIN_GL.get(id);
@@ -1176,6 +1178,7 @@ export function applyFilterGL(id, src, params, info = {}) {
     if (id === "dehaze") { try { registerDehazeGL(); } catch (_) {} }
     if (id === "lens_blur") { try { registerLensBlurGL(); } catch (_) {} }
     if (id === "relight") { try { registerRelightGL(); } catch (_) {} }
+    if (id === "surface") { try { registerSurfaceGL(); } catch (_) {} }
     if (!SUPPORTED.has(id)) { const pg = PLUGIN_GL.get(id); return pg ? applyPluginGL(id, pg, src, params, info) : null; }
     const g = context();
     if (!g) return null;

@@ -57,6 +57,7 @@ export const EditCommandsPart = {
         async run(ed, a) {
             const type = String(a.type || "grain");
             if (!FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
+            if (FILTERS[type].ownPixels) throw new Error(`"${type}" is a Deep paint layer, not a filter to add`);
             const vals = a.params != null ? checkParams(type, a.params, { width: ed.width, height: ed.height }) : null;
             if (FILTERS[type]?.over && vals?.limit && vals.limit.source !== "depth") throw new Error("a fill layer takes a depth limit only");
             if (type === "relight") {
@@ -81,6 +82,7 @@ export const EditCommandsPart = {
             if (l.kind !== "filter") throw new Error(`${l.name} is not a filter layer`);
             const type = a.type != null && a.type !== "" ? String(a.type) : null;
             if (type && !FILTERS[type]) throw new Error(`unknown filter "${type}" (${Object.keys(FILTERS).join(", ")})`);
+            if (type && type !== l.filter && (FILTERS[type].ownPixels || FILTERS[l.filter]?.ownPixels)) throw new Error(`${l.name}: a Deep paint layer keeps its type, and no filter turns into one`);
             // a fill layer stays a fill and a filter a filter, as the type select offers them
             if (type && FILTERS[l.filter] && !!FILTERS[type].over !== !!FILTERS[l.filter].over) throw new Error(`${l.name} is a ${FILTERS[l.filter].over ? "fill" : "filter"} layer: its type is one of the ${FILTERS[l.filter].over ? "fills" : "filters"} (filter_types: fill)`);
             const vals = a.params != null ? checkParams(type || l.filter, a.params, { width: ed.width, height: ed.height }) : null;

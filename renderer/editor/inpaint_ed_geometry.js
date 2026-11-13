@@ -12,6 +12,9 @@ import { DOC_TURN_LABELS, HANDLE_PX, MASK_RGB, makeCanvas } from "./inpaint_cons
 import { autoCropFrame, boxOnPixels, composeTextOrient, frameInside, normDeg, orientChain, orientIsUp, orientOfXf, orientOps, placeXf, snapNum, snapXf, spinText, straightenXf, textTotalAngle, turnRect, turnSize, validXf, xfIsIdentity, xfOfOp } from "./inpaint_orient.js";
 import { drawMesh, homography } from "./inpaint_mesh.js";
 
+/** A filter layer whose own pixels are an input (Deep paint): its pixels follow every change of the picture's geometry. */
+function ownPx(l) { return !!(l && l.kind === "filter" && FILTERS[l.filter] && FILTERS[l.filter].ownPixels); }
+
 export class GeometryPart {
     setTransformMode(mode) {
         if (this.pending && this.pending.mode !== mode) this.cancelPending();
@@ -672,14 +675,16 @@ export class GeometryPart {
             // every new store first, then all of them at once: a failure half way leaves the document as it was
             const turned = new Map();
             for (const l of this.layers) {
-                turned.set(l, { px: l.kind !== "filter" && l.px ? l.px.turned(op) : null, maskPx: l.maskPx ? l.maskPx.turned(op) : null });
+                turned.set(l, { px: (l.kind !== "filter" || ownPx(l)) && l.px ? l.px.turned(op) : null, maskPx: l.maskPx ? l.maskPx.turned(op) : null });
             }
             const sel = this.sel.turned(op);
             for (const l of this.layers) {
                 const t = turned.get(l);
                 if (l.kind === "filter") {
-                    // the whole canvas: the size follows, its (unused, empty) pixels stay as crop leaves them
+                    // the whole canvas: the size follows; its pixels are empty and stay as crop leaves them, but Deep paint's
+                    // are its paint and turn with the picture
                     l.w = nw; l.h = nh;
+                    if (t.px) l.px = t.px;
                 } else {
                     [l.x, l.y, l.w, l.h] = turnRect(op, l.x, l.y, l.w, l.h, W, H);
                     // new pixels (the canvas step holds the old ones), turned in their own resolution
@@ -706,13 +711,13 @@ export class GeometryPart {
             this.pushUndoSnapshot(before, { tracked: true, label });
             // every layer's caches and files, once for the document (markLayerChanged would redraw per layer)
             for (const l of this.layers) {
-                l.dirty = l.kind !== "filter";
+                l.dirty = l.kind !== "filter" || ownPx(l);
                 l.exportRef = null;
                 l._maskedValid = false; l._mcache = null; l._mcacheView = null; l._mcacheSample = null;
                 l._mstats = null; l._mstatsSample = null; l._mstatsSampleRun = null; l._mstatsStack = null; l._mstatsStackRun = null;
                 l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._bstats = null; l._bstatsRun = null;
                 if (l.maskPx) { l.maskDirty = true; this.touchSource(l.maskPx); }
-                if (l.kind !== "filter") this.touchSource(l.px);
+                if (l.kind !== "filter" || ownPx(l)) this.touchSource(l.px);
                 this.touchSource(l._masked);
             }
             this.scheduleDetachedRelease();
@@ -974,6 +979,7 @@ export class GeometryPart {
                 plan.set(l, p);
                 if (l.kind === "filter") {
                     if (l.maskPx) jobs.push(l.maskPx.transformedAsync(onCanvas, nw, nh, { color: MASK_RGB }).then((m) => { p.maskPx = keep(m); }));
+                    if (ownPx(l) && l.px) jobs.push(l.px.transformedAsync(onCanvas, nw, nh, { edge: "transparent" }).then((q) => { p.px = keep(q); }));
                     continue;
                 }
                 if (this.isReference(l)) {
@@ -1043,7 +1049,7 @@ export class GeometryPart {
             for (const l of this.layers) {
                 const p = plan.get(l);
                 if (!p) continue;
-                if (l.kind === "filter") { l.w = nw; l.h = nh; if (p.maskPx) l.maskPx = p.maskPx; continue; }
+                if (l.kind === "filter") { l.w = nw; l.h = nh; if (p.maskPx) l.maskPx = p.maskPx; if (p.px) l.px = p.px; continue; }
                 if (p.rect) [l.x, l.y, l.w, l.h] = p.rect;
                 if (p.px) l.px = p.px;
                 if (p.maskPx) l.maskPx = p.maskPx;
@@ -1061,13 +1067,13 @@ export class GeometryPart {
             made.length = 0;
             this.pushUndoSnapshot(before, { tracked: true, label });
             for (const l of this.layers) {
-                l.dirty = l.kind !== "filter";
+                l.dirty = l.kind !== "filter" || ownPx(l);
                 l.exportRef = null;
                 l._maskedValid = false; l._mcache = null; l._mcacheView = null; l._mcacheSample = null;
                 l._mstats = null; l._mstatsSample = null; l._mstatsSampleRun = null; l._mstatsStack = null; l._mstatsStackRun = null;
                 l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._bstats = null; l._bstatsRun = null;
                 if (l.maskPx) { l.maskDirty = true; this.touchSource(l.maskPx); }
-                if (l.kind !== "filter") this.touchSource(l.px);
+                if (l.kind !== "filter" || ownPx(l)) this.touchSource(l.px);
                 this.touchSource(l._masked);
             }
             this.scheduleDetachedRelease();
@@ -1309,6 +1315,7 @@ export class GeometryPart {
                     l.w = nw; l.h = nh; l._fcache = null;
                     // a new object (the canvas undo step holds the old one): the old mask placed at -left, -top
                     if (l.maskPx) { l.maskPx = l.maskPx.resized(nw, nh, { x: -left, y: -top }); l.maskDirty = true; }
+                    if (ownPx(l) && l.px) { l.px = l.px.resized(nw, nh, { x: -left, y: -top }); l.dirty = true; }
                 } else {
                     l.x -= left; l.y -= top;
                 }
@@ -1388,6 +1395,8 @@ export class GeometryPart {
                         if (sp) snap.params = sp;
                     }
                     if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = this.pixels.Mask.fromCanvas(m); l.maskDirty = true; }
+                    // Deep paint's paint is resampled to the new size (a new object: the canvas step holds the old one)
+                    if (ownPx(l) && l.px) { const c = makeCanvas(nw, nh); const cc = c.getContext("2d"); cc.imageSmoothingEnabled = true; cc.imageSmoothingQuality = "high"; l.px.drawTo(cc, 0, 0, nw, nh); l.px = this.pixels.Layer.fromCanvas(c); l.dirty = true; }
                 } else {
                     l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy);
                     l.w = Math.max(1, Math.round(l.w * sx)); l.h = Math.max(1, Math.round(l.h * sy));
@@ -1564,6 +1573,7 @@ export class GeometryPart {
                 if (l.kind === "filter") {
                     l.x = 0; l.y = 0; l.w = nw; l.h = nh;   // a filter covers the whole canvas
                     if (l.maskPx && l.maskPx.width === W && l.maskPx.height === H) { l.maskPx = l.maskPx.resized(nw, nh, { x: left, y: top }); l.maskDirty = true; l._maskedValid = false; }
+                    if (ownPx(l) && l.px && l.px.width === W && l.px.height === H) l.px = l.px.resized(nw, nh, { x: left, y: top });
                 } else if (l.kind === "paint" && l.px && l.px.width === W && l.px.height === H && l.w === W && l.h === H) {
                     // a new object (the canvas undo step holds the old one): the old pixels placed at left, top
                     l.px = l.px.resized(nw, nh, { x: left, y: top });

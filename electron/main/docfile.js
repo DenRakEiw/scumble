@@ -138,6 +138,13 @@ const FEATURES = [
         test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.values(d.maps).some((m) => m && m.enc != null && m.enc !== "u16rg")),
     },
     {
+        // a Deep paint layer (PLAN_SURFACE_PAINT.md SP4): a filter layer whose file is its paint; an older reader loads
+        // it empty and passes the picture through, and its next save drops the paint
+        id: "surface-layer", since: "0.1.57", reader: 7,
+        sample: { layers: [{ kind: "filter", filter: "surface" }] },
+        test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "surface"),
+    },
+    {
         id: "relight", since: "0.1.47", reader: 6,
         sample: { layers: [{ kind: "filter", filter: "relight" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "relight"),

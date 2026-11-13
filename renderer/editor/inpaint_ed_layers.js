@@ -324,7 +324,7 @@ export class LayersPart {
         if (layer.match) copy.match = { ...layer.match };
         if (layer.lut) copy.lut = { ...layer.lut };
         if (layer.plate) copy.plate = { ...layer.plate };
-        if (layer.kind === "filter") copy.dirty = false;
+        if (layer.kind === "filter" && !(FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels)) copy.dirty = false;   // Deep paint's paint is its own file
         // the copy of a reference goes below the lowest reference, so it takes the next number and none of the others moves
         const below = host.refTokens && this.isReference(layer);
         const i = below ? this.layers.findIndex((l) => this.isReference(l)) : this.layers.indexOf(layer) + 1;

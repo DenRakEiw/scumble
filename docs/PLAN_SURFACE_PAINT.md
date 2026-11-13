@@ -272,6 +272,38 @@ the card held 23.6 GB by another process): 11.2-11.3 s warm (20.1 s with the ses
 the pictures 0.2-0.4 s; the window's longest task 86-421 ms; the maps 130 MB, a kept set answers in 15 ms. Nothing to
 fix before SP4; a Rust guided filter would be the lever for the pool's part. Next: SP4 (the surface layer, Full tier).
 
+**SP4a done 2026-11-13: the Deep paint layer composites** (the user: "baue weiter"). **The decision §3.2 left to SP4:
+a filter layer, not a paint layer with a flag.** A paint layer with `surface: true` would have to act as a filter in
+every walk of the stack, and about 80 places ask `kind === "filter"` to mean "this layer works on what is below"; a
+filter layer gets all of them right already. What a filter layer lacked was pixels of its own: it has a full-document
+`px` (empty until now), and only its storage, its geometry and (SP4b) strokes treat it as nothing. So: `FILTERS.surface`
+(`inpaint_filters.js`: label "Deep paint", one param `reflections` "Keep reflections" 0-100 %, `maps` shading and
+residual, `ownPixels: true`, reach 0) and `renderer/editor/inpaint_surfacefx.js` (in the node build's FILES): the shader
+`registerSurfaceGL` and its CPU twin `applySurface`, `out = mix(B, P S sScale + k R, a)` in linear light, `a = 0` hands
+the input pixel back untouched (the picture byte for byte where nothing is painted), alpha `B.a + (1 - B.a) a`; the two
+rgb16 maps go to the GPU as two RGBA8 textures each (`rgb16Views`: R lo, R hi, G lo, G hi / B lo, B hi, kept per data
+array, `static`), read with texelFetch and a bilinear of its own as `SAMPLE_GLSL`'s (the CPU's `rgb16Bilinear` is the
+same step), the map position through `passToMap` at the pixel's centre. **The own pixels:** `filterInfo` gives a filter
+with `ownPixels` `info.own(w, h)` -> `ownPixelsFor(layer, pass, w, h)` (`inpaint_ed_filters.js`): the layer's `px` for the
+pass's rectangle at the pass's scale (from the tiles at the pass's level as the filter mask's region view, or the canvas
+backend's `drawTo`), read back as straight RGBA8; both run sites (`filteredCanvas`, `bandFilter` of the export's program)
+go through it. `filterKey` takes `px.version`. **Elsewhere:** `addSurfaceLayer()` (refused without the surface maps; name
+"Deep paint n"); the type picker shows a Deep paint layer's own type only and disabled, `setFilterType`, `set_filter`
+and `add_filter` refuse Deep paint both ways; `.scumble` / autosave: `syncLayers` uploads a dirty `px` as any layer's,
+`setValue` loads a Deep paint layer's file (a file that will not load or has the wrong size: the layer comes back
+empty and the load note names it), the ref kept; FEATURES row `surface-layer` (reader 7, since 0.1.57); geometry
+(`inpaint_ed_geometry.js` `ownPx`): a turn or flip turns the paint, a straighten resamples it onto the frame (edge
+transparent), a crop and an extend place it, a resize remakes it at the new size, each a new object (the canvas undo
+step holds the old one) and dirty; a duplicate stores its copy. **Found:** an undo puts the step's copies of the layers
+in place, so a layer object held across an undo is stale (the test finds the layer again; worth knowing for SP5's
+tools). **Tests:** `tools/deeppaint_test.py`, gate `deeppaint` (ramp maps, the formula in its own bilinear: nothing
+painted the picture byte for byte, painted within a level, the rest byte for byte; the GPU ran, the twin within a level,
+the export's program the pass's bytes; k = 0, a mask, opacity, hidden, a part of the picture, a copy; set_filter /
+add_filter refused; a quarter turn within a level and its undo exact, a crop, a straighten, a resize and their undos;
+no maps the picture; `.scumble` and the autosave the same bytes, minReader 7) PASS on both backends; `composite`,
+`document`, `maps`, `export`, `layered`, `commands`, `lint`, `types` PASS on both (`sp4b`). Next: SP4b (strokes on the
+layer: brush and eraser on `px`, the live stroke in `ownPixelsFor`, undo of a stroke, the 15k pan).
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

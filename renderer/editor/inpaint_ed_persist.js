@@ -174,7 +174,27 @@ export class PersistPart {
                 for (const l of state.layers || []) {
                     if (l.kind === "filter") {
                         try {
-                            const pixels = this.pixels.Layer.empty(this.width, this.height);
+                            // a filter whose own pixels are an input (Deep paint) has them in its file; every other one an empty layer
+                            let pixels = null;
+                            if (l.ref && l.ref.filename && FILTERS[l.filter] && FILTERS[l.filter].ownPixels) {
+                                try {
+                                    const got = await streamed(l.ref, this.pixels.Layer);
+                                    if (stale()) { if (got && got.px) got.px.release(); return; }
+                                    pixels = got && got.px;
+                                    if (!pixels) {
+                                        const limg = await imageOf(got, l.ref);
+                                        if (stale()) return;
+                                        pixels = this.pixels.Layer.fromImage(limg, this.width, this.height);
+                                    }
+                                    if (pixels.width !== this.width || pixels.height !== this.height) throw new Error(`its pixels are ${pixels.width} x ${pixels.height}, the picture ${this.width} x ${this.height}`);
+                                } catch (err) {
+                                    console.warn("Inpaint Canvas: Deep paint pixels missing", l.ref, err);
+                                    if (pixels && pixels.release) pixels.release();
+                                    pixels = null;
+                                    missing.push(String(l.name || l.id || "layer") + " (its paint)");
+                                }
+                            }
+                            if (!pixels) pixels = this.pixels.Layer.empty(this.width, this.height);
                             let maskPx = null;
                             if (l.mask && l.mask.filename) {
                                 try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
@@ -194,7 +214,7 @@ export class PersistPart {
                             // its params: applyFilter passes the picture through, and the next save writes it back unchanged
                             const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
                             this.layers.push(installLayerAliases({
-                                id: l.id, name: l.name, kind: "filter", role: "none", blend: normalBlend(l.blend), ref: null, px: pixels,
+                                id: l.id, name: l.name, kind: "filter", role: "none", blend: normalBlend(l.blend), ref: l.ref || null, px: pixels,
                                 x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip, group: l.group || null,
                                 maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                                 filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,

@@ -19,6 +19,7 @@ import { buildWheelsControl, buildHslControl } from "./inpaint_wheels.js";
 import { applyVibrance, applyGradientMap, applyThreshold, applyPosterize } from "./inpaint_adjustments.js";
 import { applyLensBlur, lensBlurReach } from "./inpaint_lensblur.js";
 import { applyRelight, relightStats, relightSkip } from "./inpaint_relight.js";
+import { applySurface } from "./inpaint_surfacefx.js";
 import { matchPixels } from "./px/kernels.js";
 
 
@@ -1374,6 +1375,19 @@ export const FILTERS = {
         chain: true,
         reach: 0,
         apply: fillApply("gradient"),
+    },
+    // Deep paint's layer (docs/PLAN_SURFACE_PAINT.md SP4, inpaint_surfacefx.js): its own pixels are the paint, laid on
+    // the picture as the surface's colour under the picture's light and reflections; made by addSurfaceLayer, never
+    // picked as a type (`ownPixels`: the type picker and set_filter leave it out)
+    surface: {
+        label: "Deep paint",
+        params: [
+            { key: "reflections", label: "Keep reflections", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+        ],
+        maps: () => ["shading", "residual"],
+        ownPixels: true,
+        reach: 0,
+        apply: applySurface,
     },
 };
 
