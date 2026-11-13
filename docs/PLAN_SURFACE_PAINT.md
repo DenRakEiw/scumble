@@ -472,6 +472,22 @@ made by the relight layer as before, and without its model the status line names
   within a pixel and the screen shows them, after the release one step (the move's) and the link follows, its undo
   gives the old lines back within 0.01 px and its redo the new ones; the link is in `getValue`.
 
+- **Wrap in perspective**: `computeSurfaceMaps` keeps MoGe-2's points as a map `points` (rgb16 at the model's size,
+  each channel over `meta.lo` .. `meta.hi`, `meta.f` the focal length in its pixels: `packPoints` in
+  `inpaint_surface.js`, the median of (u - w / 2) z / x and (v - h / 2) z / y, the principal point at the centre; one
+  undo step with the other maps; any reader of colour maps keeps it, no FEATURES row). `wrapSlopesPoints`
+  (`inpaint_wrap.js`): the length across each picture pixel between the points at its edges, |P(x + 1) - P(x)|, divided
+  by z_c / f, a pixel's length at the decal centre's depth seen face on (f in document pixels), so a face-on surface at
+  that depth is 1, a further one longer, a tilted one 1 / cos as with the normals; the normals' mask still flat. A jump
+  in depth (an occlusion edge) is a jump in length, so the decal stops there (§3.3's depth-edge cut). Lengths do not
+  turn with the document, so `xf` is only the sampling. Without a points map (maps made before) the normals' slopes as
+  before. Tests: `wrap_test.js` on a pinhole camera (f 300): `packPoints` reads the focal length within 1 % (a wall)
+  and 2 % (a floor), a wall face on gives the normals' flat result within 2 levels, a floor one unit below the camera
+  puts each of seven lines at its row on the floor (marched along the centre column in hundredths of a pixel) within a
+  pixel, crowding and narrowing towards the horizon. On the real cafe picture (`dist/testfiles/handtest_deeppaint_looks/
+  persp_triple.png`): f = 782 px at 768 wide, the maps 6.3 s; a word on the cobbles is squeezed as lying flat there and
+  stops at the table's edge, where the normals' wrap ran on over the table.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

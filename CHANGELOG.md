@@ -13,7 +13,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Light brush**: *Layer › New Light Brush Layer* paints light where the brush goes; Relight layers on a picture with
   surface maps light the picture's own colour and keep its reflections (the *Surface maps* switch).
 - **Wrap onto Surface** (Layer menu): a logo, a pattern or a word laid round a curved surface such as a cup or a
-  bottle, under the picture's light.
+  bottle, under the picture's light, in perspective; drag the flat picture with the Transform tool and the wrap follows.
+  The layer list's sparkle button holds the Deep paint layer, the light brush and Wrap.
 - Agents: `surface_maps`, `add_surface_layer`, `wrap_layer`, and `relight`'s `surface` (122 tools).
 - Seedream 5.5 runs on OpenRouter too (one key for many models; 1K, 1.5K and 2K, a transparent background on request,
   up to ten pictures). Not run live yet.

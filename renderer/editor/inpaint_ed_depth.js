@@ -7,7 +7,7 @@ import { editorPool } from "./inpaint_jobs.js";
 import { uploadCanvas } from "./inpaint_upload.js";
 import { GUIDE, STALE_DIFF, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 import { deriveMap, editMap, fingerprint, fingerprintDiff, makeMap, packMap, selectionOnMap } from "./inpaint_maps.js";
-import { linToSrgb255, packNormals, surfaceModelSize } from "./inpaint_surface.js";
+import { linToSrgb255, packNormals, packPoints, surfaceModelSize } from "./inpaint_surface.js";
 import { SNAP_DEFAULT } from "./inpaint_edges.js";
 import { failKind } from "./inpaint_status.js";
 import { makeCanvas } from "./inpaint_consts.js";
@@ -343,6 +343,9 @@ export class DepthPart {
                     residual: makeMap("residual", gw, gh, new Uint16Array(job.residual), xf, { ...common, identity: job.identity, zeroA: job.zeroA }, null, "rgb16"),
                     normals: makeMap("normals", mw, mh, packNormals(res.normals.normal, res.normals.mask, mw * mh), xf, { ...common, frame: "camera", scale: res.normals.scale }, null, "rgba8"),
                 };
+                // MoGe-2's points (Wrap's perspective): kept when the answer has them and a focal length can be read
+                const pts = res.normals.points ? packPoints(res.normals.points, res.normals.mask, mw, mh) : null;
+                if (pts) maps.points = makeMap("points", mw, mh, pts.data, xf, { ...common, frame: "camera", ...pts.meta }, null, "rgb16");
                 const ok = await this.setMaps(maps, { label: recompute ? "Recompute surface maps" : "Surface maps", token });
                 if (!ok) {
                     this.setStatus("The surface maps were dropped: the picture was turned or cropped meanwhile.");

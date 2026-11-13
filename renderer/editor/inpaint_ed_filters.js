@@ -466,7 +466,7 @@ export class FiltersPart {
             if (!any) return { error: "The selection does not reach the layer: nothing to wrap." };
         }
         const decal = src.px.readRect(0, 0, src.px.width, src.px.height);
-        return { box, place, data: wrapDecal({ map: this.maps.normals, box, decal, place, sel }) };
+        return { box, place, data: wrapDecal({ map: this.maps.normals, box, decal, place, sel, points: this.maps.points || null }) };
     }
 
     /** `made` (wrapPixels) into the wrap layer `out`: the box of the wrap before cleared, the new one written; no undo. */

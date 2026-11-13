@@ -561,8 +561,12 @@ Undo and redo of the move take the wrap with them. With a selection it lands onl
   darker than the swatch; pick from the picture when the result should match what is there.
 - The sparkle button at the top of the layer list holds the three: a Deep paint layer, a light brush, and Wrap onto
   Surface for the selected layer.
-- Wrap treats the view as flat (no perspective) and works best on surfaces curved one way (a cup, an arm, a pillar); on a
-  surface curved both ways (a face, a ball) the picture is stretched where the curve is strongest.
+- Wrap measures along the surface in 3D (from the surface maps' points): parts of the surface further away take the
+  picture smaller, a floor seen at a low angle squeezes it as a sticker lying there would look, and it stops at an edge
+  where the surface jumps in depth (a table in front of the street). Maps made before this version have no points; Wrap
+  then measures along the normals as if seen from far away (*Compute Surface Maps* again for the perspective). It works
+  best on surfaces curved one way (a cup, an arm, a pillar); on a surface curved both ways (a face, a ball) the picture
+  is stretched where the curve is strongest.
 - Agents and the assistant: `surface_maps` computes the maps, `add_surface_layer` adds the layer (its `color` fills the
   current selection on it), `wrap_layer` wraps a layer, and `relight` takes `surface` for the light on the maps.
 

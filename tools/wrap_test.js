@@ -144,6 +144,79 @@ const ROOT = path.join(__dirname, "..");
         check("a mask of 0: flat", gx.every((g) => g === 1) && gy.every((g) => g === 1));
     }
 
+    // perspective: a pinhole camera (f = 300 px, the principal point at the centre) and MoGe-2's points (packPoints)
+    {
+        const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_surface.js")).href);
+        const PW = 400, PH = 300, F = 300;
+        const ray = (u, v) => [(u + 0.5 - PW / 2) / F, (v + 0.5 - PH / 2) / F, 1];
+        const pointsOf = (hit) => {
+            const pts = new Float32Array(PW * PH * 3), mask = new Float32Array(PW * PH);
+            for (let v = 0; v < PH; v++) for (let u = 0; u < PW; u++) {
+                const p = hit(ray(u, v));
+                if (!p) continue;
+                const i = v * PW + u;
+                pts.set(p, 3 * i); mask[i] = 1;
+            }
+            return { pts, mask };
+        };
+        const flatN2 = new Uint8Array(PW * PH * 4);
+        for (let i = 0; i < PW * PH; i++) flatN2.set([128, 128, 0, 255], 4 * i);
+        const nmap2 = makeMap("normals", PW, PH, flatN2, [PW, 0, 0, PH, 0, 0], {}, null, "rgba8");
+        // (a) a wall face on at z = 5: the focal length read back, and the decal lands as with flat normals
+        const wall = pointsOf((d) => [d[0] * 5, d[1] * 5, 5]);
+        const pw = S.packPoints(wall.pts, wall.mask, PW, PH);
+        check("packPoints: the focal length read back within 1 %", pw && Math.abs(pw.meta.f - F) / F < 0.01, pw && pw.meta.f);
+        const wallMap = makeMap("points", PW, PH, pw.data, [PW, 0, 0, PH, 0, 0], pw.meta, null, "rgb16");
+        const place = { cx: 200, cy: 150, w: 60, h: 40 };
+        const box = Wr.wrapBox(place, PW, PH);
+        const flatOut = Wr.wrapDecal({ map: nmap2, box, decal, place });
+        const wallOut = Wr.wrapDecal({ map: nmap2, box, decal, place, points: wallMap });
+        let wmax = 0;
+        for (let i = 0; i < flatOut.length; i++) wmax = Math.max(wmax, Math.abs(flatOut[i] - wallOut[i]));
+        check("a wall face on: the points give the flat result within 2 levels", wmax <= 2, wmax);
+        // (b) a floor one unit below the camera (y down): rows nearer the horizon are further away
+        const floor = pointsOf((d) => (d[1] > 0.02 ? [d[0] / d[1], 1, 1 / d[1]] : null));
+        const pf = S.packPoints(floor.pts, floor.mask, PW, PH);
+        check("packPoints: the floor's focal length within 2 %", pf && Math.abs(pf.meta.f - F) / F < 0.02, pf && pf.meta.f);
+        const floorMap = makeMap("points", PW, PH, pf.data, [PW, 0, 0, PH, 0, 0], pf.meta, null, "rgb16");
+        // a decal of horizontal lines two pixels high every 12 rows, centred at (200, 240)
+        const hw = 40, hh = 97, hd = new Uint8ClampedArray(hw * hh * 4);
+        const rowsOff = [-36, -24, -12, 0, 12, 24, 36];
+        for (const o of rowsOff) for (const k of [-1, 0]) { const r = 48 + o + k + 1; if (r >= 0 && r < hh) for (let x = 0; x < hw; x++) hd.set([255, 255, 255, 255], 4 * (r * hw + x)); }
+        const fplace = { cx: 200, cy: 240, w: hw, h: hh };
+        const fbox = Wr.wrapBox(fplace, PW, PH);
+        const fout = Wr.wrapDecal({ map: nmap2, box: fbox, decal: { data: hd, width: hw, height: hh }, place: fplace, points: floorMap });
+        // the lines' centres down the centre column (x 200)
+        const bw = fbox[2] - fbox[0], col = 200 - fbox[0];
+        const found = [];
+        let sm = 0, sw = 0;
+        for (let y = 0; y < fbox[3] - fbox[1]; y++) {
+            const a = fout[4 * (y * bw + col) + 3];
+            if (a) { sm += a * (fbox[1] + y + 0.5); sw += a; } else if (sw) { found.push(sm / sw); sm = 0; sw = 0; }
+        }
+        if (sw) found.push(sm / sw);
+        // where a line at surface offset d lands: the row whose floor point lies d * (z_c / f) from the centre's, along
+        // the centre column (a straight line on the floor), marched in tenths of a pixel
+        // the centre's depth is that of the pixel centre's ray; arc lengths are measured from (200, 240) itself
+        const at = (yy) => { const dy = (yy - 150) / F; return [0, 1, 1 / dy]; };
+        const c0 = at(240), unit = c0[2] / F;
+        const rowFor = (d) => {
+            let yy = 240, s = 0, prev = at(yy);
+            const step = d < 0 ? -0.01 : 0.01;
+            while (Math.abs(s) < Math.abs(d) * unit && yy > 152 && yy < PH) { yy += step; const p = at(yy); s += Math.hypot(p[1] - prev[1], p[2] - prev[2]) * Math.sign(step); prev = p; }
+            return yy;
+        };
+        const wantRows = rowsOff.map((o) => rowFor(o));
+        const ferr = found.length === wantRows.length ? Math.max(...found.map((g, i) => Math.abs(g - wantRows[i]))) : 99;
+        check("a floor in perspective: each line at its row on the floor within a pixel", ferr <= 1, { found: found.map((g) => +g.toFixed(2)), want: wantRows.map((g) => +g.toFixed(2)) });
+        const gaps = found.slice(1).map((g, i) => g - found[i]);
+        check("a floor in perspective: the lines crowd towards the horizon", gaps.length === 6 && gaps[0] < gaps[2] && gaps[2] < gaps[5], gaps);
+        // and narrower towards it: a far row of the decal is narrower than a near one
+        const widthAt = (y) => { let n = 0; for (let x = 0; x < bw; x++) if (fout[4 * ((y - fbox[1]) * bw + x) + 3]) n++; return n; };
+        const wmaxAt = (g) => Math.max(widthAt(Math.floor(g) - 1), widthAt(Math.floor(g)), widthAt(Math.floor(g) + 1));
+        check("a floor in perspective: a far line is narrower than a near one", wmaxAt(found[0]) > 0 && wmaxAt(found[0]) < wmaxAt(found[6]), [wmaxAt(found[0]), wmaxAt(found[6]), found[0], found[6], fbox]);
+    }
+
     for (const f of fails) console.log("[FAIL wrap]", f);
     console.log(fails.length ? "FAIL" : "PASS");
     process.exit(fails.length ? 1 : 0);

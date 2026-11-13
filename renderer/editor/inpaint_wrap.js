@@ -69,6 +69,68 @@ export function wrapSlopes(map, box) {
 }
 
 /**
+ * The surface's length per picture pixel from MoGe-2's points (perspective): across pixel x of a row the length between
+ * the points at its left and right edges, |P(x + 1, y + 0.5) - P(x, y + 0.5)| (a column the same), divided by the
+ * length one picture pixel has at the decal centre's depth seen face on, z_c / f (f the focal length in document
+ * pixels). A surface face on at the centre's depth is 1 a pixel, one further away longer (the decal gets smaller
+ * there), a tilted one 1 / cos of its tilt as with the normals. Where the normals' mask is off, 1. `{ gx, gy }` or null
+ * when the points or the centre are unusable.
+ * @param {any} pmap an rgb16 points map with meta { lo, hi, f } (packPoints)
+ * @param {any} nmap the normals map, for its mask (or null)
+ * @param {number[]} box
+ * @param {number} cx the decal's centre, document pixels
+ * @param {number} cy
+ */
+export function wrapSlopesPoints(pmap, nmap, box, cx, cy) {
+    const meta = pmap && pmap.meta;
+    if (!meta || !Array.isArray(meta.lo) || !Array.isArray(meta.hi) || !(meta.f > 0)) return null;
+    const [x0, y0, x1, y1] = box;
+    const w = x1 - x0, h = y1 - y0;
+    const pw = pmap.w, ph = pmap.h, pd = pmap.data, lo = meta.lo, sp = [meta.hi[0] - lo[0], meta.hi[1] - lo[1], meta.hi[2] - lo[2]];
+    const inv = xfInv(pmap.xf || [pw, 0, 0, ph, 0, 0]);
+    const xf = pmap.xf || [pw, 0, 0, ph, 0, 0];
+    // document pixels per map pixel (a turn or a mirror keeps it): the focal length in document pixels
+    const docPerMap = Math.sqrt(Math.abs(xf[0] * xf[3] - xf[1] * xf[2]) / (pw * ph));
+    const f = meta.f * docPerMap;
+    const P = (dx, dy, out) => {
+        const qu = (inv[0] * dx + inv[2] * dy + inv[4]) * pw - 0.5, qv = (inv[1] * dx + inv[3] * dy + inv[5]) * ph - 0.5;
+        const fx0 = Math.floor(qu), fy0 = Math.floor(qv), fx = qu - fx0, fy = qv - fy0;
+        const cx0 = fx0 < 0 ? 0 : fx0 > pw - 1 ? pw - 1 : fx0, cx1 = fx0 + 1 < 0 ? 0 : fx0 + 1 > pw - 1 ? pw - 1 : fx0 + 1;
+        const cy0 = fy0 < 0 ? 0 : fy0 > ph - 1 ? ph - 1 : fy0, cy1 = fy0 + 1 < 0 ? 0 : fy0 + 1 > ph - 1 ? ph - 1 : fy0 + 1;
+        const i00 = 3 * (cy0 * pw + cx0), i10 = 3 * (cy0 * pw + cx1), i01 = 3 * (cy1 * pw + cx0), i11 = 3 * (cy1 * pw + cx1);
+        for (let c = 0; c < 3; c++) {
+            const top = pd[i00 + c] + (pd[i10 + c] - pd[i00 + c]) * fx, bot = pd[i01 + c] + (pd[i11 + c] - pd[i01 + c]) * fx;
+            out[c] = lo[c] + ((top + (bot - top) * fy) / 65535) * sp[c];
+        }
+        return out;
+    };
+    const c0 = P(cx, cy, [0, 0, 0]);
+    if (!(c0[2] > 0)) return null;
+    const unit = c0[2] / f;
+    const gx = new Float32Array(w * h), gy = new Float32Array(w * h);
+    const a = [0, 0, 0], b = [0, 0, 0];
+    // the normals' mask (A), nearest map pixel, its inverse taken once
+    const nInv = nmap && nmap.data ? xfInv(nmap.xf || [nmap.w, 0, 0, nmap.h, 0, 0]) : null;
+    const masked = nInv ? (dx, dy) => {
+        const u = Math.floor((nInv[0] * dx + nInv[2] * dy + nInv[4]) * nmap.w), v = Math.floor((nInv[1] * dx + nInv[3] * dy + nInv[5]) * nmap.h);
+        const mx = u < 0 ? 0 : u > nmap.w - 1 ? nmap.w - 1 : u, my = v < 0 ? 0 : v > nmap.h - 1 ? nmap.h - 1 : v;
+        return nmap.data[4 * (my * nmap.w + mx) + 3] < 128;
+    } : () => false;
+    for (let y = 0; y < h; y++) {
+        const py = y0 + y + 0.5;
+        for (let x = 0; x < w; x++) {
+            const i = y * w + x, px = x0 + x + 0.5;
+            if (masked(px, py)) { gx[i] = 1; gy[i] = 1; continue; }
+            P(px - 0.5, py, a); P(px + 0.5, py, b);
+            gx[i] = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit;
+            P(px, py - 0.5, a); P(px, py + 0.5, b);
+            gy[i] = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit;
+        }
+    }
+    return { gx, gy };
+}
+
+/**
  * Surface coordinates of every pixel centre of a w x h box: u along each row, v along each column, signed, in surface
  * pixels from the point (cx, cy) (box pixels, real). Trapezoids between pixel centres; the centre's own pixel gets its
  * offset times its slope.
@@ -115,13 +177,14 @@ export function wrapBox(place, W, H) {
  * The decal wrapped onto the surface over `box`: straight RGBA (w * h * 4), bilinear from the decal's premultiplied
  * pixels, nothing outside the decal, times the region's alpha (`sel`, one byte per pixel of the box, or null).
  * @param {{ map: any, box: number[], decal: { data: ArrayLike<number>, width: number, height: number },
- *   place: { cx: number, cy: number, w: number, h: number, angle?: number }, sel?: Uint8Array|null }} o
+ *   place: { cx: number, cy: number, w: number, h: number, angle?: number }, sel?: Uint8Array|null, points?: any }} o
  *   place: the decal's centre and its size in document pixels; angle in degrees, clockwise on the screen
  */
-export function wrapDecal({ map, box, decal, place, sel = null }) {
+export function wrapDecal({ map, box, decal, place, sel = null, points = null }) {
     const [x0, y0, x1, y1] = box;
     const w = x1 - x0, h = y1 - y0;
-    const { gx, gy } = wrapSlopes(map, box);
+    // the points' perspective when the document has them, else the normals' orthographic slopes
+    const { gx, gy } = (points && wrapSlopesPoints(points, map, box, place.cx, place.cy)) || wrapSlopes(map, box);
     const { u, v } = wrapCoords(gx, gy, w, h, place.cx - x0, place.cy - y0);
     const dw = decal.width, dh = decal.height, d = decal.data;
     const sx = place.w / dw, sy = place.h / dh;

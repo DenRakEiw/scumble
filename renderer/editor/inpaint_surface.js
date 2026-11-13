@@ -214,6 +214,56 @@ export function packNormals(normal, mask, n) {
     return out;
 }
 
+/**
+ * MoGe-2's point map (camera space: x right, y down, z away from the viewer, three floats a pixel) as an rgb16 map's
+ * data and its meta (Wrap's perspective, docs/PLAN_SURFACE_PAINT.md): each channel stored as (p - lo) / (hi - lo) over
+ * the pixels the mask keeps (0 elsewhere), and `f`, the focal length in the map's pixels, the median of
+ * (u - w / 2) z / x and (v - h / 2) z / y over kept pixels far enough from the centre (the principal point taken as the
+ * picture's centre). Null when the mask keeps too few pixels or no focal length can be read.
+ * @param {Float32Array} points
+ * @param {ArrayLike<number>} mask
+ * @param {number} w
+ * @param {number} h
+ */
+export function packPoints(points, mask, w, h) {
+    const n = w * h;
+    if (!points || points.length < 3 * n) return null;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    let kept = 0;
+    for (let i = 0; i < n; i++) {
+        if (!(mask[i] >= 0.5)) continue;
+        const z = points[3 * i + 2];
+        if (!(z > 0) || !Number.isFinite(z)) continue;
+        kept++;
+        for (let c = 0; c < 3; c++) { const v = points[3 * i + c]; if (v < lo[c]) lo[c] = v; if (v > hi[c]) hi[c] = v; }
+    }
+    if (kept < 16) return null;
+    const fs = [];
+    const step = Math.max(1, Math.floor(Math.sqrt(n / 20000)));
+    for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
+        const i = y * w + x;
+        if (!(mask[i] >= 0.5)) continue;
+        const X = points[3 * i], Y = points[3 * i + 1], Z = points[3 * i + 2];
+        if (!(Z > 0)) continue;
+        const du = x + 0.5 - w / 2, dv = y + 0.5 - h / 2;
+        if (Math.abs(du) > w * 0.1 && Math.abs(X) > 1e-9) { const f = du * Z / X; if (f > 0 && Number.isFinite(f)) fs.push(f); }
+        if (Math.abs(dv) > h * 0.1 && Math.abs(Y) > 1e-9) { const f = dv * Z / Y; if (f > 0 && Number.isFinite(f)) fs.push(f); }
+    }
+    if (fs.length < 8) return null;
+    fs.sort((a, b) => a - b);
+    const f = fs[Math.floor(fs.length / 2)];
+    const data = new Uint16Array(n * 3);
+    for (let i = 0; i < n; i++) {
+        if (!(mask[i] >= 0.5) || !(points[3 * i + 2] > 0)) continue;
+        for (let c = 0; c < 3; c++) {
+            const span = hi[c] - lo[c];
+            const v = span > 0 ? Math.round(((points[3 * i + c] - lo[c]) / span) * 65535) : 0;
+            data[3 * i + c] = v < 0 ? 0 : v > 65535 ? 65535 : v;
+        }
+    }
+    return { data, meta: { lo, hi, f } };
+}
+
 /** The model's size for a picture of W x H: the long side 768 (or the picture's, if smaller), both sides at least 16. */
 export function surfaceModelSize(W, H, long = 768) {
     const s = Math.min(1, long / Math.max(W, H));
