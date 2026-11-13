@@ -485,6 +485,7 @@ A Relight layer illuminates your picture with up to four interactive light sourc
 - **Ambient**: Sets the minimum fill floor so deep shadow recesses remain visible.
 - **Depth**: Adjusts the extrusion scale of the 3D surface normals generated from the depth map (5% to 200%).
 - **Shadows**: Enables screen-space raymarched cast shadows with contact hardening and soft penumbra. Setting the slider to 0 turns off shadow raymarching for instant rendering.
+- **Surface maps**: On a picture with surface maps (see *Deep paint* below), the light lands on the picture's own colour and its reflections stay as they are, instead of on a colour estimated from the depth map. A Relight layer added to such a picture has it on; switch it off for the result of before.
 
 Where a strong light pushes a bright area past white, it rolls off softly towards white instead of clipping flat; parts of the picture the lights leave alone keep their exact values.
 
@@ -504,6 +505,63 @@ Where a strong light pushes a bright area past white, it rolls off softly toward
 - The depth map's *Edges* slider snaps depth boundaries cleanly to object silhouettes, preventing light and shadows from bleeding between foreground subjects and backgrounds.
 - The assistant can relight pictures automatically using the `relight` command (`route: "app"` runs automatically; generative routes ask before sending).
 - Agents and the assistant can name one of the eight presets instead of placing lights one by one: `relight` with `preset` (`studio_portrait`, `warm_sunset`, `cyberpunk_neon`, `rembrandt`, `soft_window`, `dramatic_rim`, `golden_hour` or `film_noir`) puts that setup's lights on the picture at its size, as the Presets dropdown does. A preset and a list of lights in the same call are refused, and so is a name that is not one of the eight; the assistant's card names the preset.
+
+## Deep paint: paint on the picture's surfaces
+
+<!-- slug: deep-paint -->
+_Colour, light and pictures that lie on the surfaces of the photo, under its own light and reflections._
+
+Deep paint splits the picture into its light, its reflections and its surface shapes, once, on your own computer. After
+that, what you paint takes the picture's light: a bright blue painted into a shadow comes out as a blue in shadow, and a
+highlight on a car's paint stays a highlight over your new colour. Where you have not painted, the picture is exactly
+as it was.
+
+**The surface maps.** *Image › Surface Maps › Compute Surface Maps* makes them. It needs two models, downloaded once in
+Settings › Helpers (in-app models): **Marigold IID Lighting** (about 1.9 GB; its licence, Open RAIL++-M, is shown before
+the download and asks for your OK) and **MoGe-2** (the surface shapes, 420 MB, MIT). A picture takes from a few seconds
+to about twenty on a graphics card; the maps are stored in the document, and computing them is one undo step. *Show
+Light*, *Show Reflections* and *Show Normals* in the same menu put a map on the screen instead of the picture (only on
+the screen; *Show the Picture* goes back). Turning or cropping the picture while the maps are made drops them; compute
+them again.
+
+**The Deep paint layer.** *Layer › New Deep Paint Layer* adds one (it computes the maps first when the picture has none)
+and picks the brush. On it:
+- **The brush and the eraser** paint and take away colour as on any layer; the colour shows under the picture's light
+  while you paint.
+- **The eyedropper** (or Alt+click with the brush) picks the surface's own colour, with the light and the reflections
+  taken out. Painted back at the same place it looks as the picture did, so you can pick a car's paint and touch up a
+  scratch with it, or pick, change the hue a little and repaint.
+- **Fill** (Shift+F fills the selection), **Delete** (clears the selected paint) and **the bucket** work on it as on a
+  paint layer.
+- **Keep reflections** in the layer's row says how much of the picture's highlights and sparkle stay over the paint
+  (100 % by default; 0 % gives a matte colour).
+- **Where it lands:** a selection limits a stroke, the layer's mask limits the whole layer, and the layer's *Limit*
+  (Depth, Luminosity or Colour) keeps it to a part of the picture, as on any filter layer: *Colour* is the quickest way
+  to paint only the strap of a bag or only the car.
+
+**The light brush.** *Layer › New Light Brush Layer* adds a Relight layer with one warm light from the upper left whose
+mask hides all of it, and picks the brush: paint where the light should fall, and the eraser takes it away. The light
+follows the surfaces' facing from the depth map, so a wall that turns away gets less of it. Move it with the Lights
+tool (L); its colour, strength and type are in the layer's row, as on any Relight layer (see *Relight* above).
+
+**Wrap.** Place a picture, paint or text layer flat where it should go (a logo, a pattern, a word), then
+*Layer › Wrap onto Surface*. It is laid onto the surface by its length along the surface from its centre: on a cup or a bottle seen
+from the side it bends round exactly and gets narrower towards the edges, and it takes the picture's light and
+reflections. It lands as a new Deep paint layer right above, and the flat layer is hidden. To move it, undo, move the
+flat layer and wrap again. With a selection it lands only inside it.
+
+### Notes
+
+- Everything runs on your computer; nothing is sent anywhere. On Windows the models run on the graphics card
+  (DirectML), else on the processor, which is much slower for the colour split.
+- The split comes from a model and is not perfect: its colours are a little soft, and where it takes a bright part of
+  the picture (sky, glass, a lamp) for reflection, paint there adds to the light rather than covering it.
+- A colour you choose yourself lands under the picture's light, so a saturated colour on a surface in shade comes out
+  darker than the swatch; pick from the picture when the result should match what is there.
+- Wrap treats the view as flat (no perspective) and works best on surfaces curved one way (a cup, an arm, a pillar); on a
+  surface curved both ways (a face, a ball) the picture is stretched where the curve is strongest.
+- Agents and the assistant: `surface_maps` computes the maps, `add_surface_layer` adds the layer (its `color` fills the
+  current selection on it), `wrap_layer` wraps a layer, and `relight` takes `surface` for the light on the maps.
 
 ## Key green / blue screen
 

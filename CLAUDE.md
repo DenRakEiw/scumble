@@ -1315,6 +1315,9 @@ there; add a new flake there, with the date and what was ruled out.
 - The tools' Python has tifffile without `imagecodecs`: it writes no LZW, PackBits or zstd and cannot pack 1 / 2 / 4
   bits; Pillow writes LZW (`tiff_lzw`) and PackBits, `tools/tiff_fixtures.py` builds the rest by hand.
 - Reusing one commit message file gives the next commit the old message.
+- `tools/manual_sync.js` has no `--help`: any call copies `docs/MANUAL.md` into `F:\portfolio_web` at once (2026-11-13 it
+  copied an unreleased chapter; restored with `git -C F:/portfolio_web checkout -- content/scumble/MANUAL.md`). Run it
+  only at a release.
 - `git add a b c` stages nothing when one path matches no file (the source of a `git mv`, already staged as the
   rename): the commit then holds only what was staged before (B3's renames without their edits, 2026-10-14). Never
   hide `git add`'s errors (`2>/dev/null`); check `git diff --cached --name-status` before every commit.

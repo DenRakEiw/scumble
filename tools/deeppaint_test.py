@@ -336,6 +336,9 @@ JS = r"""
             const fd = (await cur().px.readRect(0, 0, W, H)).data;
             const ef = expect(fd), gf = await all();
             check("the fill by the formula", Math.abs(gf[4 * (320 * W + 560) + 2] - ef[4 * (320 * W + 560) + 2]) <= 1, [gf[4 * (320 * W + 560) + 2], ef[4 * (320 * W + 560) + 2]]);
+            ed.clearSelectedPixels();
+            await settle(ed);
+            check("Delete clears the selected paint on the layer", cur().px.readRect(560, 320, 1, 1).data[3] === 0 && at(await all(), 560, 320).every((v, c) => v === bd[4 * (320 * W + 560) + c]), ed.status);
             await shell.commands.call("select_none", { doc: ed.node.id });
             ed.color = "#c0c020";
             await ed.bucketFill(30, 380);
