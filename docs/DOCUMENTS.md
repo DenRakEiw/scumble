@@ -169,7 +169,7 @@ history entry would name it and it would be `false`.
 | `selections` | array | the saved selections, `{ name, url, orient, xf }`, `url` a PNG data URL drawn at 0, 0; `orient` `{ turn, flip }` (0.1.31) turns it first, then `xf` (0.1.32: the map `[a, b, c, d, e, f]` of every crop, extend, resize, turn and straighten since it was saved) places it; each left out when it does nothing |
 | `guides` | `{ x: [], y: [] }` | guide positions in pixels; left out when there are none |
 | `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings; `gen.boxes` is the Boxes switch under the prompt (boxes in the prompt on or off for this document, default false; an older app keeps it as an unknown key); `gen.target` is the document's preset for Generate new (item 34, `docs/PLAN_NEW_PRESETS.md` section 8: `{ recipe, provider, aspect, size, width, height }`, written by New with a model, `new_canvas` with a recipe and every Generate new; absent until then). It counts only while the picture is `width` x `height`: a crop or a resize leaves it inert without any clean-up; another picture opened in the tab (the editor's `loadFile` and `setBaseFromRef`: open, drag and drop, paste, `load_image`) deletes it whatever its size, while Generate new's own new base keeps it (the run writes it again). `aspect` is "W:H" or null. No `FEATURES` row and no `version` raise, as for `gen.boxes`: it changes no pixel, an older app carries it untouched (`setValue` spreads `gen`, `getValue` writes it back whole), and losing it would only lose what Generate new opens on |
-| `maps` | object | document maps (since 0.1.33: `{ [kind]: { ref, guide, w, h, xf, enc, genc, meta } }`, enc `"u16rg"`, genc `"rgba8"`; `guide` is the photo on the map's grid without filter layers; `meta.snap`: `{ strength: 0..100 }`; a document with `meta.snap.strength > 0` writes `minReader` 4; a document with a map writes format version 2); left out when empty |
+| `maps` | object | document maps (since 0.1.33: `{ [kind]: { ref, guide, w, h, xf, enc, genc, meta } }`, enc `"u16rg"` (one 16-bit value; the file one band, R the high byte, G the low byte), `"rgb16"` (three 16-bit values, linear 0..1: the surface maps' shading and residual) or `"rgba8"` (four bytes: normals and a mask), a colour map's file `w` x `2h`, two opaque bands stacked (rgb16: the high bytes over the low bytes; rgba8: RGB over R = A), alpha always 255 so nothing is premultiplied; a document with a colour map writes `minReader` 7 (an older reader would store it back as `"u16rg"`); genc `"rgba8"`; `guide` is the photo on the map's grid without filter layers; `meta.snap`: `{ strength: 0..100 }`; a document with `meta.snap.strength > 0` writes `minReader` 4; a document with a map writes format version 2); left out when empty |
 
 ### 4.1 Layers
 
@@ -405,12 +405,13 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
 ## 8. Versioning, for later writers
 
 - `FORMAT_VERSION` in `docfile.js` is what the app writes as `version`, `READER_VERSION` the highest `minReader` it
-  opens; derived from the `FEATURES` table. The current format is version 2 / reader 5.
+  opens; derived from the `FEATURES` table. The current format is version 2 / reader 7.
 - The `FEATURES` table (`electron/main/docfile.js`) controls version requirements:
   - Blend modes with reader requirements: rows generated dynamically from `READER_OF_BLEND` in `docfile.js` (kept equal to `renderer/editor/blend_modes.js`), e.g. `linear-light` (since 0.1.32): `minReader` 2; `dissolve`, `exclusion`, `linear-dodge`, `linear-burn`, `subtract`, `pin-light`, `hard-mix`, `color-dodge`, `color-burn`, `vivid-light`, `divide`, `hue`, `saturation`, `color`, `luminosity`, `darker-color`, `lighter-color` (since 0.1.46): `minReader` 5.
   - `maps` (since 0.1.33): format `version` 2.
   - `filter-limit` (since 0.1.44): `minReader` 3 (filter layers with `params.limit`).
   - `depth-snap` (since 0.1.45): `minReader` 4 (document maps with `meta.snap.strength > 0`).
+  - `maps-color` (Deep paint, PLAN_SURFACE_PAINT.md SP1; its release sets `since`): `minReader` 7 (a document map whose `enc` is not `"u16rg"`).
   - `haze` (since 0.1.45): `minReader` 4 (filter layers of type `haze`).
   - `dehaze` (since 0.1.45): `minReader` 4 (filter layers of type `dehaze`).
   - `color-grade` (since 0.1.45): `minReader` 4 (filter layers of type `color_grade`).
@@ -422,6 +423,7 @@ Python's `zipfile` with `ZIP_STORED`, `mimetype` written first, is one way.
   - `threshold` (since 0.1.46): `minReader` 5 (filter layers of type `threshold`).
   - `posterize` (since 0.1.46): `minReader` 5 (filter layers of type `posterize`).
   - `lens-blur` (since 0.1.46): `minReader` 5 (filter layers of type `lens_blur`).
+  - `relight` (since 0.1.47): `minReader` 6 (filter layers of type `relight`).
 - **Raise `version`** for an addition a v1 reader can carry without showing it and without harm: a new optional
   top-level field of `document` (it travels as an extra field), new plugin data, new keys inside `crop`, `gen`,
   `settings` and the other settings objects. A v1 reader opens such a file with a note and asks before saving over it.

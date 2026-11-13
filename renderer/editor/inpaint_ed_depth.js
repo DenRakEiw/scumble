@@ -6,7 +6,7 @@ import { INTERACTIVE } from "./inpaint_pool.js";
 import { editorPool } from "./inpaint_jobs.js";
 import { uploadCanvas } from "./inpaint_upload.js";
 import { GUIDE, STALE_DIFF, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
-import { deriveMap, editMap, fingerprint, fingerprintDiff, makeMap, packRG16, selectionOnMap } from "./inpaint_maps.js";
+import { deriveMap, editMap, fingerprint, fingerprintDiff, makeMap, packMap, selectionOnMap } from "./inpaint_maps.js";
 import { SNAP_DEFAULT } from "./inpaint_edges.js";
 import { failKind } from "./inpaint_status.js";
 import { makeCanvas } from "./inpaint_consts.js";
@@ -554,7 +554,8 @@ export class DepthPart {
     /**
      * Store or replace a document map (depth, guide, sky mask) under `kind`.
      * Immutable in data: changes produce a new DocMap object.
-     * Uploads the packed u16 RGBA8 representation to ComfyUI/mirror if ref is missing.
+     * Uploads the packed RGBA8 representation (`packMap`: one band for a u16 map, two for a colour map) to
+     * ComfyUI/mirror if ref is missing.
      * Rejects if `token` no longer matches `geometryToken()` (e.g. canvas turned or cropped meanwhile)
      * or if the editor was destroyed.
      * @param {string} kind
@@ -569,7 +570,7 @@ export class DepthPart {
         const nodeId = (this.node && this.node.id != null) ? this.node.id : "0";
         if (map && !map.ref) {
             try {
-                const c = packRG16(map);
+                const c = packMap(map);
                 const { ref } = await uploadCanvas(c, `n${nodeId}_${kind || "depth"}`);
                 map.ref = ref;
             } catch (_) {

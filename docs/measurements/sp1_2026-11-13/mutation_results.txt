@@ -1,0 +1,13 @@
+== SP1 colour maps mutation round 2026-11-13 08:46 on <scratchpad>/sp1_mut/tree (tools/mutation_round.py; 9 mutants, port 9561, re-check gates maps, document)
+orig (the untouched copy): build 13 s, both builds identical to the checkout's: True; green: the full px_test 223 s; green: the maps gate 23 s; green: the document gate 51 s; 309 s
+KILLED   pack_bands_swapped: red: the maps gate ([FAIL] node tools/maps_test.js failed with code 1); builds None; 17 s (the maps gate 17 s); expected killed
+KILLED   rgba8_alpha_in_file_alpha: red: the maps gate (FAIL); builds None; 23 s (the maps gate 23 s); expected killed
+KILLED   read_one_band: red: the maps gate (FAIL); builds None; 21 s (the maps gate 21 s); expected killed
+KILLED   json_always_u16rg: red: the maps gate ([FAIL] node tools/maps_test.js failed with code 1); builds None; 17 s (the maps gate 17 s); expected killed
+KILLED   makemap_one_channel: red: the maps gate ([FAIL] node tools/maps_test.js failed with code 1); builds None; 17 s (the maps gate 17 s); expected killed
+KILLED   derive_drops_enc: red: the maps gate ([FAIL] node tools/maps_test.js failed with code 1); builds None; 17 s (the maps gate 17 s); expected killed
+KILLED   setmap_packs_u16: red: the maps gate (FAIL); builds None; 23 s (the maps gate 23 s); expected killed
+KILLED   feature_never_matches: red: the document gate ([FAIL] node: _it_was: full disk: no space left on the drive (a test fault; cancel: the save was cancelled; read-only: keep.scumble is read-only; held for good: keep.scumble is in use by another progra); builds None; 8 s (the document gate 8 s); expected killed
+KILLED   unknown_enc_read_as_u16: red: the maps gate ([FAIL] node tools/maps_test.js failed with code 1); builds None; 35 s (the maps gate 35 s); expected killed
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 9 killed (0 of them only on the re-check), 0 survived of 9; 0 not as expected; 385 s for the mutants

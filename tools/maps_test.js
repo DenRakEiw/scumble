@@ -453,6 +453,99 @@ async function main() {
     console.log("  [ok] guideView, deriveMap, and guide serialization / deserialization");
 
     // =========================================================================
+    // 8c. inpaint_maps.js: colour maps rgb16 / rgba8 (PLAN_SURFACE_PAINT.md SP1)
+    // =========================================================================
+    {
+        const { MAP_ENC, mapEnc, packMap, unpackMap, sampleMapPx } = mapsModule;
+        // a depth map made the old way is u16 and writes exactly the old descriptor
+        const oldMap = makeMap("depth", 3, 2, new Uint16Array([1, 2, 3, 4, 5, 6]), [3, 0, 0, 2, 0, 0], { fp: "x" });
+        assert.strictEqual(oldMap.enc, "u16", "a map made without an encoding is u16");
+        assert.ok(oldMap.data instanceof Uint16Array && oldMap.data.length === 6);
+        oldMap.ref = { filename: "d.png", subfolder: "inpaint_canvas", type: "input" };
+        assert.deepStrictEqual(Object.keys(mapToJSON(oldMap)), ["ref", "guide", "w", "h", "xf", "enc", "meta"], "a u16 map writes the descriptor of before");
+        assert.strictEqual(mapToJSON(oldMap).enc, "u16rg");
+        assert.strictEqual(mapEnc({}), MAP_ENC.u16, "a map object without enc (made before SP1) reads as u16");
+
+        // rgb16: every 16-bit value in each channel, packed into two bands and back exactly
+        const cw = 256, ch = 256, cn = cw * ch;
+        const rgb = new Uint16Array(cn * 3);
+        for (let i = 0; i < cn; i++) { rgb[i * 3] = i; rgb[i * 3 + 1] = 65535 - i; rgb[i * 3 + 2] = (i * 7919) & 65535; }
+        const sh = makeMap("shading", cw, ch, rgb, [cw, 0, 0, ch, 0, 0], { fp: "s" }, null, "rgb16");
+        assert.strictEqual(sh.enc, "rgb16");
+        assert.ok(sh.data instanceof Uint16Array && sh.data.length === cn * 3, "rgb16 holds three values a pixel");
+        assert.notStrictEqual(sh.data, rgb, "makeMap copies the values");
+        const shCanvas = packMap(sh);
+        assert.strictEqual(shCanvas.width, cw, "rgb16 file width");
+        assert.strictEqual(shCanvas.height, ch * 2, "rgb16 file holds two bands");
+        const shBytes = shCanvas._imgData.data;
+        let alphaOk = true;
+        for (let i = 3; i < shBytes.length; i += 4) if (shBytes[i] !== 255) { alphaOk = false; break; }
+        assert.ok(alphaOk, "every alpha of a colour map's file is 255 (no premultiplication)");
+        assert.strictEqual(shBytes[4 * 300], 300 >> 8, "band 0 holds the high byte");
+        assert.strictEqual(shBytes[cn * 4 + 4 * 300], 300 & 255, "band 1 holds the low byte");
+        const shBack = unpackMap(shBytes, cw, ch, "rgb16");
+        assert.ok(shBack instanceof Uint16Array && shBack.length === cn * 3);
+        let shMis = 0;
+        for (let i = 0; i < shBack.length; i++) if (shBack[i] !== rgb[i]) shMis++;
+        assert.strictEqual(shMis, 0, "rgb16 pack / unpack round trip of 65,536 values a channel is exact");
+
+        // rgba8: every alpha value survives (it lives in band 1, not in the file's alpha)
+        const nw = 64, nh = 32, nn = nw * nh;
+        const nrm = new Uint8Array(nn * 4);
+        for (let i = 0; i < nn; i++) { nrm[i * 4] = i & 255; nrm[i * 4 + 1] = (i >> 3) & 255; nrm[i * 4 + 2] = 255 - (i & 255); nrm[i * 4 + 3] = (i * 37) & 255; }
+        const nm = makeMap("normals", nw, nh, nrm, null, {}, null, "rgba8");
+        assert.ok(nm.data instanceof Uint8Array && nm.data.length === nn * 4);
+        const nmCanvas = packMap(nm);
+        assert.strictEqual(nmCanvas.height, nh * 2, "rgba8 file holds two bands");
+        const nmBack = unpackMap(nmCanvas._imgData.data, nw, nh, "rgba8");
+        let nmMis = 0;
+        for (let i = 0; i < nmBack.length; i++) if (nmBack[i] !== nrm[i]) nmMis++;
+        assert.strictEqual(nmMis, 0, "rgba8 pack / unpack round trip exact, alpha included");
+
+        // descriptors and an encoding nobody knows
+        sh.ref = { filename: "s.png", subfolder: "inpaint_canvas", type: "input" };
+        assert.strictEqual(mapToJSON(sh).enc, "rgb16");
+        assert.strictEqual(mapToJSON(nm).enc, "rgba8");
+        let loads = 0;
+        const unknown = await mapFromJSON("shading", { ...mapToJSON(sh), enc: "rgb32f" }, async () => { loads++; return document.createElement("canvas"); });
+        assert.strictEqual(unknown, null, "an unknown encoding is not read as anything");
+        assert.strictEqual(loads, 0, "an unknown encoding does not even load its file");
+        const fromColour = await mapFromJSON("shading", mapToJSON(sh), async () => document.createElement("canvas"));
+        assert.ok(fromColour && fromColour.enc === "rgb16" && fromColour.data.length === cn * 3, "mapFromJSON makes an rgb16 map from an rgb16 descriptor");
+        const fromOld = await mapFromJSON("depth", { ...mapToJSON(oldMap), enc: undefined }, async () => document.createElement("canvas"));
+        assert.ok(fromOld && fromOld.enc === "u16" && fromOld.data.length === 6, "a descriptor without enc reads as u16");
+
+        // deriveMap keeps the encoding and copies foreign data into the map's type
+        const shMeta = deriveMap(sh, { meta: { fp: "t" } });
+        assert.strictEqual(shMeta.enc, "rgb16");
+        assert.strictEqual(shMeta.data, sh.data, "deriveMap shares a colour map's data");
+        const shNew = deriveMap(sh, { data: Array.from(rgb) });
+        assert.ok(shNew.enc === "rgb16" && shNew.data instanceof Uint16Array && shNew.data.length === cn * 3 && shNew.data[3] === 1, "deriveMap copies plain data into the map's type");
+        assert.notStrictEqual(shNew.dataVersion, sh.dataVersion);
+
+        // sampleMapPx: corners exact, the centre between four pixels their mean, edges clamped, through a turned xf
+        const s4 = makeMap("shading", 2, 2, new Uint16Array([0, 0, 0, 65535, 0, 0, 0, 65535, 0, 65535, 65535, 65535]), [20, 0, 0, 10, 0, 0], {}, null, "rgb16");
+        assert.deepStrictEqual(sampleMapPx(s4, 5, 2.5), [0, 0, 0], "the first pixel's centre");
+        assert.deepStrictEqual(sampleMapPx(s4, 15, 7.5), [1, 1, 1], "the last pixel's centre");
+        assert.deepStrictEqual(sampleMapPx(s4, 10, 5), [0.5, 0.5, 0.25], "the middle is the mean of the four");
+        assert.deepStrictEqual(sampleMapPx(s4, -50, -50), [0, 0, 0], "outside clamps to the edge");
+        assert.strictEqual(sampleMap(s4, 15, 2.5), 1, "sampleMap of a colour map reads channel 0");
+        const s4turn = { ...s4, xf: [0, 20, -10, 0, 10, 0] };   // the map turned a quarter: a document 10 x 20
+        for (const [u, v] of [[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.4, 0.6]]) {
+            const [tx, ty] = xfApply(s4turn.xf, u, v);
+            const [sx, sy] = xfApply(s4.xf, u, v);
+            const a = sampleMapPx(s4turn, tx, ty), b = sampleMapPx(s4, sx, sy);
+            assert.ok(a.length === 3 && a.every((x, i) => Math.abs(x - b[i]) < 1e-9), `a turned colour map samples through xf at ${u},${v}: ${a} / ${b}`);
+        }
+        const n2 = makeMap("normals", 1, 1, new Uint8Array([255, 0, 128, 51]), [4, 0, 0, 4, 0, 0], {}, null, "rgba8");
+        const nv = sampleMapPx(n2, 2, 2);
+        assert.ok(nv.length === 4 && nv[0] === 1 && nv[1] === 0 && Math.abs(nv[2] - 128 / 255) < 1e-12 && Math.abs(nv[3] - 0.2) < 1e-12, "rgba8 samples normalise by 255");
+        assert.strictEqual(rg8View(sh), null, "rg8View has no view of a colour map");
+        assert.throws(() => makeMap("x", 1, 1, null, null, {}, null, "rgb32f"), /unknown map encoding/);
+        console.log("  [ok] colour maps rgb16 / rgba8: makeMap, packMap / unpackMap exact, descriptors, deriveMap, sampleMapPx");
+    }
+
+    // =========================================================================
     // 9. InpaintEditor integration: store, geometryToken, setMap, undo/redo (F8a)
     // =========================================================================
     const editor = {

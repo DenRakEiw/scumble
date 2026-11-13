@@ -20,6 +20,12 @@ Second group "maps":
   * load_image / setBaseFromCanvas clears maps.
   * mapStale check.
 
+Third group "colour maps" (PLAN_SURFACE_PAINT.md SP1):
+  * rgb16 (every 16-bit value in each channel) and rgba8 (every alpha) beside a depth map: set, undo, redo.
+  * A quarter turn and its undo move xf only; samples follow the turn.
+  * .scumble save and open and the autosave restore give every value back exactly, with encoding and xf;
+    the header says version 2 / minReader 7 and the stored encodings u16rg / rgb16 / rgba8.
+
 Runs Node test tools/maps_test.js first, then connects to running app via CDP if available.
 """
 import asyncio
@@ -360,6 +366,127 @@ JS_MAPS = r"""
 })()
 """
 
+# Third group "colour maps" (PLAN_SURFACE_PAINT.md SP1): an rgb16 map with every 16-bit value in each channel and an
+# rgba8 map with every alpha, beside a depth map; set, undo, redo; a quarter turn and its undo; .scumble save and open
+# and the autosave restore give every value back exactly, with the encoding and xf; the header asks for reader 7.
+JS_COLOR = r"""
+(async () => {
+    const shell = await import("./shell.js");
+    const { host } = await import("./editor/host.js");
+    const { makeMap, sampleMapPx } = await import("./editor/inpaint_maps.js");
+    const fails = [];
+    const check = (name, ok, info) => {
+        if (!ok) fails.push(name + (info !== undefined ? ": " + JSON.stringify(info).slice(0, 400) : ""));
+    };
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const settle = async (ed) => { await ed.mipsSettled(); await new Promise((r) => setTimeout(r, 100)); };
+    const same = (a, b) => {
+        if (!a || !b || a.length !== b.length || a.constructor !== b.constructor) return { len: [a && a.length, b && b.length], type: [a && a.constructor.name, b && b.constructor.name] };
+        let n = 0;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+        return n === 0 ? true : { mismatches: n };
+    };
+
+    const W = 512, H = 384;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed.resizeCanvas();
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "#305070"); g.addColorStop(1, "#e0a070");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W });
+    Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBaseFromCanvas(base, { keepLayers: false });
+    await settle(ed);
+
+    // 256 x 256: each channel takes every 16-bit value once
+    const sw = 256, shh = 256, sn = sw * shh;
+    const rgb = new Uint16Array(sn * 3);
+    for (let i = 0; i < sn; i++) { rgb[i * 3] = i; rgb[i * 3 + 1] = 65535 - i; rgb[i * 3 + 2] = (i * 7919) & 65535; }
+    const shading = makeMap("shading", sw, shh, rgb, [W, 0, 0, H, 0, 0], { fp: "sp1" }, null, "rgb16");
+    const nw = 128, nh = 96, nn = nw * nh;
+    const nrm = new Uint8Array(nn * 4);
+    for (let i = 0; i < nn; i++) { nrm[i * 4] = i & 255; nrm[i * 4 + 1] = (i >> 4) & 255; nrm[i * 4 + 2] = 255 - (i & 255); nrm[i * 4 + 3] = (i * 37) & 255; }
+    const normals = makeMap("normals", nw, nh, nrm, [W, 0, 0, H, 0, 0], {}, null, "rgba8");
+    const dep = new Uint16Array(64 * 48);
+    for (let i = 0; i < dep.length; i++) dep[i] = (i * 21) & 65535;
+    const depth = makeMap("depth", 64, 48, dep, [W, 0, 0, H, 0, 0], { fp: "d" });
+
+    check("setMap depth", await ed.setMap("depth", depth) === true);
+    check("setMap shading", await ed.setMap("shading", shading, { label: "Surface maps" }) === true);
+    check("setMap normals", await ed.setMap("normals", normals, { label: "Surface maps" }) === true);
+    check("the colour map has its file", !!(shading.ref && shading.ref.filename), shading.ref);
+    check("the normal map has its file", !!(normals.ref && normals.ref.filename), normals.ref);
+
+    // undo / redo swap the object, values untouched
+    await shell.commands.call("undo", { doc: ed.node.id });
+    await settle(ed);
+    check("undo removes the normal map", !ed.maps.normals && ed.maps.shading === shading, Object.keys(ed.maps));
+    await shell.commands.call("redo", { doc: ed.node.id });
+    await settle(ed);
+    check("redo puts it back", ed.maps.normals === normals);
+
+    // a quarter turn turns xf, never the values; its undo turns it back
+    const p0 = [130, 70];
+    const v0 = sampleMapPx(ed.maps.shading, p0[0], p0[1]).slice();
+    const n0 = sampleMapPx(ed.maps.normals, p0[0], p0[1]).slice();
+    await shell.commands.call("rotate_canvas", { doc: ed.node.id, angle: 90 });
+    await settle(ed);
+    check("turn keeps the colour values", ed.maps.shading.data === shading.data && ed.maps.normals.data === normals.data);
+    const vT = sampleMapPx(ed.maps.shading, H - p0[1], p0[0]);
+    check("a colour map samples the turned point", vT.every((x, i) => Math.abs(x - v0[i]) < 1e-6), { v0, vT });
+    await shell.commands.call("undo", { doc: ed.node.id });
+    await settle(ed);
+    const nU = sampleMapPx(ed.maps.normals, p0[0], p0[1]);
+    check("the turn's undo brings the normal map's samples back", nU.every((x, i) => Math.abs(x - n0[i]) < 1e-6), { n0, nU });
+
+    const compare = (label, e2) => {
+        for (const [k, orig, enc] of [["shading", shading, "rgb16"], ["normals", normals, "rgba8"], ["depth", depth, "u16"]]) {
+            const m = e2.maps && e2.maps[k];
+            check(`${label}: ${k} is there`, !!m, Object.keys(e2.maps || {}));
+            if (!m) continue;
+            check(`${label}: ${k} encoding`, m.enc === enc, m.enc);
+            check(`${label}: ${k} size`, m.w === orig.w && m.h === orig.h, [m.w, m.h]);
+            check(`${label}: ${k} xf`, JSON.stringify(m.xf) === JSON.stringify(orig.xf), m.xf);
+            check(`${label}: ${k} values exact`, same(m.data, orig.data) === true, same(m.data, orig.data));
+        }
+    };
+
+    // .scumble save and open
+    const path = __PATH_COLOR__;
+    const saved = await host.saveDocument(ed, { path, copy: true, history: false });
+    check("saveDocument with colour maps", saved && saved.bytes > 0, saved);
+    const opened = await host.openDocument(path);
+    const edOpen = opened ? opened.editor : null;
+    check("openDocument with colour maps", !!edOpen, opened);
+    if (edOpen) {
+        await settle(edOpen);
+        compare("opened", edOpen);
+        shell.closeDocument && shell.closeDocument(edOpen, { force: true });
+    }
+
+    // the autosave restore
+    const stateJson = ed.getValue();
+    const st = JSON.parse(stateJson);
+    check("the state names the encodings", st.maps && st.maps.shading && st.maps.shading.enc === "rgb16" && st.maps.normals.enc === "rgba8" && st.maps.depth.enc === "u16rg", st.maps);
+    const edRestore = shell.newDocument();
+    if (edRestore) {
+        await edRestore.setValue(stateJson);
+        await settle(edRestore);
+        compare("restored", edRestore);
+        shell.closeDocument && shell.closeDocument(edRestore, { force: true });
+    }
+
+    shell.closeDocument && shell.closeDocument(ed, { force: true });
+    return { fails, tiles: !!ed.tileMode };
+})()
+"""
+
 
 async def run(c):
     # 1. picture_input group
@@ -416,7 +543,41 @@ async def run(c):
     if not fails2:
         print(f"[ok] maps on {'tiles' if r2.get('tiles') else 'canvas'}")
 
-    return not fails1 and not fails2
+    # 3. colour maps group
+    tmp3 = os.path.join(tempfile.gettempdir(), f"maps_color_{os.getpid()}").replace("\\", "/")
+    os.makedirs(tmp3, exist_ok=True)
+    scumble_color = f"{tmp3}/test_color_maps.scumble"
+    fails3 = []
+    r3 = {}
+    try:
+        r3 = await c.eval(JS_COLOR.replace("__PATH_COLOR__", json.dumps(scumble_color)), timeout=300)
+        fails3 = list(r3.get("fails", []))
+        if os.path.exists(scumble_color):
+            with zipfile.ZipFile(scumble_color, "r") as z:
+                hdr = json.loads(z.read("scumble/document.json").decode("utf-8"))
+                if hdr.get("version") != 2 or hdr.get("minReader") != 7:
+                    fails3.append(f"document with colour maps: expected version 2 / minReader 7, got {hdr.get('version')} / {hdr.get('minReader')}")
+                encs = {k: (m or {}).get("enc") for k, m in ((hdr.get("document") or {}).get("maps") or {}).items()}
+                if encs != {"depth": "u16rg", "shading": "rgb16", "normals": "rgba8"}:
+                    fails3.append(f"the stored encodings: {encs}")
+        else:
+            fails3.append("no .scumble with colour maps was written")
+    finally:
+        if os.path.exists(scumble_color):
+            try:
+                os.remove(scumble_color)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp3)
+        except OSError:
+            pass
+    for f in fails3:
+        print("[FAIL colour maps]", f)
+    if not fails3:
+        print(f"[ok] colour maps on {'tiles' if r3.get('tiles') else 'canvas'}")
+
+    return not fails1 and not fails2 and not fails3
 
 
 def main():

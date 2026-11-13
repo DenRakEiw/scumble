@@ -1,0 +1,4 @@
+maps rc=0 5s PASS
+lint rc=0 36s 
+types rc=0 6s 
+ALL PASS

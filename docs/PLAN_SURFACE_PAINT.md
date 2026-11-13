@@ -147,6 +147,34 @@ DirectML, ViT-S 0.2 s, CPU 1.3-2.1 s, DirectML = CPU within 0.04 deg); ViT-B by 
 contact sheets stay out of the repo (scratchpad). Next: SP1 (colour maps), and the HF repo question (§5 point 2) before
 SP2.
 
+**SP1 done 2026-11-13: colour maps** (`renderer/editor/inpaint_maps.js`). A DocMap has an `enc` now (`MAP_ENC`):
+`u16` (depth, as before; a map object without `enc` reads as u16), `rgb16` (three 16-bit values interleaved, for S and
+R, linear 0..1) and `rgba8` (four bytes, for N and a mask). `makeMap(kind, w, h, data, xf, meta, guide, enc)` (the
+encoding last, so every existing call is unchanged), `deriveMap` keeps the encoding and copies foreign data into the
+map's type, `packMap` / `unpackMap` beside `packRG16` / `unpackRG16`, `sampleMapPx` (every channel, bilinear, edge
+clamp, through `xf`; `sampleMap` of a colour map reads channel 0), `rg8View` answers null for a colour map. **The file:**
+one PNG of `w` x `2h`, two opaque bands stacked (rgb16 the high bytes over the low bytes, rgba8 RGB over R = A), alpha
+always 255, so no value ever passes through premultiplication and the file stays one `ref` (docfile, the mirror and
+`referencedFileKeys` need nothing new); a u16 map writes exactly the descriptor of before (`enc: "u16rg"`, the same key
+order). `mapFromJSON` reads `enc` and refuses an encoding it does not know without loading the file (no guess). `setMap`
+uploads `packMap`. Undo, the geometry's `xf` follow-up and `memoryReport` were generic already. **The document:**
+FEATURES row `maps-color`, `minReader` 7 (an older reader would load the two-band file as a u16 map and store it back as
+`"u16rg"`; `since: "0.1.57"`, the release that ships it corrects it), so `READER_VERSION` is 7; a document with only a
+depth map stays at reader 1. Tests: `tools/maps_test.js` §8c (every 16-bit value per channel and every alpha through pack
+and unpack exact, the old descriptor byte-for-key, unknown encodings, deriveMap, sampleMapPx through a turned xf),
+`tools/maps_test.py`'s third group "colour maps" in the app (set, undo, redo, a quarter turn and its undo, `.scumble`
+save and open and the autosave restore exact with encoding and xf, the header 2 / 7), `tools/document_test.js` (reader
+7, a depth map stays 1). Gates `sp1a` (maps, document, lint, types) PASS on both backends. Mutation round (`tools/mutation_round.py`, the
+untouched copy green first): 9 of 9 killed (band order, alpha in the file's alpha, one band read, `enc` always u16rg,
+one channel allocated, `deriveMap` dropping `enc`, `setMap` packing u16, the FEATURES test never matching, an unknown
+encoding read as u16); `docs/measurements/sp1_2026-11-13/`. Next: SP2 (the helper), after the HF repo question (§5 point 2).
+**For later sessions:** a normal map's vectors are in the map's own frame; a quarter turn or a mirror moves only `xf`,
+so a consumer (SP6, SP7) turns the vector by `xf`'s linear part. The GPU has no 16-bit sampler here (`uploadSampler`
+takes RGBA8 / RG8 / RGBA32F / R32F): SP4 uploads the file's two bands as two RGBA8 textures and joins them in the
+shader as `(hi * 256 + lo) * 255 / 65535`; bilinear filtering is linear, so filtering the bands apart and joining them
+equals filtering the 16-bit value up to the filter's weight precision (to be measured in SP4; an RGBA32F upload would
+cost 200 MB at 4096 x 3072).
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

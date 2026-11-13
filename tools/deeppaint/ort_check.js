@@ -13,21 +13,8 @@ const meta = JSON.parse(fs.readFileSync(path.join(HERE, "ref", "meta.json"), "ut
 const sch = JSON.parse(fs.readFileSync(path.join(HERE, "onnx", "scheduler.json"), "utf8"));
 
 function readF32(file) { const b = fs.readFileSync(file); return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); }
-// float32 <-> float16 (Uint16) without a library
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-function toHalf(a) {
-    const out = new Uint16Array(a.length);
-    for (let i = 0; i < a.length; i++) {
-        f32[0] = a[i]; const x = u32[0];
-        const sign = (x >>> 16) & 0x8000; let e = ((x >>> 23) & 0xff) - 127 + 15; let m = x & 0x7fffff;
-        if (e <= 0) { out[i] = sign; continue; }
-        if (e >= 31) { out[i] = sign | 0x7c00; continue; }
-        // round to nearest even
-        const r = m & 0x1fff; m >>= 13; if (r > 0x1000 || (r === 0x1000 && (m & 1))) { m++; if (m === 0x400) { m = 0; e++; } }
-        out[i] = sign | (e << 10) | m;
-    }
-    return out;
-}
+// float16 (Uint16) -> float32 without a library (the graphs take float32; an fp16 output is read back here)
+
 function fromHalf(h) {
     const out = new Float32Array(h.length);
     for (let i = 0; i < h.length; i++) {

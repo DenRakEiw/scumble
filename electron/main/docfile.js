@@ -131,6 +131,13 @@ const FEATURES = [
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "lens_blur"),
     },
     {
+        // colour maps (PLAN_SURFACE_PAINT.md SP1: shading and residual rgb16, normals rgba8): an older reader would load
+        // the two-band file as a u16 map and write it back as "u16rg" over the colour map's meaning
+        id: "maps-color", since: "0.1.57", reader: 7,
+        sample: { maps: { shading: { enc: "rgb16" } } },
+        test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.values(d.maps).some((m) => m && m.enc != null && m.enc !== "u16rg")),
+    },
+    {
         id: "relight", since: "0.1.47", reader: 6,
         sample: { layers: [{ kind: "filter", filter: "relight" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "relight"),
