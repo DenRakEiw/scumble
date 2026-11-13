@@ -706,10 +706,27 @@ function renderHelpers(status) {
             btn.textContent = "Download";
             btn.addEventListener("click", async () => {
                 delete downloadErrors[m.id];
+                // a model with licence terms (a set's `terms`): its paragraph first, accepted once per terms version
+                let accept = null;
+                if (m.terms && m.termsText && !m.termsAccepted) {
+                    const links = (m.terms.links || []).filter((l) => l && l.url);
+                    for (;;) {
+                        const i = await dialogs.ask({
+                            title: `${m.label}: licence`, message: m.termsText,
+                            detail: links.map((l) => `${l.label}: ${l.url}`).join("\n"),
+                            buttons: ["Accept and download", ...(links.length ? ["Read the licence"] : []), "Cancel"],
+                            defaultId: 0, cancelId: links.length ? 2 : 1,
+                        });
+                        if (links.length && i === 1) { window.scumble.openExternal(links[0].url); continue; }
+                        if (i !== 0) return;
+                        break;
+                    }
+                    accept = m.terms.version;
+                }
                 btn.disabled = true;
                 try {
                     renderHelpers(await window.scumble.helpers.status());
-                    const r = await window.scumble.helpers.download(m.id);
+                    const r = await window.scumble.helpers.download(m.id, accept != null ? { acceptTerms: accept } : undefined);
                     if (r) renderHelpers(r);
                 } catch (e) {
                     downloadErrors[m.id] = String(e.message || e);

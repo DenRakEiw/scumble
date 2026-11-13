@@ -1316,7 +1316,7 @@ function installIpc() {
     ipcMain.handle("helpers:scan", () => helpers.scan());
     ipcMain.handle("helpers:browseDir", () => { needWindow("Choose folder"); return helpers.browseDir(win); });
     ipcMain.handle("helpers:openFolder", () => helpers.openFolder());
-    ipcMain.handle("helpers:download", (_e, id) => helpers.download(id));
+    ipcMain.handle("helpers:download", (_e, id, opts) => helpers.download(id, opts && typeof opts === "object" ? { acceptTerms: opts.acceptTerms } : null));
     ipcMain.handle("helpers:cancel", (_e, id) => helpers.cancel(id));
     ipcMain.handle("helpers:remove", (_e, id) => helpers.remove(id));
     ipcMain.handle("helpers:free", () => helpers.free());

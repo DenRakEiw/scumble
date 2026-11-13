@@ -196,7 +196,7 @@ contextBridge.exposeInMainWorld("scumble", {
         scan: () => ipcRenderer.invoke("helpers:scan"),
         browseDir: () => ipcRenderer.invoke("helpers:browseDir"),
         openFolder: () => ipcRenderer.invoke("helpers:openFolder"),
-        download: (id) => ipcRenderer.invoke("helpers:download", id),
+        download: (id, opts) => ipcRenderer.invoke("helpers:download", id, opts),
         cancel: (id) => ipcRenderer.invoke("helpers:cancel", id),
         remove: (id) => ipcRenderer.invoke("helpers:remove", id),
         free: () => ipcRenderer.invoke("helpers:free"),

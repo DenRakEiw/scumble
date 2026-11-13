@@ -1,0 +1,7 @@
+The intrinsic set downloaded through electron/main/onnx/models.js Downloader (termsAccepted given) into an empty folder,
+from huggingface.co/DenRakEiw/scumble-intrinsic-onnx @ 17a90768 (private at the time, with the user's HF token), 2026-11-13.
+Without the token: 401 on the first file.
+
+{"received":1900388199,"total":1900388199,"done":true}
+{"token":true,"seconds":908.5,"present":true,"error":null}
+verify ok true: all four files present at their registry sizes and their sha256 equal to the registry's (models.verify; the Downloader had checked each file's size and sha256 as it landed); 908.5 s for 1.9 GB.

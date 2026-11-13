@@ -1,21 +1,21 @@
 {
-  "about": "The Deep paint decomposition set in the helper registry (electron/main/onnx/models.js fromSetCatalogue; docs/PLAN_SURFACE_PAINT.md SP2). Scumble's ONNX export of Marigold-IID-Lighting v1.1 (tools/deeppaint/export_onnx.py from prs-eth/marigold-iid-lighting-v1-1 @ 08c3930b, the fp16 variant, float32 in and out, the empty-prompt embedding baked into the UNet). Sizes and sha256 are the exported files' (docs/measurements/sp0_2026-11-13/sha256.txt). Not offered for download until the files are uploaded to the hosting repo (no `base`, so no file has a URL): then `base` gets that repo's resolve URL at the upload's commit. Files put into the folder by hand are used meanwhile (the tests do).",
+  "about": "The Deep paint decomposition set in the helper registry (electron/main/onnx/models.js fromSetCatalogue; docs/PLAN_SURFACE_PAINT.md SP2). Scumble's ONNX export of Marigold-IID-Lighting v1.1 (tools/deeppaint/export_onnx.py from prs-eth/marigold-iid-lighting-v1-1 @ 08c3930b, the fp16 variant, float32 in and out, the empty-prompt embedding baked into the UNet). Sizes and sha256 are the exported files' (docs/measurements/sp0_2026-11-13/sha256.txt). Hosted at huggingface.co/DenRakEiw/scumble-intrinsic-onnx with Marigold's licence and a README naming the changes (the licence's Section III, 4); `base` is that repo's resolve URL at the upload's commit, so the files and their sha256 stay what they are when the repo moves on.",
   "id": "intrinsic",
   "kind": "intrinsic",
   "label": "Marigold IID Lighting",
   "note": "splits the picture into colour, light and reflections (Deep paint)",
   "source": "Scumble's ONNX export of prs-eth/marigold-iid-lighting-v1-1 @ 08c3930b",
   "sourceUrl": "https://huggingface.co/prs-eth/marigold-iid-lighting-v1-1",
-  "license": "CreativeML Open RAIL++-M (weights), Apache-2.0 (Marigold's code)",
+  "license": "Open RAIL++-M (weights), Apache-2.0 (Marigold's code)",
   "subdir": "onnx/intrinsic",
   "placeholder": false,
   "version": 1,
-  "base": null,
+  "base": "https://huggingface.co/DenRakEiw/scumble-intrinsic-onnx/resolve/17a90768c8d50ba46158eece5077531b221b9ae3/",
   "terms": {
     "version": 1,
-    "text": "Marigold IID Lighting by ETH Zurich's Photogrammetry and Remote Sensing group, CreativeML Open RAIL++-M: an ONNX export of their weights, about {size}, downloaded from {host}. The licence allows commercial use of the model and of your pictures and passes on its use restrictions: the model may not be used for the purposes its Attachment A lists (among them harm to minors, defamation, disinformation, and discrimination).",
+    "text": "Marigold IID Lighting by PRS, ETH Zürich, under their Open RAIL++-M License: Scumble's ONNX export of their weights (converted, not retrained), about {size}, downloaded from {host}. The licence allows commercial use of the model and of what you make with it; whoever uses it is bound by its paragraph 5, the use-based restrictions of its Attachment A.",
     "links": [
-      { "label": "CreativeML Open RAIL++-M", "url": "https://huggingface.co/stabilityai/stable-diffusion-2/blob/main/LICENSE-MODEL" },
+      { "label": "Open RAIL++-M License", "url": "https://huggingface.co/DenRakEiw/scumble-intrinsic-onnx/blob/17a90768c8d50ba46158eece5077531b221b9ae3/LICENSE-MODEL.txt" },
       { "label": "Marigold", "url": "https://huggingface.co/prs-eth/marigold-iid-lighting-v1-1" }
     ]
   },

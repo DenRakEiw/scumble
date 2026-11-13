@@ -44,9 +44,18 @@ function lastScan(dir) {
     return s && s.dir === dir ? s : null;
 }
 
+/**
+ * Whether the user accepted a model's licence terms in their current version (the pre-download dialog of Settings ›
+ * Helpers: `helpers.terms[id]` = the version accepted). A new version of the terms asks again.
+ */
+function termsAccepted(model) {
+    const t = conf().terms || {};
+    return !!(model && model.terms && t[model.id] != null && t[model.id] === model.terms.version);
+}
+
 const downloader = new models.Downloader(modelsDir, () => keys.get(HF_TOKEN), (ev) => {
     if (progressSink) progressSink(ev);
-});
+}, { termsAccepted });
 
 function setProgressSink(fn) { progressSink = fn; }
 
@@ -57,7 +66,7 @@ function status() {
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
         device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint, depth: c.depth, intrinsic: c.intrinsic, normals: c.normals,
-        models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
+        models: models.describeAll(dir, links(), sc ? sc.elsewhere : null).map((r) => (r.terms ? { ...r, termsAccepted: termsAccepted(models.byId(r.id)) } : r)),
         scan: sc,
         downloads: downloader.running(),
         // from the helpers' process's last answer (nothing loaded while it is off): never a call into it
@@ -127,7 +136,17 @@ async function openFolder() {
     return shell.openPath(require("../msix").forExplorer(d));
 }
 
-async function download(id) {
+/**
+ * Download a model. `opts.acceptTerms`: the version of the model's terms the user just accepted in the window's
+ * dialog; it is stored (only when it is the current version) before the download starts, and the Downloader refuses a
+ * model with terms that were not accepted.
+ */
+async function download(id, opts = null) {
+    const model = models.byId(id);
+    if (model && model.terms && opts && opts.acceptTerms != null && opts.acceptTerms === model.terms.version) {
+        const c = conf();
+        settings.set({ helpers: { ...c, terms: { ...(c.terms || {}), [id]: model.terms.version } } });
+    }
     const loc = await downloader.download(id);
     return loc ? status() : null;
 }

@@ -5,9 +5,9 @@
 //     node tools/deeppaint_helpers_test.js <modelsDir> [--cpu] [--normals moge2_vits_normal]
 //
 // The folder holds the set in onnx/intrinsic/ and the MoGe-2 files under their registry names (models.js). Checks:
-// the registry (the set not offered before it is hosted, present when its files are in place, its row then listed;
-// MoGe-2 pinned to commits), the refusals of sizes out of range, the decomposition's sense (the ball's albedo more
-// even than the picture, its shading following the light), the normals' sense (they point out of the ball), the same
+// the registry (the set offered from its repo at a pinned commit, present when its files are in place; MoGe-2 pinned
+// to commits), the refusals of sizes out of range, the decomposition's sense (the ball's albedo more even than the
+// picture, its shading following the light), the normals' frame (against the model's own points), the same
 // seed giving the same bytes and another seed other bytes, a size that is no multiple of 64 coming back at its size,
 // and every answer byte for byte the same in the helpers' process and on this thread. Exits non-zero on a failure or
 // when a model is missing.
@@ -91,13 +91,14 @@ async function main() {
 
     // ---- the registry ------------------------------------------------------------------------------------------
     const set = models.byId("intrinsic");
-    check("the decomposition set: in onnx/intrinsic, four files with size and sha256, not offered before it is hosted",
+    check("the decomposition set: in onnx/intrinsic, four files with size and sha256, offered from its repo pinned to a commit",
         set && set.subdir === "onnx/intrinsic" && set.strict && !set.invalid && set.files.length === 4
-        && set.files.every((f) => f.size > 0 && /^[0-9a-f]{64}$/.test(f.sha256) && !f.url) && !models.offered(set),
+        && set.files.every((f) => f.size > 0 && /^[0-9a-f]{64}$/.test(f.sha256) && /^https:[/][/]huggingface[.]co[/]DenRakEiw[/]scumble-intrinsic-onnx[/]resolve[/][0-9a-f]{40}[/][a-z_]+[.](onnx|json)$/.test(f.url))
+        && models.offered(set) && /Open RAIL[+][+]-M/.test(models.termsText(set)) && /Hugging Face/.test(models.termsText(set)),
         set && JSON.stringify({ subdir: set.subdir, invalid: set.invalid, offered: models.offered(set) }));
     const setFiles = models.paths(set, dir);
-    check("the set present from the files in its folder, its row listed though not offered", !!setFiles
-        && models.describeAll(dir).some((r) => r.id === "intrinsic" && r.present && r.offered === false && r.set === true));
+    check("the set present from the files in its folder, its row listed", !!setFiles
+        && models.describeAll(dir).some((r) => r.id === "intrinsic" && r.present && r.offered === true && r.set === true));
     const nm = models.byId(normalsId);
     check("MoGe-2 normal rows: offered, pinned to a commit, one file with its sha256",
         ["moge2_vitb_normal", "moge2_vits_normal"].every((id) => {

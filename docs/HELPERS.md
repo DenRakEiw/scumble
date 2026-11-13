@@ -308,7 +308,7 @@ layer with smoothing.
 | `lama` (kind `inpaint`) | `lama_fp32.onnx` (208 MB; also found in `inpaint/` and `lama/`) | `Carve/LaMa-ONNX`, pinned to commit `c3c0c9e4`, sha256 `1faef530…68d6` | Apache-2.0 (the weights: `advimman/lama`, Apache-2.0) |
 | `da2_small` (kind `depth`) | `depth_anything_v2_small.onnx` (99 MB; also found in `depth/`) | `onnx-community/depth-anything-v2-small`, pinned to commit `4472b736…`, sha256 `afb6a5c2…df10c` | Apache-2.0 |
 | `moge2_vitb_normal` / `moge2_vits_normal` (kind `normals`) | `moge2_vitb_normal.onnx` (419 MB) / `moge2_vits_normal.onnx` (141 MB; also found in `moge/`) | `Ruicheng/moge-2-vitb-normal-onnx` pinned to `2d247a12`, `Ruicheng/moge-2-vits-normal-onnx` pinned to `e50ffda4`, a sha256 each; ViT-B the default | MIT |
-| `intrinsic` (kind `intrinsic`) | a set of four files in `onnx/intrinsic/`: `vae_encoder.onnx` (68 MB), `unet.onnx` (1.73 GB), `vae_decoder.onnx` (99 MB), `scheduler.json` | Scumble's ONNX export of `prs-eth/marigold-iid-lighting-v1-1` @ `08c3930b` (`tools/deeppaint/export_onnx.py`); **not offered until it is hosted** (no URL yet); files put into its folder by hand are used and listed | CreativeML Open RAIL++-M (the weights), Apache-2.0 (Marigold's code) |
+| `intrinsic` (kind `intrinsic`) | a set of four files in `onnx/intrinsic/`: `vae_encoder.onnx` (68 MB), `unet.onnx` (1.73 GB), `vae_decoder.onnx` (99 MB), `scheduler.json` | Scumble's ONNX export of `prs-eth/marigold-iid-lighting-v1-1` @ `08c3930b` (`tools/deeppaint/export_onnx.py`), hosted at `huggingface.co/DenRakEiw/scumble-intrinsic-onnx` pinned to `17a90768` with Marigold's licence and a README naming the changes; its terms asked before the download | Open RAIL++-M of PRS, ETH Zürich (the weights; its Attachment A lists no restrictions in Marigold's copy), Apache-2.0 (Marigold's code) |
 | `corridorkey2` (kind `key`) | a set of 28 files in `onnx/corridorkey2/` (planned; about 2.4 GB) | Scumble's ONNX conversion of the CorridorKey 2.0 weights (`huggingface.co/nikopueringer/CorridorKey2.0` @ `cf44a8d`; the code `github.com/nikopueringer/CorridorKey2.0` @ `485f5e9`) and its three feature models; **a placeholder, not offered** (below) | Corridor Key Licence 2.0 (CC BY-NC-SA 4.0 with Corridor's terms); C-RADIOv4 NVIDIA Open Model License; MoGe-2 MIT; RVM CC BY 4.0 |
 
 The full hashes are in `models.js`; every one is the Hugging Face tree API's LFS oid (which is the file's sha256),
@@ -320,7 +320,14 @@ registry said 20,640,886, so that download always failed its size check; fixed w
 - **Refused before any request:** an unknown id; a model that is not `offered` (a placeholder, a set whose catalogue
   breaks a rule, a file without a URL, a set file without its size or sha256: "... is not available for download
   yet."); a model with `terms` the caller has not accepted (the `termsAccepted(model)` option, default: never); one
-  already downloading. **Refused as the download's error:** less free disk (`statfs` of the target folder) than the
+  already downloading.
+- **The terms in the app** (Deep paint SP2, 2026-11-13; until then no model had terms, so the app's Downloader, built
+  without the option, would have refused any): `index.js` passes `termsAccepted`, true when `helpers.terms[id]` in
+  the settings is the model's current `terms.version`, and each row of `helpers:status` carries `termsAccepted`.
+  Settings › Helpers' Download button on a row with terms not accepted opens the app's dialog first (the title "<label>:
+  licence", the `termsText` paragraph, the links as text; *Accept and download*, *Read the licence* (opens the first
+  link and asks again), *Cancel*); the yes sends `helpers:download(id, { acceptTerms: version })`, and main stores the
+  version before the download, only when it is the current one. A new version of the terms asks again. **Refused as the download's error:** less free disk (`statfs` of the target folder) than the
   bytes still to fetch plus 64 MB (present files and `.part` bytes do not count).
 - **The token rule** (`hfTokenAllowed`): the Hugging Face token goes on a request only when its URL is
   `https://huggingface.co/...` or `https://hf.co/...` on the default port without user info. The redirects are
@@ -348,8 +355,8 @@ name inside the graph, beside the `.onnx`). A set's files keep their own names i
 `<app models>/onnx/corridorkey2/`); they are looked for there only (never in `SUBDIRS`: a bare
 `models/corridorkey2/` is a ComfyUI CorridorKey pack's fp32 weights), count as present only at their registry size,
 and are never linked by the scan (which reports the pack's `corridorkey2/corridorkey_v2.safetensors` under
-`elsewhere`). `describeAll()` leaves out a model that is not offered (so its Settings › Helpers row and Download
-button stay hidden), `describeAll(..., { all: true })` and `describe(id)` give it with `offered: false`, and a set's
+`elsewhere`). `describeAll()` leaves out a model that is not offered unless its files are in place (so its Settings ›
+Helpers row and Download button stay hidden until there is something to download or remove), `describeAll(..., { all: true })` and `describe(id)` give it with `offered: false`, and a set's
 row adds `set`, `subdir`, `folder`, `version`, `approxBytes`, `terms` and `termsText` (the terms paragraph with
 `{size}` and `{host}` filled in). `setFolder(model, dir)` is the folder of a present set.
 

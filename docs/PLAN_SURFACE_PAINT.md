@@ -203,8 +203,21 @@ bytes, another seed 0.004 apart on average, 301 x 227 back at its size, the refu
 mostly free: DirectML 2.7 s for the three sessions' load, then 0.1 s a run (encode 13, UNet 24, decode 50 ms), MoGe-2
 ViT-B 1.4 s cold; the CPU 19 s a run. In the dev app (own profile, `--no-comfy`): the two IPC calls answered through the
 helpers' process on DirectML, a side of 1,000 refused with the sentence, the three rows in Settings › Helpers.
-`download_test` 72 / 72, `scan_test`, `helpers_test --process`, lint, types green. Next: SP3 (decompose), which needs
-the files hosted only for other machines; it runs here on the files in place.
+`download_test` 72 / 72, `scan_test`, `helpers_test --process`, lint, types green.
+**The upload (the user, the same day: "ja, mache den upload"):** `DenRakEiw/scumble-intrinsic-onnx` commit `17a90768`:
+the four files (Hugging Face's LFS sha256 equal to the registry's), `LICENSE-MODEL.txt` unchanged from
+`github.com/prs-eth/Marigold` @ `2bfbdeae` (Marigold's own Open RAIL++-M of 2024-11-22, Copyright PRS, ETH Zürich; its
+Attachment A holds only the template's "[insert use restrictions]", so the terms paragraph names paragraph 5 and no list;
+the first draft had listed restrictions this licence does not carry), and a README (the licence's Section III, 4: the
+files marked as converted, the notices kept, the licence included; the graphs, the step, the sha256, the citation).
+**The repo stays private until the user makes it public**: the app's download needs the HF token meanwhile (a run
+without one got 401). `intrinsic.json`'s `base` is the resolve URL at `17a90768`, so the set is offered. **Found with
+it:** the app's `Downloader` was built without `termsAccepted`, so a model with terms could never download in the app
+(CK2 was a placeholder, so nobody hit it): the terms dialog in Settings › Helpers and `helpers.terms[id]` (HELPERS.md
+"Downloads"); run in the dev app: refused without the yes and with a wrong version, Cancel downloads nothing, Accept
+starts it and stores version 1, the next Download asks no more. The full download through `Downloader` into an empty
+folder with the token: sizes and sha256 checked (`docs/measurements/sp2_2026-11-13/download.txt`). Next: SP3
+(decompose).
 
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
