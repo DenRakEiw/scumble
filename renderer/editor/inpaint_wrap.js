@@ -1,0 +1,154 @@
+// @ts-check
+// Deep paint's wrap (docs/PLAN_SURFACE_PAINT.md §3.3, SP7): a flat picture (a logo, a pattern) laid onto the surface the
+// picture shows, by arc length from the decal's centre. No DOM at import (plain functions, tested in Node).
+//
+// The surface's slope comes from the normals map alone: along a row the surface rises dz/dx = -nx / nz, so one pixel of
+// the picture is ds/dx = sqrt(1 + (nx / nz)^2) pixels of surface (a column the same with ny). Summed from the centre c
+// along each row that gives u, along each column v (trapezoids between pixel centres); the decal's pixel for (x, y) is
+// the one at (u, v) turned back by the decal's angle and divided by its scale. On a cylinder seen side on that is exact
+// (x = c + R sin(s / R)); a surface curved both ways (a face) gets a distortion that shows. The projection is taken as
+// orthographic, so a strongly foreshortened plane is not stretched back.
+
+import { xfInv } from "./inpaint_resample.js";
+
+/** |nz| below this is taken as this (ds/dx at most about 6.7): a silhouette's normal lies in the picture's plane. */
+export const WRAP_NZ_MIN = 0.15;
+
+/**
+ * The map's frame in the document: a vector of the map's own frame (x right, y down in its pixels) into document
+ * directions, as unit columns [ax, ay, bx, by] of `xf`'s linear part (a quarter turn or a mirror moves only `xf`).
+ * @param {any} map
+ */
+export function mapFrame(map) {
+    const xf = map.xf || [map.w, 0, 0, map.h, 0, 0];
+    const la = Math.hypot(xf[0], xf[1]) || 1, lb = Math.hypot(xf[2], xf[3]) || 1;
+    return [xf[0] / la, xf[1] / la, xf[2] / lb, xf[3] / lb];
+}
+
+/**
+ * The surface's length per picture pixel along x and y at each pixel centre of `box` ([x0, y0, x1, y1], document
+ * pixels): `{ gx, gy }` (Float32Array, w * h). Where the map's mask (A) says no surface, 1 (flat).
+ * @param {any} map an rgba8 normals map ((n + 1) / 2, the mask in A)
+ * @param {number[]} box
+ */
+export function wrapSlopes(map, box) {
+    const [x0, y0, x1, y1] = box;
+    const w = x1 - x0, h = y1 - y0;
+    const gx = new Float32Array(w * h), gy = new Float32Array(w * h);
+    const [ax, ay, bx, by] = mapFrame(map);
+    // the map's bilinear at each document pixel centre (sampleMapPx's step, its inverse taken once)
+    const mw = map.w, mh = map.h, md = map.data;
+    const inv = xfInv(map.xf || [mw, 0, 0, mh, 0, 0]);
+    const s = [0, 0, 0, 0];
+    for (let y = 0; y < h; y++) {
+        const py = y0 + y + 0.5;
+        for (let x = 0; x < w; x++) {
+            const i = y * w + x;
+            const px = x0 + x + 0.5;
+            const qu = (inv[0] * px + inv[2] * py + inv[4]) * mw - 0.5, qv = (inv[1] * px + inv[3] * py + inv[5]) * mh - 0.5;
+            const fx0 = Math.floor(qu), fy0 = Math.floor(qv), fx = qu - fx0, fy = qv - fy0;
+            const cx0 = fx0 < 0 ? 0 : fx0 > mw - 1 ? mw - 1 : fx0, cx1 = fx0 + 1 < 0 ? 0 : fx0 + 1 > mw - 1 ? mw - 1 : fx0 + 1;
+            const cy0 = fy0 < 0 ? 0 : fy0 > mh - 1 ? mh - 1 : fy0, cy1 = fy0 + 1 < 0 ? 0 : fy0 + 1 > mh - 1 ? mh - 1 : fy0 + 1;
+            const i00 = 4 * (cy0 * mw + cx0), i10 = 4 * (cy0 * mw + cx1), i01 = 4 * (cy1 * mw + cx0), i11 = 4 * (cy1 * mw + cx1);
+            for (let c = 0; c < 4; c++) {
+                const top = md[i00 + c] + (md[i10 + c] - md[i00 + c]) * fx, bot = md[i01 + c] + (md[i11 + c] - md[i01 + c]) * fx;
+                s[c] = (top + (bot - top) * fy) / 255;
+            }
+            if (s[3] < 0.5) { gx[i] = 1; gy[i] = 1; continue; }
+            // a byte of 128 is 0.0039, not 0: within one byte of the middle the normal has no slope (a flat wall stays flat)
+            let mx = 2 * s[0] - 1, my = 2 * s[1] - 1;
+            if (Math.abs(mx) < 1 / 255) mx = 0;
+            if (Math.abs(my) < 1 / 255) my = 0;
+            const nz = Math.max(WRAP_NZ_MIN, Math.abs(2 * s[2] - 1));
+            const dx = mx * ax + my * bx, dy = mx * ay + my * by;   // the normal's x, y in the document's directions
+            gx[i] = Math.sqrt(1 + (dx / nz) * (dx / nz));
+            gy[i] = Math.sqrt(1 + (dy / nz) * (dy / nz));
+        }
+    }
+    return { gx, gy };
+}
+
+/**
+ * Surface coordinates of every pixel centre of a w x h box: u along each row, v along each column, signed, in surface
+ * pixels from the point (cx, cy) (box pixels, real). Trapezoids between pixel centres; the centre's own pixel gets its
+ * offset times its slope.
+ * @param {Float32Array} gx
+ * @param {Float32Array} gy
+ * @param {number} w
+ * @param {number} h
+ * @param {number} cx
+ * @param {number} cy
+ */
+export function wrapCoords(gx, gy, w, h, cx, cy) {
+    const u = new Float32Array(w * h), v = new Float32Array(w * h);
+    const ic = Math.max(0, Math.min(w - 1, Math.floor(cx))), jc = Math.max(0, Math.min(h - 1, Math.floor(cy)));
+    for (let y = 0; y < h; y++) {
+        const r = y * w;
+        u[r + ic] = (ic + 0.5 - cx) * gx[r + ic];
+        for (let x = ic + 1; x < w; x++) u[r + x] = u[r + x - 1] + 0.5 * (gx[r + x - 1] + gx[r + x]);
+        for (let x = ic - 1; x >= 0; x--) u[r + x] = u[r + x + 1] - 0.5 * (gx[r + x + 1] + gx[r + x]);
+    }
+    for (let x = 0; x < w; x++) {
+        v[jc * w + x] = (jc + 0.5 - cy) * gy[jc * w + x];
+        for (let y = jc + 1; y < h; y++) v[y * w + x] = v[(y - 1) * w + x] + 0.5 * (gy[(y - 1) * w + x] + gy[y * w + x]);
+        for (let y = jc - 1; y >= 0; y--) v[y * w + x] = v[(y + 1) * w + x] - 0.5 * (gy[(y + 1) * w + x] + gy[y * w + x]);
+    }
+    return { u, v };
+}
+
+/**
+ * The box around the decal's centre that its wrapped pixels can reach: the surface is never shorter than the picture, so
+ * a disc of half the decal's diagonal (in document pixels, after its scale) holds them; clamped to the picture.
+ * @param {{ cx: number, cy: number, w: number, h: number }} place the decal's centre and size in document pixels
+ * @param {number} W
+ * @param {number} H
+ * @returns {number[]|null}
+ */
+export function wrapBox(place, W, H) {
+    const r = 0.5 * Math.hypot(place.w, place.h) + 2;
+    const x0 = Math.max(0, Math.floor(place.cx - r)), y0 = Math.max(0, Math.floor(place.cy - r));
+    const x1 = Math.min(W, Math.ceil(place.cx + r)), y1 = Math.min(H, Math.ceil(place.cy + r));
+    return x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+}
+
+/**
+ * The decal wrapped onto the surface over `box`: straight RGBA (w * h * 4), bilinear from the decal's premultiplied
+ * pixels, nothing outside the decal, times the region's alpha (`sel`, one byte per pixel of the box, or null).
+ * @param {{ map: any, box: number[], decal: { data: ArrayLike<number>, width: number, height: number },
+ *   place: { cx: number, cy: number, w: number, h: number, angle?: number }, sel?: Uint8Array|null }} o
+ *   place: the decal's centre and its size in document pixels; angle in degrees, clockwise on the screen
+ */
+export function wrapDecal({ map, box, decal, place, sel = null }) {
+    const [x0, y0, x1, y1] = box;
+    const w = x1 - x0, h = y1 - y0;
+    const { gx, gy } = wrapSlopes(map, box);
+    const { u, v } = wrapCoords(gx, gy, w, h, place.cx - x0, place.cy - y0);
+    const dw = decal.width, dh = decal.height, d = decal.data;
+    const sx = place.w / dw, sy = place.h / dh;
+    const th = ((place.angle || 0) * Math.PI) / 180, co = Math.cos(th), si = Math.sin(th);
+    const out = new Uint8ClampedArray(w * h * 4);
+    const px = (xx, yy, c) => d[4 * (yy * dw + xx) + c];
+    for (let i = 0; i < w * h; i++) {
+        const m = sel ? sel[i] : 255;
+        if (!m) continue;
+        // turned back by the angle, then into the decal's pixels (its centre at its middle)
+        const ur = co * u[i] + si * v[i], vr = -si * u[i] + co * v[i];
+        const s = ur / sx + dw / 2 - 0.5, t = vr / sy + dh / 2 - 0.5;
+        if (s < -0.5 || t < -0.5 || s > dw - 0.5 || t > dh - 0.5) continue;
+        const sa = Math.floor(s), ta = Math.floor(t), fs = s - sa, ft = t - ta;
+        let pr = 0, pg = 0, pb = 0, pa = 0;
+        for (let k = 0; k < 4; k++) {
+            const xx = sa + (k & 1), yy = ta + (k >> 1);
+            if (xx < 0 || yy < 0 || xx >= dw || yy >= dh) continue;   // outside: transparent
+            const wt = ((k & 1) ? fs : 1 - fs) * ((k >> 1) ? ft : 1 - ft);
+            if (!wt) continue;
+            const a = px(xx, yy, 3) * wt;
+            pr += px(xx, yy, 0) * a; pg += px(xx, yy, 1) * a; pb += px(xx, yy, 2) * a; pa += a;
+        }
+        if (pa <= 0) continue;
+        const o = 4 * i;
+        out[o] = Math.round(pr / pa); out[o + 1] = Math.round(pg / pa); out[o + 2] = Math.round(pb / pa);
+        out[o + 3] = Math.round((pa * m) / 255);
+    }
+    return out;
+}

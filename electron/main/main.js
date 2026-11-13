@@ -800,6 +800,8 @@ function buildMenu() {
                 { label: "New Deep Paint Layer", click: () => send("menu", "new-deep-paint-layer") },
                 // a relight layer whose mask hides all of it: painting brings the light in (SP6)
                 { label: "New Light Brush Layer", click: () => send("menu", "new-light-brush-layer") },
+                // the active layer laid onto the surface by arc length, into a Deep paint layer (SP7)
+                { label: "Wrap onto Surface", click: () => send("menu", "wrap-layer") },
                 { type: "separator" },
                 { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
                 { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },

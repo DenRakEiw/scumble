@@ -406,6 +406,35 @@ MoGe-2's normals in place of the depth map's for the light's facing (relight's N
 of the vectors are SP7's subject too), a light channel on the Deep paint layer itself (not needed: the brush is the
 relight layer's mask). Next: SP7 (wrap), and the user's look at SP4-SP6.
 
+**SP7 built 2026-11-13: Wrap** (the user away for the night: "du entscheidest alles"). **The arc length from the
+normals alone** (`renderer/editor/inpaint_wrap.js`, plain functions, in the node build's FILES): along a row the surface
+rises dz/dx = -nx / nz, so a picture pixel is ds/dx = sqrt(1 + (nx / nz)^2) pixels of surface (`wrapSlopes`; |nz| at
+least 0.15, a silhouette; within one byte of the middle a normal component is 0, so a flat wall stays flat; the map's
+mask A < 0.5 is flat; the vector turned into the document's directions by `xf`'s linear part, `mapFrame`), summed from
+the decal's centre along each row (u) and each column (v) by trapezoids (`wrapCoords`). No depth scale and no MoGe point
+map needed (SP3 keeps only the normals), and a cylinder seen side on unwraps exactly: x = c + R sin(s / R) (in Node
+the arc lengths of a 150 px cylinder to 0.02 px up to 97 % of the radius). The projection is taken as orthographic. The
+decal's pixel for (x, y) is (u, v) turned back by its angle and divided by its scale, bilinear on premultiplied pixels,
+times the selection's alpha (`wrapDecal`); the box is the disc of half the decal's diagonal around its centre
+(`wrapBox`: the surface is never shorter than the picture). **The editor** (`wrapLayer(layer, { angle })`,
+`inpaint_ed_filters.js`): a picture, paint or text layer as it is placed (its centre and size) is baked into a new Deep
+paint layer "Wrap: <name>" just above it (in its group), so it takes the picture's light and reflections; the layer is
+hidden and kept for another wrap; one undo step (`layers`); refused without the normals map, on a filter layer, during a
+pending transform, outside the picture, a selection that does not reach it. *Layer › Wrap onto Surface*, MCP
+**`wrap_layer`** {layer, angle} (122 tools, 102 core; AUTO). Timing (Node, 15k document, a 768 x 512 normals map): a
+1,000 x 600 decal 76 ms, 3,000 x 2,000 about 1 s on the window's thread (the map's bilinear inlined; with sampleMapPx's
+inverse per pixel it was 1.7 s); a pool job is the lever if it matters. **Not built:** the live preview while the decal
+is moved, scaled and turned (§3.3): a wrap is a bake; to move it, undo, transform the layer flat, wrap again; MoGe's
+point map (perspective) and the depth map's shape for a picture without normals. **Tests:** `tools/wrap_test.js`, gate
+**`wrap`** (plain Node, 12 checks: flat the decal's own bytes where it is placed and nothing outside, scaled, a quarter
+turn, a cylinder's lines at c + R sin(d / R) within a pixel and crowding towards the silhouette, the rows unmoved, the
+same with the map turned by `xf`, a region, a mask of 0 flat); `deeppaint_test.py`'s SP7 block in the app (a cylinder's
+normals at the picture's size: the layer above, the source hidden, one step, the lines within a pixel, the picture
+outside the decal's rows byte for byte, the line under the light, undo the bytes back, within a selection the right
+half only, a filter layer refused). Gates `wrap deeppaint commands composite lint types` PASS on both backends,
+`mcp assistant help` on tiles, `docs/COMMANDS.md` regenerated. Normal tier: no mutation round. Next: SP8 (docs, the
+user's live test, release prep), and the user's look at SP4-SP7 first.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

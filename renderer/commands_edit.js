@@ -109,6 +109,21 @@ export const EditCommandsPart = {
             return layerSummary(ed, l);
         },
     },
+    wrap_layer: {
+        needsImage: true,
+        description: "Wrap a picture, paint or text layer (a logo, a pattern, a word) onto the surface the picture shows: as it is placed (its centre and size, turned by angle on top), laid on by arc length from its centre along the surface normals, baked into a new Deep paint layer just above it, so it takes the picture's light and reflections; within the selection when there is one. A cylinder seen side on unwraps exactly, a surface curved both ways shows some distortion. The layer itself is hidden (kept for another wrap: undo, move it, wrap again). One undo step. Needs the surface maps (surface_maps).",
+        params: {
+            layer: P.layer("the layer to wrap", { required: true }),
+            angle: P.num("turn the layer by this many degrees clockwise before wrapping", { default: 0 }),
+        },
+        async run(ed, a) {
+            const l = findLayer(ed, a.layer);
+            const out = ed.wrapLayer(l, { angle: a.angle != null ? +a.angle : 0 });
+            if (!out) throw new Error(ed.status);
+            touch(ed);
+            return { ...layerSummary(ed, out), hidden: l.id, status: ed.status };
+        },
+    },
     set_filter: {
         description: "Change a filter layer's parameters (or its type), in one undo step as the layer list's controls make one. params.limit restricts where the filter acts (by depth, luma or colour; fill layers take depth only). params.preset (a film stock of the grain, a colour filter of black-and-white film) sets the preset's values and names the layer, then the other params are applied; a slider that is no offset on the preset turns it to custom when it changes the value (filter_types: offset). A new type starts from its defaults, then params. Nothing changes when a parameter is refused.",
         params: { layer: P.layer("", { required: true }), type: P.str("new filter type id"), params: P.obj("parameter values {key: value}") },

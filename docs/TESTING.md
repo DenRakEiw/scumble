@@ -85,6 +85,10 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   (`onnx/intrinsic/` and the registry names in the folder) on a synthetic lit ball: the registry rows, the size
   refusals, the answers' sense, the seed's determinism, an odd size, every answer the same bytes in the helpers' process
   and on this thread (DirectML about 0.1 s warm at 512 x 384, the CPU 19 s).
+  Gate `deeppaint` (`tools/deeppaint_test.py`) is the Deep paint layer on synthetic maps (SP4-SP7 of
+  docs/PLAN_SURFACE_PAINT.md: the formula, the GPU and its CPU twin, geometry, storage, strokes and the live stroke, the
+  eyedropper's surface colour, Fill and the bucket, relight on the surface maps and the light brush, Wrap); gate `wrap`
+  (`node tools/wrap_test.js`) is the arc-length unwrap in plain Node (flat, scaled, turned, a cylinder within a pixel).
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
   model files, a missing one is skipped. With `--process` (U1) it runs the jobs through the helpers' process and the
   main-thread engine and requires the same bytes, then the kill, the deaths, the fallback and the idle unload

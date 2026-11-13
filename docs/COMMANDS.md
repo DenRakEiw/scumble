@@ -937,6 +937,16 @@ Add a Deep paint layer on top of the stack: what is painted on it lands as the s
 | `name` | string | layer name (default Deep paint n) |
 | `compute` | boolean | compute the surface maps first when the picture has none (default `false`) |
 
+### `wrap_layer` *(image)*
+
+Wrap a picture, paint or text layer (a logo, a pattern, a word) onto the surface the picture shows: as it is placed (its centre and size, turned by angle on top), laid on by arc length from its centre along the surface normals, baked into a new Deep paint layer just above it, so it takes the picture's light and reflections; within the selection when there is one. A cylinder seen side on unwraps exactly, a surface curved both ways shows some distortion. The layer itself is hidden (kept for another wrap: undo, move it, wrap again). One undo step. Needs the surface maps (surface_maps).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer to wrap (required; default `"active"`) |
+| `angle` | number | turn the layer by this many degrees clockwise before wrapping (default `0`) |
+
 ### `add_text` *(image)*
 
 Add a text layer at x,y (top left of the text; with an angle the corner the text starts at). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).

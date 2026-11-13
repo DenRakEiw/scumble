@@ -473,6 +473,67 @@ JS = r"""
             await settle(ed);
         }
 
+        // SP7: a layer wrapped onto the surface (a cylinder's normals at the picture's size, axis at x 320, radius 200)
+        {
+            const doc = ed.node.id;
+            const n0 = ed.undo.length;
+            const before = await all();
+            const Rc = 200, X0 = 320, pk = (v) => Math.round((v + 1) / 2 * 255);
+            const nd2 = new Uint8Array(W * H * 4);
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const dx = (x + 0.5 - X0) / Rc, i = 4 * (y * W + x);
+                if (Math.abs(dx) < 1) { nd2[i] = pk(dx); nd2[i + 1] = 128; nd2[i + 2] = pk(-Math.sqrt(1 - dx * dx)); nd2[i + 3] = 255; }
+                else { nd2[i] = 128; nd2[i + 1] = 128; nd2[i + 2] = 0; nd2[i + 3] = 255; }
+            }
+            await ed.setMaps({ normals: makeMap("normals", W, H, nd2, xf, { fp: "t" }, null, "rgba8") });
+            // the decal: 240 x 20, white lines two pixels wide centred at its columns 120 + o
+            const offs = [-120, -80, -40, 0, 40, 80];
+            const dcv = mk(240, 20);
+            { const x = dcv.getContext("2d"); x.fillStyle = "#ffffff"; for (const o of offs) x.fillRect(120 + o - 1, 0, 2, 20); }
+            const D = ed.addLayer({ name: "Decal", kind: "image", ref: null, dirty: true, px: ed.pixels.Layer.fromCanvas(dcv), x: X0 - 120, y: 300, w: 240, h: 20 });
+            await settle(ed);
+            const placed = await all();
+            const n1 = ed.undo.length;
+            const rw = await shell.commands.call("wrap_layer", { doc, layer: D.id });
+            await settle(ed);
+            const WL = rw.ok && ed.layers.find((l) => l.id === rw.result.id);
+            check("wrap_layer: a Deep paint layer just above, the source hidden, one step", WL && WL.filter === "surface" && WL.name === "Wrap: Decal" && ed.layers.indexOf(WL) === ed.layers.indexOf(D) + 1 && D.visible === false && ed.activeLayerId === WL.id && ed.undo.length === n1 + 1, rw);
+            const lineCentres = (px, y) => {
+                const row = px.readRect(0, y, W, 1).data, found = [];
+                let s = 0, n = 0;
+                for (let x = 0; x < W; x++) { const a = row[4 * x + 3]; if (a) { s += a * (x + 0.5); n += a; } else if (n) { found.push(s / n); s = 0; n = 0; } }
+                return found;
+            };
+            const want = offs.map((o) => X0 + Rc * Math.sin(o / Rc));
+            const got = WL ? lineCentres(WL.px, 310) : [];
+            const werr = got.length === want.length ? Math.max(...got.map((g, i) => Math.abs(g - want[i]))) : 99;
+            check("wrap: each line at c + R sin(d / R) within a pixel", werr <= 1, { got: got.map((g) => +g.toFixed(2)), want: want.map((g) => +g.toFixed(2)) });
+            check("wrap: the rows stay", WL && lineCentres(WL.px, 299).length === 0 && lineCentres(WL.px, 300).length === 6 && lineCentres(WL.px, 319).length === 6 && lineCentres(WL.px, 320).length === 0);
+            const wa = await all();
+            let rowsSame = true;
+            for (let y = 0; y < H; y++) { if (y >= 296 && y < 324) continue; for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) if (wa[4 * (y * W + x) + c] !== ref[4 * (y * W + x) + c]) rowsSame = false; }
+            check("wrap: the picture outside the decal's rows byte for byte", rowsSame);
+            const q = 4 * (310 * W + Math.round(want[3] - 0.5));
+            check("wrap: the line takes the light (not the flat white of the decal)", wa[q] !== placed[q] && wa[q] < 250, [wa[q], placed[q]]);
+            await shell.commands.call("undo", { doc });
+            await settle(ed);
+            const Dn = ed.layers.find((l) => l.id === D.id);   // an undo puts the step's copies in place
+            check("the wrap's undo: the layer gone, the source shown, the bytes back", !ed.layers.some((l) => l.name === "Wrap: Decal") && Dn && Dn.visible !== false && diff(await all(), placed).max === 0, { d: diff(await all(), placed), names: ed.layers.map((l) => l.name), vis: Dn && Dn.visible });
+            // within a selection: the right half only
+            await shell.commands.call("select_rect", { doc, x: X0, y: 0, w: W - X0, h: H });
+            const rs = await shell.commands.call("wrap_layer", { doc, layer: D.id });
+            const WS = rs.ok && ed.layers.find((l) => l.id === rs.result.id);
+            const gs = WS ? lineCentres(WS.px, 310) : [];
+            check("wrap within the selection: the lines right of it only", gs.length === 3 && gs.every((g) => g > X0), gs);
+            const rf = await shell.commands.call("wrap_layer", { doc, layer: L.id });
+            check("wrap_layer refuses a filter layer", !rf.ok, rf);
+            await undoTo(n0);
+            check("the normals back", ed.maps.normals && ed.maps.normals.w === mw);
+            await shell.commands.call("remove_layer", { doc, layer: D.id });
+            await settle(ed);
+            check("after the wraps: the picture as before", diff(await all(), before).max === 0, diff(await all(), before));
+        }
+
         // a filter layer without pixels of its own still refuses the brush
         const g = ed.addFilterLayer("grain");
         ed.activeLayerId = g.id;

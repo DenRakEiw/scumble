@@ -19,6 +19,7 @@ import { DISSOLVE_CLIP_SHADER, DISSOLVE_SHADER, EMULATED_BLEND_CLIP_SHADER, EMUL
 import { UploadCache, sourceTag } from "./inpaint_strokebuf.js";
 import { canvasRows, loadImageEl, viewUrl } from "./inpaint_load.js";
 import { defaultLight, normalizeLights } from "./inpaint_relight.js";
+import { wrapBox, wrapDecal } from "./inpaint_wrap.js";
 
 export class FiltersPart {
     /**
@@ -408,6 +409,54 @@ export class FiltersPart {
         this.renderLayers();
         this.setStatus(`${layer.name} added. Paint where the light should fall (the brush paints its mask, E takes the light away); the Lights tool (L) moves the light, its colour and strength are in the layer list.`);
         return layer;
+    }
+
+    /**
+     * *Layer › Wrap onto Surface* (SP7, `inpaint_wrap.js`): the layer's picture, as it is placed (its centre and size;
+     * `angle` degrees clockwise on top), laid onto the surface by arc length from its centre and baked into a new Deep
+     * paint layer above it, so it takes the picture's light and reflections; within the selection when there is one.
+     * The layer itself is hidden, kept for another wrap. One undo step ("layers"). Null with a status line when it cannot.
+     */
+    wrapLayer(layer, { angle = 0 } = {}) {
+        if (!this.width) { this.setStatus("Load an image first."); return null; }
+        if (!layer || !layer.px || layer.kind === "filter") { this.setStatus("Select a picture, paint or text layer to wrap (a logo, a pattern, a word)."); return null; }
+        if (!this.hasSurfaceMaps() || !(this.maps && this.maps.normals && this.maps.normals.data)) { this.setStatus("Wrap needs the surface maps: Image › Surface Maps › Compute Surface Maps.", "warn"); return null; }
+        if (this.pending && this.pending.layer === layer) { this.setStatus(`Apply or cancel the transform of ${layer.name} first.`); return null; }
+        const pw = layer.px.width, ph = layer.px.height;
+        const place = { cx: layer.x + layer.w / 2, cy: layer.y + layer.h / 2, w: layer.w, h: layer.h, angle: Number(angle) || 0 };
+        const box = wrapBox(place, this.width, this.height);
+        if (!box) { this.setStatus(`${layer.name} lies outside the picture: nothing to wrap.`); return null; }
+        const [x0, y0, x1, y1] = box, bw = x1 - x0, bh = y1 - y0;
+        let sel = null;
+        if (this.sel && this.getBounds()) {
+            const a = this.sel.readRect(x0, y0, bw, bh).data;
+            sel = new Uint8Array(bw * bh);
+            let any = false;
+            for (let i = 0; i < sel.length; i++) { sel[i] = a[4 * i + 3]; if (sel[i]) any = true; }
+            if (!any) { this.setStatus("The selection does not reach the layer: nothing to wrap."); return null; }
+        }
+        const decal = layer.px.readRect(0, 0, pw, ph);
+        const t0 = performance.now();
+        const data = wrapDecal({ map: this.maps.normals, box, decal, place, sel });
+        this.pushUndo({ kind: "layers", label: "Wrap onto surface" });
+        const out = this.addSurfaceLayer();
+        if (!out) return null;
+        out.name = `Wrap: ${layer.name}`;
+        // above the source layer, not on top of the stack
+        const at = this.layers.indexOf(layer), now = this.layers.indexOf(out);
+        if (at >= 0 && now > at + 1) { this.layers.splice(now, 1); this.layers.splice(at + 1, 0, out); }
+        if (layer.group) out.group = layer.group;
+        out.px.writeRect({ data, width: bw, height: bh }, x0, y0, "copy");
+        out.dirty = true;
+        layer.visible = false;
+        this.activeLayerId = out.id;
+        this.markLayerChanged(out, box);
+        this.uploaded.baseHash = null;
+        this.sceneSig = null;
+        this.renderLayers();
+        this.draw();
+        this.setStatus(`${layer.name} wrapped onto the surface in ${Math.round(performance.now() - t0)} ms, as ${out.name}: it takes the picture's light and reflections. ${layer.name} is hidden; move it and wrap again for another place (Ctrl+Z first).`);
+        return out;
     }
 
     /** A filter layer whose own pixels are an input (Deep paint): the brush and the eraser paint into its `px`. */
