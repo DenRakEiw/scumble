@@ -112,6 +112,7 @@ import { HostHelpersPart } from "./host_helpers.js";
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {boolean} [depthSupported]
+ * @property {boolean} [surfaceSupported] Deep paint's surface maps (the app's host; the layer list's Deep paint button)
  * @property {() => any} [depthModel]
  * @property {(editor: any, w: number, h: number) => Promise<{ image: Uint8Array, width: number, height: number }>} [depthInput]
  * @property {(editor: any, req: { image: Uint8Array, width: number, height: number }) => Promise<{ depth: Float32Array, min: number, max: number, ms: number, provider: string }>} [computeDepth]

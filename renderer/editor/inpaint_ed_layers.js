@@ -1230,6 +1230,39 @@ export class LayersPart {
      * @param {any} p
      * @param {HTMLElement} anchor
      */
+    /**
+     * A small list of actions under a button (`items`: { label, title, run }), placed as the choice lists are; a click
+     * runs one and closes the list, a click outside or the button again closes it.
+     */
+    openActionList(anchor, items) {
+        if (this.flyout && this.flyout.group && this.flyout.group.btn === anchor) { this.closeFlyout(); return; }
+        this.closeFlyout();
+        const fly = el("div", "ipc-flyout ipc-choices");
+        for (const it of items) {
+            const row = el("button", "ipc-choice-item ipc-choice-row");
+            row.type = "button";
+            row.textContent = it.label;
+            row.title = it.title || it.label;
+            row.addEventListener("click", (e) => { e.stopPropagation(); this.closeFlyout(); it.run(); });
+            fly.appendChild(row);
+        }
+        for (const type of ["pointerdown", "mousedown", "click", "wheel"]) fly.addEventListener(type, (e) => e.stopPropagation());
+        this.root.appendChild(fly);
+        const r = anchor.getBoundingClientRect(), rr = this.root.getBoundingClientRect();
+        let left = r.right - rr.left + 6;
+        if (left + fly.offsetWidth > rr.width - 4) left = Math.max(4, r.left - rr.left - fly.offsetWidth - 6);
+        fly.style.left = `${left}px`;
+        fly.style.top = `${Math.max(4, Math.min(r.top - rr.top, rr.height - fly.offsetHeight - 8))}px`;
+        this.flyout = { el: fly, group: { btn: anchor }, onClose: () => {} };
+        if (!this._flyDocDown) {
+            this._flyDocDown = (e) => {
+                const t = e.target instanceof Node ? e.target : null;
+                if (this.flyout && (!t || (!this.flyout.el.contains(t) && !(this.flyout.group && this.flyout.group.btn && this.flyout.group.btn.contains(t))))) this.closeFlyout();
+            };
+            window.addEventListener("pointerdown", this._flyDocDown, true);
+        }
+    }
+
     openChoiceList(layer, p, anchor) {
         if (this.flyout && this.flyout.group && this.flyout.group.btn === anchor) {
             this.closeFlyout();

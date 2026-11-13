@@ -159,6 +159,8 @@ export const HostHelpersPart = {
 
     /** Depth map computation is supported in Scumble (R1-S1 / R1-S3). */
     depthSupported: true,
+    // Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md): the layer list's Deep paint button; the node's host has none
+    surfaceSupported: true,
 
     /**
      * @img1, @img2 in the prompt name the shown reference layers, and their numbers follow the layers through every

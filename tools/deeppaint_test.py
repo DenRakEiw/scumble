@@ -537,6 +537,25 @@ JS = r"""
             check("after the wraps: the picture as before", diff(await all(), before).max === 0, diff(await all(), before));
         }
 
+        // the layer list's Deep paint button: three actions, the first adds the layer
+        {
+            const btn = ed.root.querySelector(".ipc-deeppaint-btn");
+            check("the layer list has the Deep paint button", !!btn);
+            if (btn) {
+                btn.click();
+                const rows = Array.from(ed.root.querySelectorAll(".ipc-flyout .ipc-choice-row")).map((r) => r.textContent);
+                check("its three actions", rows.join("|") === "New Deep Paint Layer|New Light Brush Layer|Wrap onto Surface", rows);
+                const n = ed.layers.length;
+                const first = ed.root.querySelector(".ipc-flyout .ipc-choice-row");
+                if (first) first.click();
+                await settle(ed);
+                const added = ed.layers.length === n + 1 && ed.layers[ed.layers.length - 1].filter === "surface";
+                check("New Deep Paint Layer from the button", added && !ed.root.querySelector(".ipc-flyout"), ed.layers.map((l) => l.name));
+                if (added) await shell.commands.call("remove_layer", { doc: ed.node.id, layer: ed.layers[ed.layers.length - 1].id });
+                await settle(ed);
+            }
+        }
+
         // a filter layer without pixels of its own still refuses the brush
         const g = ed.addFilterLayer("grain");
         ed.activeLayerId = g.id;
