@@ -21,6 +21,36 @@ export function relightSurfaceOn(params, info) {
     return !!(params && params.surface && m && m.shading && m.residual && m.shading.enc === "rgb16" && m.residual.enc === "rgb16");
 }
 
+/**
+ * With the surface maps on (SP6) and a normals map in the document, the light's facing comes from MoGe-2's normals
+ * instead of the depth map's gradient: the normals map (rgba8, (n + 1) / 2) and the 2 x 2 matrix [a, b, c, d] that takes
+ * its vector's x, y (its own frame) into the depth map's (relight works in the depth map's frame): the normals map's
+ * frame into the document's, then the document's into the depth map's (both a turn or a mirror, so the inverse is the
+ * transpose). MoGe's z points away from the viewer, relight's towards it: z changes sign. Null when not in use.
+ */
+export function relightNormalsOf(params, info) {
+    if (!relightSurfaceOn(params, info)) return null;
+    const N = info.maps.normals, D = info.maps.depth;
+    if (!N || N.enc !== "rgba8" || !N.data || !D) return null;
+    const fr = (map) => {
+        const xf = map.xf || [map.w, 0, 0, map.h, 0, 0];
+        const la = Math.hypot(xf[0], xf[1]) || 1, lb = Math.hypot(xf[2], xf[3]) || 1;
+        return [xf[0] / la, xf[1] / la, xf[2] / lb, xf[3] / lb];   // columns: the map's x and y in the document
+    };
+    const [nax, nay, nbx, nby] = fr(N), [dax, day, dbx, dby] = fr(D);
+    // doc = Fn * v; depth = Fd^T * doc
+    const m = [dax * nax + day * nay, dax * nbx + day * nby, dbx * nax + dby * nay, dbx * nbx + dby * nby];
+    return { map: N, m };
+}
+
+/** A relight normal (towards the viewer) from MoGe-2's packed normal at a pixel: the map's bytes / 255 in, [x, y, z] out. */
+export function relightNormalFromMoge(r, g, b, m) {
+    const mx = 2 * r - 1, my = 2 * g - 1, mz = 2 * b - 1;
+    const x = m[0] * mx + m[1] * my, y = m[2] * mx + m[3] * my, z = -mz;
+    const len = Math.hypot(x, y, z);
+    return len > 1e-6 ? [x / len, y / len, z / len] : [0, 0, 1];
+}
+
 // ---- the march on the pool in stripes (K12, docs/PLAN_WASM_BUILD.md section 4.5) ---------------------------------------------
 
 /** The fewest rows a stripe of a march takes (about 45 ms of a point light's full march at 4096 x 2731). */
@@ -1631,6 +1661,7 @@ export function applyRelight(src, params, info = {}) {
     const sScaleS = SM ? (SM.meta && SM.meta.sScale) || 1 : 1;
     const msS = SM ? passToMap(SM, scale) : null, msR = SM ? passToMap(RM, scale) : null;
     const surf = SM ? { s: [0, 0, 0], r: [0, 0, 0] } : null;
+    const mn = relightNormalsOf(p, info), mnM = mn ? passToMap(mn.map, scale) : null;
 
     for (let y = 0; y < H; y++) {
         const py = origin[1] + y + 0.5;
@@ -1727,9 +1758,14 @@ export function applyRelight(src, params, info = {}) {
                 }
             }
 
-            const nx = (nRgba[0] - 127.5) / 127.5;
-            const ny = (nRgba[1] - 127.5) / 127.5;
-            const nz = (nRgba[2] - 127.5) / 127.5;
+            let nx = (nRgba[0] - 127.5) / 127.5;
+            let ny = (nRgba[1] - 127.5) / 127.5;
+            let nz = (nRgba[2] - 127.5) / 127.5;
+            if (mn) {
+                // MoGe-2's normal at the pixel's centre, bilinear (the shader's linear filter on the same bytes)
+                const q = sampleRgbaBilinear(mn.map.data, mn.map.w, mn.map.h, mnM[0] * px_x + mnM[2] * py + mnM[4], mnM[1] * px_x + mnM[3] * py + mnM[5]);
+                [nx, ny, nz] = relightNormalFromMoge(q[0] / 255, q[1] / 255, q[2] / 255, mn.m);
+            }
 
             const vVals = [vRgba[0] / 255.0, vRgba[1] / 255.0, vRgba[2] / 255.0, vRgba[3] / 255.0];
 
@@ -1937,6 +1973,14 @@ vec4 shade(vec4 c, vec2 uv) {
         normal = nLen > 1e-5 ? nRaw / nLen : vec3(0.0, 0.0, 1.0);
         vis = vTex;
     }
+    if (u_mnOn == 1) {
+        // MoGe-2's normal (SP6): its frame into the depth map's, z towards the viewer
+        vec2 mq = vec2(dot(u_mn0.xy, pp) + u_mn1.x, dot(u_mn0.zw, pp) + u_mn1.y);
+        vec3 m3 = texture(u_mn, mq / vec2(textureSize(u_mn, 0))).xyz * 2.0 - 1.0;
+        vec3 rn = vec3(u_mnF.x * m3.x + u_mnF.y * m3.y, u_mnF.z * m3.x + u_mnF.w * m3.y, -m3.z);
+        float rl = length(rn);
+        normal = rl > 1e-6 ? rn / rl : vec3(0.0, 0.0, 1.0);
+    }
 
     vec3 mpos = vec3(mpx.x, mpx.y, (1.0 - far) * u_depth_scale);
 
@@ -2028,6 +2072,7 @@ export function registerRelightGL() {
             u_surf: "int",
             u_s1: "sampler2D", u_s2: "sampler2D", u_r1: "sampler2D", u_r2: "sampler2D",
             u_ms0: "vec4", u_ms1: "vec2", u_mr0: "vec4", u_mr1: "vec2", u_sScale: "float",
+            u_mnOn: "int", u_mn: "sampler2D", u_mn0: "vec4", u_mn1: "vec2", u_mnF: "vec4",
         },
         code: RELIGHT_GLSL,
         values: (params, info) => {
@@ -2130,6 +2175,7 @@ export function registerRelightGL() {
             const SM = surfOn ? info.maps.shading : null, RM = surfOn ? info.maps.residual : null;
             const sv = surfOn ? rgb16Views(SM) : null, rv = surfOn ? rgb16Views(RM) : null;
             const msS = surfOn ? passToMap(SM, scale) : [1, 0, 0, 1, 0, 0], msR = surfOn ? passToMap(RM, scale) : [1, 0, 0, 1, 0, 0];
+            const mn = relightNormalsOf(p, info), mnM = mn ? passToMap(mn.map, scale) : [1, 0, 0, 1, 0, 0];
 
             return {
                 u_map: map ? rg8View(map) : DUMMY_RG8,
@@ -2171,6 +2217,10 @@ export function registerRelightGL() {
                 u_ms0: [msS[0], msS[2], msS[1], msS[3]], u_ms1: [msS[4], msS[5]],
                 u_mr0: [msR[0], msR[2], msR[1], msR[3]], u_mr1: [msR[4], msR[5]],
                 u_sScale: surfOn ? (SM.meta && SM.meta.sScale) || 1 : 1,
+                u_mnOn: mn ? 1 : 0,
+                u_mn: mn ? { data: mn.map.data, width: mn.map.w, height: mn.map.h, channels: 4, linear: true, static: true, key: "relight:mn:" + (mn.map.dataVersion || 0) + ":" + mn.map.w } : DUMMY_RGBA8,
+                u_mn0: [mnM[0], mnM[2], mnM[1], mnM[3]], u_mn1: [mnM[4], mnM[5]],
+                u_mnF: mn ? mn.m : [1, 0, 0, 1],
             };
         },
         skip: relightSkip,   // the CPU twin's own predicate (applyRelight), not a copy of it

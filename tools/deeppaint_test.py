@@ -401,6 +401,11 @@ JS = r"""
             const ramp = new Uint16Array(mw * mh);
             for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
             await ed.setMap("depth", makeMap("depth", mw, mh, ramp, xf));
+            // MoGe-2's frame: a surface facing the viewer is (0, 0, -1), packed (128, 128, 0)
+            const keepNormals = ed.maps.normals;
+            const flatN = new Uint8Array(mw * mh * 4);
+            for (let i = 0; i < mw * mh; i++) flatN.set([128, 128, 0, 255], 4 * i);
+            await ed.setMaps({ normals: makeMap("normals", mw, mh, flatN, xf, { fp: "t" }, null, "rgba8") });
             await settle(ed);
             const rr = await shell.commands.call("relight", { doc, original: 0, ambient: 0, lights: [] });
             const RL = rr.ok && ed.layers.find((l) => l.id === rr.result.layer.id);
@@ -445,6 +450,42 @@ JS = r"""
                 const a2 = applyFilter("relight", rb, RL.params, { ...rinfo(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
                 check("surface relight: the CPU twin within 2 levels of the GPU", diff(a1, a2).max <= 2, diff(a1, a2));
             }
+            // MoGe-2's normals give the facing: the left half turned to face left takes more of a sun from the left; with
+            // the switch off the normals map changes nothing
+            {
+                const sunL = { id: "l", type: "sun", x: 0, y: H / 2, dist: -10, intensity: 150, color: 5500, diffusion: 0, on: true };
+                await shell.commands.call("relight", { doc, layer: RL.id, lights: [sunL], original: 100, shadows: 0 });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const flatLit = await all();
+                const tilt = new Uint8Array(mw * mh * 4);
+                const s2 = Math.SQRT1_2;
+                for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) tilt.set(x < mw / 2 ? [Math.round((1 - s2) / 2 * 255), 128, Math.round((1 - s2) / 2 * 255), 255] : [128, 128, 0, 255], 4 * (y * mw + x));
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, tilt, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const tiltLit = await all();
+                const lum = (d, x0, x1) => { let s = 0, n = 0; for (let y = 20; y < H - 20; y += 4) for (let x = x0; x < x1; x += 4) { s += d[4 * (y * W + x)] + d[4 * (y * W + x) + 1]; n++; } return s / n; };
+                check("MoGe normals: the left half facing the sun gets more light", lum(tiltLit, 20, W / 2 - 20) > lum(flatLit, 20, W / 2 - 20) + 3, [lum(tiltLit, 20, W / 2 - 20), lum(flatLit, 20, W / 2 - 20)]);
+                check("MoGe normals: the right half as before", Math.abs(lum(tiltLit, W / 2 + 40, W - 20) - lum(flatLit, W / 2 + 40, W - 20)) < 0.5, [lum(tiltLit, W / 2 + 40, W - 20), lum(flatLit, W / 2 + 40, W - 20)]);
+                const rb2 = mk(W, H);
+                ed.drawLayersInto(rb2.getContext("2d"), { forRun: true, upTo: ed.layers.indexOf(RL) });
+                const ri2 = () => ed.filterInfo(RL, { scale: 1, origin: [0, 0], full: [W, H], forRun: true, cache: {} });
+                const g2 = applyFilterGL("relight", rb2, RL.params, ri2());
+                if (g2) {
+                    const b1 = glToCanvas(g2).getContext("2d").getImageData(0, 0, W, H).data;
+                    const b2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+                    check("MoGe normals: the CPU twin within 2 levels of the GPU", diff(b1, b2).max <= 2, diff(b1, b2));
+                } else check("MoGe normals: the GPU path ran", false);
+                await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const offTilt = await all();
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, flatN, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                check("the switch off: the normals map changes nothing", diff(offTilt, await all()).max === 0, diff(offTilt, await all()));
+            }
             await shell.commands.call("remove_layer", { doc, layer: RL.id });
             const nmaps = ed.maps.shading;
             await ed.setMaps({ shading: null, residual: null });
@@ -473,6 +514,7 @@ JS = r"""
             }
             check("the light brush: light where it was painted, nowhere else", inside > 500 && outside === 0, { inside, outside });
             await shell.commands.call("remove_layer", { doc, layer: LB.id });
+            await ed.setMaps({ normals: keepNormals });
             await settle(ed);
         }
 

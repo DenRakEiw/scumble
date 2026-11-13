@@ -1288,11 +1288,12 @@ export const FILTERS = {
             { key: "sigma", label: "Smooth normals", min: 0, max: 8, step: 0.5, default: 2, hidden: true },
             { key: "recover", label: "Recover shadows", min: 1, max: 6, step: 0.1, default: 3, hidden: true },
             // Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md SP6): the light lands on the picture's own colour
-            // (B - R) / S and keeps its reflections, in place of the colour fitted from the depth map's light
-            { key: "surface", label: "Surface maps", type: "bool", default: false, title: "Light the picture's own colour from its surface maps (Image › Surface Maps) and keep its reflections, in place of the colour estimated from the depth map. Off, or without the maps, relight works as before." },
+            // (B - R) / S and keeps its reflections, in place of the colour fitted from the depth map's light, and its
+            // facing comes from MoGe-2's normals when the document has them (the shadows still from the depth map)
+            { key: "surface", label: "Surface maps", type: "bool", default: false, title: "Light the picture's own colour from its surface maps (Image › Surface Maps), keep its reflections and take the surfaces' facing from their normals, in place of the colour and the facing estimated from the depth map (the shadows still come from it). Off, or without the maps, relight works as before." },
             { key: "route", type: "custom", default: "app" },
         ],
-        maps: (p) => (p && p.surface ? ["depth", "shading", "residual"] : ["depth"]),
+        maps: (p) => (p && p.surface ? ["depth", "shading", "residual", "normals"] : ["depth"]),
         wholeStats: relightStats,
         wholeStatsSize: 256,
         wholeStatsParams: ["depth_scale", "sigma"],   // what the fit reads of the layer's own parameters: a light drag keeps it

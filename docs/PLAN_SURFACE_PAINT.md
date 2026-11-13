@@ -447,6 +447,18 @@ and highlights where the fitted route washes them out. **Found:** the light brus
 (relight needs it for the light's facing); the test folder lacked the depth model at first; in the app the depth map is
 made by the relight layer as before, and without its model the status line names the download.
 
+**After SP8 (2026-11-14, the user: "baust du das noch?" for the four left out):**
+- **A button in the layer list** (`1465d46c`): `host.surfaceSupported` (the app's host only; the node's needs
+  `surfaceSupported: false` at its next build), `openActionList` (a small list of actions under a button), the
+  layer head's Deep paint button with New Deep Paint Layer, New Light Brush Layer and Wrap onto Surface.
+- **The light's facing from MoGe-2's normals**: with the relight layer's `surface` on and a normals map in the
+  document, the shading's normal is MoGe-2's (`relightNormalsOf`, `relightNormalFromMoge`: the map's frame into the
+  document's into the depth map's, z turned towards the viewer) in the CPU twin (bilinear on the bytes) and the shader
+  (a linear-filtered texture); the shadows still march over the depth map; off, or without the maps, relight is
+  unchanged. Relight's `maps` names `normals` when `surface` is on. Tests: the SP6 block on flat normals, then the
+  left half turned to face a sun from the left gets more light and the right half the same, the twin within 2 levels,
+  with the switch off a changed normals map changes nothing; `relight` gate unchanged on both backends.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;
