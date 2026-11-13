@@ -1,0 +1,7 @@
+{
+ "timestep": 999,
+ "alpha_t": 0.0,
+ "alpha_prev": 0.9991499781608582,
+ "prediction_type": "v_prediction",
+ "scaling_factor": 0.18215
+}

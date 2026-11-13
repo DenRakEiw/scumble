@@ -1,0 +1,48 @@
+SP0 of docs/PLAN_SURFACE_PAINT.md (Deep paint), 2026-11-13. Verdict: GO (Stop A passed).
+
+Machine: RTX 5090 32 GB, Windows 11. NOTE: another job held the card the whole time (25 GB used, 100 % utilisation
+before the first run), so every GPU time below is an upper bound; repeat in SP2 with the card free.
+
+Downloads (the user's yes of 2026-11-13), into the session scratchpad, never shipped:
+- prs-eth/marigold-iid-lighting-v1-1 at 08c3930bb641abf786ba44ce92547507ebefbc16 (licence tag openrail++), the fp16
+  variant: unet 1,732,019,968 B (sha256 8c2e8da7...LFS oid, matched), vae 167,335,342 B (3e4c0899..., matched),
+  text_encoder fp16 680,820,392 B (needed once, for the empty-prompt embedding only), tokenizer, scheduler.
+- Ruicheng/moge-2-vits-normal-onnx at e50ffda4 (140,852,051 B), Ruicheng/moge-2-vitb-normal-onnx at 2d247a12
+  (419,411,850 B); the ONNX repos carry no licence field, the model repos say MIT.
+- A venv: torch 2.11.0+cu128, diffusers 0.43.0.
+
+1. Quality (torch, diffusers MarigoldIntrinsicsPipeline, fp16, 768 px long side), 6 of the user's pictures (portrait,
+   tutorial scene, cafe + car, architect house, barn door, one thumbnail by mistake): torch_report.json. By eye:
+   albedo good (cars flat orange / blue, clothes and walls even, skin even); shading plausible (faces, car bodies,
+   soft shadows); the residual takes too much (cobbles, the view through the barn door, parts of the sky), so
+   "keep reflections" must be a slider over painted colour, not always 100 %. 1 step and 4 steps look nearly the same:
+   1 step (0.4-0.6 s in torch, contended GPU). VRAM peak 3.44 GB.
+   Shading and residual are "up to scale" (model_index.json); a least-squares fit I ~ a*A*S + b*R gives a = 1.5-2.4,
+   b = 1.5-2.6, and the model's own recomposition is 9-19 levels off on average: the app must make R exact
+   (R = I - A*S after the guided upsample), as the plan's 3.1 says.
+
+2. Export (tools/deeppaint/export_onnx.py, legacy TorchScript exporter, opset 17, fp16 inside, FLOAT32 in and out):
+   vae_encoder.onnx 68,427,626 B, unet.onnx 1,732,865,286 B (one file, under 2 GB; the empty-prompt embedding [1,2,1024]
+   baked in), vae_decoder.onnx 99,095,145 B; scheduler.json (timestep 999, alpha_t 0, alpha_prev 0.99915, v-pred,
+   scaling 0.18215). sha256 in sha256.txt.
+   Traps found: (a) onnxruntime-node 1.29 under Node 24 turns a float16 tensor's data into a Float16Array that the
+   native binding reads as 0 bytes ("not enough space: expected 2654208, got 0"): the graphs take and give float32.
+   (b) The UNet's skip concats fail on DirectML (and are wrong anywhere) when a latent side is odd: the input is padded
+   (replicate) to a multiple of 64, then cut back.
+   The one-step formula (x0 = sqrt(a_t) x - sqrt(1-a_t) v, eps = sqrt(a_t) v + sqrt(1-a_t) x,
+   prev = sqrt(a_p) x0 + sqrt(1-a_p) eps) against the diffusers pipeline: max abs 0.0024-0.0044 (fp16 noise).
+
+3. The app's runtime (onnxruntime-node 1.29.0 from F:/canvas/node_modules, runtime.js's session options),
+   tools/deeppaint/ort_check.js against torch's prediction on the same noise:
+   DirectML  portrait 576x768: max abs 0.024, mean 0.00048; cafe 768x576: 0.041 / 0.00073; house: 0.029 / 0.00058.
+             warm: enc 19-113 ms, unet 52-648 ms, dec (3 targets) 671-2012 ms, all 0.75-2.8 s (contended GPU);
+             session load 2.7 s.
+   CPU       portrait: max abs 0.0076; 49 s a run (enc 4.5, unet 21.7, dec 23.3 s): a fallback only.
+
+4. MoGe-2 normal (tools/deeppaint/moge_check.js, num_tokens 1800, input 0..1 RGB):
+   ViT-S: DirectML 205-259 ms, CPU 1.3 s; ViT-B: DirectML 399-428 ms, CPU 2.1 s; DirectML against CPU 0.006 deg mean,
+   0.04 deg max. By eye ViT-B is clearly better on faces (nose, lips), equal on the street scene: ViT-B by default,
+   ViT-S as the small choice.
+
+For SP2: decode the three targets as one batch (done here), measure VRAM on DirectML with the card free, consider an
+fp16 VAE decoder at half the latent size if 2 s stays; the CPU path needs a "this takes about a minute" line.

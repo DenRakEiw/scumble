@@ -130,9 +130,22 @@ About 9-12 sessions (inferred), SP0 decides the rest.
 4. **The name in the app:** "Surface layer" / "Surface brush" / "Wrap" (suggested), or your own.
 5. **ComfyUI route too** (SP9), or in-app only? Suggested: in-app only unless SP0 fails.
 
+**The user's answers (2026-11-13):** 1 yes (the download in the app, with the licence text); 3 yes (SP0's
+downloads); 4 **"Deep paint"** (the layer *Deep paint layer*, the brush *Deep paint brush*; not "Deep Brush", the
+other product's project name); 5 in-app only. 2 (the HF repo) is asked at SP2.
+
 ## 6. As built
 
-(empty)
+**SP0 done 2026-11-13: GO** (`docs/measurements/sp0_2026-11-13/summary.txt`; scripts in `tools/deeppaint/`, run
+from a scratchpad venv with torch 2.11 cu128 and diffusers 0.43). Marigold-IID-Lighting v1.1 at one step is good
+enough by eye (albedo even, shading plausible; the residual takes too much, so *Keep reflections* becomes a slider);
+exported as three fp16 graphs with **float32 in and out** (onnxruntime-node 1.29 under Node 24 cannot feed a
+Float16Array), the input **padded to a multiple of 64** (odd latent sides break the UNet's skip concats), the
+empty-prompt embedding baked in; on the app's onnxruntime-node with DirectML within 0.04 of torch (mean 0.0005-0.0007),
+0.75-2.8 s a run on a card another job held, CPU 49 s. MoGe-2 normal runs as Microsoft exported it (ViT-B 0.4 s on
+DirectML, ViT-S 0.2 s, CPU 1.3-2.1 s, DirectML = CPU within 0.04 deg); ViT-B by default. The user's pictures and the
+contact sheets stay out of the repo (scratchpad). Next: SP1 (colour maps), and the HF repo question (§5 point 2) before
+SP2.
 
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
