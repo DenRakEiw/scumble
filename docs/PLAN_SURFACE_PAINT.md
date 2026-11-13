@@ -309,6 +309,18 @@ GPU's round trip through linear light gives the byte back at a = 0; the early re
 `key_without_px_version` survives because the test calls `markFilterChanged` after setting the paint, so SP4b's stroke
 test (no such call) has to kill it. Next: SP4b (strokes on the
 layer: brush and eraser on `px`, the live stroke in `ownPixelsFor`, undo of a stroke, the 15k pan).
+**SP4b's anchors (read 2026-11-13):** the strokes refuse filter layers in `inpaint_ed_strokes.js` near 468 (smudge / dodge),
+513, 534, 560 (paint tools), 590 (the mask hint) and 613 (transform); let a layer with `ownPixels` through where the tool
+paints colour (brush, eraser, maybe the bucket), keep the others refused. The commit (`commitStroke`, `commitStrokeTiles`
+:474) writes into `p.layer.px` at `l.x, l.y` = 0, 0 and the canvas size, so it should work as for a whole-canvas paint
+layer; the undo record of a paint stroke and `markLayerChanged` must reach the filter's caches (`markFilterChanged`)
+without the explicit call SP4a's test makes (that kills `key_without_px_version`). The live stroke: `applyFilterLayer`
+returns early only for a gesture *below* the layer, so a stroke on the layer itself runs the filter every frame; in
+`ownPixelsFor` draw the stroke over the tiles as the mask stroke does in `applyFilterLayer` (`passScratch`,
+`drawTilesInto`, `drawStrokeInto(sctx, whole, layer.px, erase ? "destination-out" : "source-over", mvp, rect)`), and on the
+canvas backend `layerWithStroke(layer)` in place of `px`. The 15k pan: `perf:15000x10000` with a Deep paint layer
+(the perf stack carries a filter layer; a `--filter=surface` needs the maps, so a row of its own or a perf option that
+sets synthetic maps).
 
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
