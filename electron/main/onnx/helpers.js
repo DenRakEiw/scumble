@@ -233,7 +233,7 @@ class HelperProcess {
             .then(() => { clearTimeout(timer); this.retiring.delete(p); });
     }
 
-    /** One job (`objects`, `segment`, `cutout`, `depth`) -> what the engine answers. */
+    /** One job (`objects`, `segment`, `cutout`, `depth`, `intrinsic`, `normals`) -> what the engine answers. */
     call(type, job) {
         this._clearIdle();
         this._start();

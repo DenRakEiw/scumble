@@ -13,12 +13,12 @@ const { app, dialog, shell } = require("electron");
 const settings = require("../settings");
 const keys = require("../keys");
 const models = require("./models");
-const { checkImage, checkDepth, modelInfo } = require("./engine");
+const { checkImage, checkDepth, checkIntrinsic, checkNormals, modelInfo } = require("./engine");
 const { HelperProcess } = require("./helpers");
 const { Lama, SIZE: LAMA_SIZE } = require("./lama");
 
 const HF_TOKEN = "hf-token";
-const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small" };
+const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small", intrinsic: "intrinsic", normals: "moge2_vitb_normal" };
 
 const helperProcess = new HelperProcess();
 let progressSink = null;
@@ -56,7 +56,7 @@ function status() {
     const sc = lastScan(dir);
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
-        device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint, depth: c.depth,
+        device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint, depth: c.depth, intrinsic: c.intrinsic, normals: c.normals,
         models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
         scan: sc,
         downloads: downloader.running(),
@@ -171,6 +171,8 @@ const MISSING = {
     matting: "No background removal model is downloaded (Settings › Helpers).",
     inpaint: "The LaMa model is not downloaded (Settings › Helpers).",
     depth: "No depth model is downloaded (Settings › Helpers).",
+    intrinsic: "Deep paint needs the Marigold IID Lighting model: download it in Settings › Helpers.",
+    normals: "Deep paint needs a MoGe-2 normal model: download it in Settings › Helpers.",
 };
 
 function presentOf(kind, wanted) {
@@ -280,4 +282,26 @@ async function depth(req) {
     return job("depth", { ...m, image, width: w, height: h });
 }
 
-module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, setProgressSink, helperProcess, HF_TOKEN, DEFAULTS, LAMA_SIZE };
+/**
+ * Deep paint's decomposition: req { model?, image (Uint8Array RGBA w*h*4), width, height, seed? } -> { albedo, shading,
+ * residual: Float32Array(w*h*3) interleaved RGB, linear 0..1, width, height, seconds, ms, provider, model, label }.
+ * Both sides in [16, 768]; the same picture and seed give the same bytes.
+ */
+async function intrinsic(req) {
+    const { w, h, image } = checkIntrinsic(req);
+    const m = jobModel("intrinsic", req.model || conf().intrinsic);
+    return job("intrinsic", { ...m, image, width: w, height: h, seed: req.seed | 0 });
+}
+
+/**
+ * Deep paint's normals: req { model?, image (Uint8Array RGBA w*h*4), width, height, tokens? } -> { normal, points:
+ * Float32Array(w*h*3), mask: Float32Array(w*h), scale, tokens, width, height, seconds, runMs, provider, model, label }.
+ * Both sides in [14, 2048].
+ */
+async function normals(req) {
+    const { w, h, image } = checkNormals(req);
+    const m = jobModel("normals", req.model || conf().normals);
+    return job("normals", { ...m, image, width: w, height: h, tokens: req.tokens || undefined });
+}
+
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, intrinsic, normals, setProgressSink, helperProcess, HF_TOKEN, DEFAULTS, LAMA_SIZE };

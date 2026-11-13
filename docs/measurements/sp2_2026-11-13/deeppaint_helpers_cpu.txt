@@ -1,0 +1,36 @@
+models in <scratchpad>\sp2_models · device cpu
+ok   the decomposition set: in onnx/intrinsic, four files with size and sha256, not offered before it is hosted  {"subdir":"onnx/intrinsic","invalid":null,"offered":false}
+ok   the set present from the files in its folder, its row listed though not offered
+ok   MoGe-2 normal rows: offered, pinned to a commit, one file with its sha256
+ok   the decomposition refuses a side above 768  the decomposition needs RGBA with both sides from 16 to 768 (got 800 × 400, length 1280000)
+ok   the normal model refuses an image of the wrong length  the normal model needs RGBA with both sides from 14 to 2048 (got 64 × 64, length 10)
+process intrinsic: 27743 ms on cpu {"load":5754,"encode":2107,"unet":8321,"decode":11480}
+process intrinsic_odd: 9327 ms on cpu {"load":0,"encode":916,"unet":3650,"decode":4753}
+process intrinsic_seed7: 18792 ms on cpu {"load":0,"encode":1721,"unet":7489,"decode":9571}
+process normals: 2945 ms on cpu
+process normals_odd: 2323 ms on cpu
+ok   the jobs ran in the helpers' process  state ready
+process intrinsic warm: 18765 ms {"load":0,"encode":1724,"unet":7448,"decode":9585}
+ok   the same picture and seed twice in the process: the same bytes
+local intrinsic: 27974 ms on cpu
+local intrinsic_odd: 9374 ms on cpu
+local intrinsic_seed7: 18720 ms on cpu
+local normals: 2966 ms on cpu
+local normals_odd: 2368 ms on cpu
+ok   intrinsic: byte for byte the same in the process and on this thread  albedo 589824, shading 589824, residual 589824
+ok   intrinsic_odd: byte for byte the same in the process and on this thread  albedo 204981, shading 204981, residual 204981
+ok   intrinsic_seed7: byte for byte the same in the process and on this thread  albedo 589824, shading 589824, residual 589824
+ok   normals: byte for byte the same in the process and on this thread  normal 589824, points 589824, mask 196608
+ok   normals_odd: byte for byte the same in the process and on this thread  normal 204981, points 204981, mask 68327
+ok   decomposition: three interleaved RGB maps at the picture's size, every value in [0, 1]
+ok   a size that is no multiple of 64 (301 × 227) comes back at its size
+ok   the ball's albedo is more even than the picture (the light taken out)  cv albedo 0.062, picture 0.212
+ok   the ball's shading follows the light  Pearson 0.995
+ok   the ball's albedo is red  R 0.333, G 0.023
+ok   another seed gives other bytes, close to the first  mean |Δ| 0.0037, max 0.397
+ok   the seeded noise is a standard normal  mean 0.0017, var 1.0046
+ok   normals: unit vectors at the picture's size, points and mask beside them  scale 1.143567442893982, tokens 1800
+ok   the normals' frame: x right, y down, z away, the normal along dP/dy × dP/dx (towards the viewer)  mean cos 0.985 over 47763 pixels, x right 1.000, y down 1.000, z > 0 1.000
+ok   the ball's front faces the viewer (z < 0 at its centre)
+ok   normals at an odd size (301 × 227) come back at its size
+PASS

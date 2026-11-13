@@ -10,6 +10,8 @@ const { Runtime } = require("./runtime");
 const { Sam2, logitsToMask, SIZE } = require("./sam2");
 const { Matting } = require("./matting");
 const { Depth } = require("./depth");
+const { Intrinsic, MAX_SIDE: INTRINSIC_SIDE } = require("./intrinsic");
+const { Normals } = require("./normals");
 
 function checkImage(req) {
     const image = req && req.image;
@@ -33,10 +35,31 @@ function checkDepth(req) {
     return { w, h, image };
 }
 
+/** A picture job's RGBA at w × h with both sides in [min, max]. -> { w, h, image } */
+function checkPicture(req, what, min, max) {
+    const w = req && req.width | 0;
+    const h = req && req.height | 0;
+    const image = req && req.image;
+    if (!w || !h || w < min || h < min || w > max || h > max || !image || image.length !== w * h * 4) {
+        throw new Error(`${what} needs RGBA with both sides from ${min} to ${max} (got ${w} × ${h}, length ${image ? image.length : 0})`);
+    }
+    return { w, h, image };
+}
+
+/** A decomposition job's picture: both sides in [16, 768] (Marigold's processing size). */
+function checkIntrinsic(req) {
+    return checkPicture(req, "the decomposition", 16, INTRINSIC_SIDE);
+}
+
+/** A normals job's picture: both sides in [14, 2048]. */
+function checkNormals(req) {
+    return checkPicture(req, "the normal model", 14, 2048);
+}
+
 /** The fields of a registry entry (models.js) the models read; a job carries them across the port. */
 function modelInfo(model) {
     const m = model || {};
-    return { id: m.id, label: m.label, kind: m.kind, input: m.input, multiple: m.multiple, mean: m.mean, std: m.std };
+    return { id: m.id, label: m.label, kind: m.kind, input: m.input, multiple: m.multiple, mean: m.mean, std: m.std, tokens: m.tokens };
 }
 
 /**
@@ -47,6 +70,8 @@ function engine(runtime = new Runtime()) {
     const sams = new Map();       // "encoder\ndecoder" -> Sam2
     const mattings = new Map();   // "id\nfile" -> Matting
     const depths = new Map();     // "id\nfile" -> Depth
+    const intrinsics = new Map(); // the set's four files -> Intrinsic
+    const normalsBy = new Map();  // "id\nfile" -> Normals
     const encoding = new WeakMap();   // Sam2 -> Map(key -> the encode under way)
 
     function samOf(files) {
@@ -65,6 +90,18 @@ function engine(runtime = new Runtime()) {
         const k = model.id + "\n" + file;
         if (!depths.has(k)) depths.set(k, new Depth(runtime, model, file));
         return depths.get(k);
+    }
+
+    function intrinsicOf(files) {
+        const k = [files.encoder, files.unet, files.decoder, files.scheduler].join("\n");
+        if (!intrinsics.has(k)) intrinsics.set(k, new Intrinsic(runtime, files));
+        return intrinsics.get(k);
+    }
+
+    function normalsOf(model, file) {
+        const k = model.id + "\n" + file;
+        if (!normalsBy.has(k)) normalsBy.set(k, new Normals(runtime, model, file));
+        return normalsBy.get(k);
     }
 
     /** The encode under way for a key, if any: a second job for the same picture waits for it instead of encoding it again. */
@@ -151,6 +188,36 @@ function engine(runtime = new Runtime()) {
             };
         },
 
+        /**
+         * Decomposition (Deep paint): job { model, files: { encoder, unet, decoder, scheduler }, image (RGBA w*h*4),
+         * width, height, seed? } -> { albedo, shading, residual: Float32Array(w*h*3) interleaved RGB, linear 0..1,
+         * width, height, seconds, ms, provider, model, label }. Both sides in [16, 768].
+         */
+        async intrinsic(job) {
+            const { w, h, image } = checkIntrinsic(job);
+            const t0 = Date.now();
+            const res = await intrinsicOf(job.files).run(image, w, h, { seed: job.seed | 0 });
+            return {
+                albedo: res.albedo, shading: res.shading, residual: res.residual, width: w, height: h,
+                seconds: (Date.now() - t0) / 1000, ms: res.ms, provider: res.provider, model: job.model.id, label: job.model.label,
+            };
+        },
+
+        /**
+         * Normals (Deep paint): job { model, files: { model }, image (RGBA w*h*4), width, height, tokens? } -> { normal,
+         * points: Float32Array(w*h*3), mask: Float32Array(w*h), scale, tokens, width, height, seconds, runMs, provider,
+         * model, label }. Both sides in [14, 2048]; the vectors in the camera's frame (normals.js).
+         */
+        async normals(job) {
+            const { w, h, image } = checkNormals(job);
+            const t0 = Date.now();
+            const res = await normalsOf(job.model, job.files.model).run(image, w, h, { tokens: job.tokens });
+            return {
+                normal: res.normal, points: res.points, mask: res.mask, scale: res.scale, tokens: res.tokens, width: w, height: h,
+                seconds: (Date.now() - t0) / 1000, runMs: res.ms, provider: res.provider, model: job.model.id, label: job.model.label,
+            };
+        },
+
         /** Every session released and the embeddings dropped (the fallback's Free VRAM). -> the number released */
         async free() {
             for (const s of sams.values()) s.cache.clear();
@@ -159,7 +226,7 @@ function engine(runtime = new Runtime()) {
 
         /** The instances dropped (their files may have moved: a folder change, a scan, a removal). */
         clear() {
-            sams.clear(); mattings.clear(); depths.clear();
+            sams.clear(); mattings.clear(); depths.clear(); intrinsics.clear(); normalsBy.clear();
         },
 
         status() {
@@ -168,4 +235,4 @@ function engine(runtime = new Runtime()) {
     };
 }
 
-module.exports = { engine, checkImage, checkDepth, modelInfo, outSize, SIZE };
+module.exports = { engine, checkImage, checkDepth, checkIntrinsic, checkNormals, modelInfo, outSize, SIZE };

@@ -81,6 +81,10 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   canvas with pixels that are not opaque can differ by a level from a read of the whole canvas (measured 2026-09-28,
   286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader
   the tool uses (`brushSource("all").bytes`), as the move step's case 15 does.
+  `node tools/deeppaint_helpers_test.js <modelsDir> [--cpu]` runs Deep paint's decomposition set and MoGe-2 normal
+  (`onnx/intrinsic/` and the registry names in the folder) on a synthetic lit ball: the registry rows, the size
+  refusals, the answers' sense, the seed's determinism, an odd size, every answer the same bytes in the helpers' process
+  and on this thread (DirectML about 0.1 s warm at 512 x 384, the CPU 19 s).
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
   model files, a missing one is skipped. With `--process` (U1) it runs the jobs through the helpers' process and the
   main-thread engine and requires the same bytes, then the kill, the deaths, the fallback and the idle unload

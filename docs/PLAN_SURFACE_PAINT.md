@@ -175,6 +175,37 @@ shader as `(hi * 256 + lo) * 255 / 65535`; bilinear filtering is linear, so filt
 equals filtering the 16-bit value up to the filter's weight precision (to be measured in SP4; an RGBA32F upload would
 cost 200 MB at 4096 x 3072).
 
+**SP2 done 2026-11-13: the helper** (main side only; the renderer calls come with SP3). **The hosting repo:** the user
+asked Claude to create it ("kannst du es für mich anlegen?"): `huggingface.co/DenRakEiw/scumble-intrinsic-onnx`, made
+with the stored HF login, **private and empty** (only `.gitattributes`); the upload of the four files (with a README
+and the Open RAIL++-M licence text, which the licence requires beside the weights) and making it public wait for the
+user's word. Until then the set is in the registry without URLs (`electron/main/onnx/intrinsic.json`, sizes and sha256
+of SP0's export; `base` gets the repo's resolve URL at the upload's commit) and not offered; files put into
+`onnx/intrinsic/` by hand are used, and `describeAll` lists a set whose files are in place so it can be removed.
+**Registry:** `intrinsic` (kind `intrinsic`, a set of `vae_encoder.onnx`, `unet.onnx`, `vae_decoder.onnx`,
+`scheduler.json`, its terms text with the licence's use restrictions for the pre-download dialog), `moge2_vitb_normal`
+(the default) and `moge2_vits_normal` (kind `normals`, Microsoft's ONNX pinned to commits, a sha256 each, `moge/`
+searched, the snapshot layout linked by a scan). **Runners:** `onnx/intrinsic.js` (the one-step formula of SP0 in JS,
+the padding, the seeded noise; the decoder's three targets as one batch; answers three interleaved linear RGB
+`Float32Array`s, sides 16-768) and `onnx/normals.js` (normal, points, mask, scale at the picture's size, sides
+14-2,048). **Engine jobs** `intrinsic` / `normals` in `engine.js` and `helpers_process.js` `JOBS`; `index.js`
+`intrinsic(req)` / `normals(req)`, DEFAULTS `intrinsic`, `normals`, the missing-model sentences; IPC
+`helpers:intrinsic` / `helpers:normals`, preload `scumble.helpers.intrinsic` / `.normals`; Settings › Helpers names
+the two kinds (no picker for ViT-B / ViT-S yet: the default, else whichever is present). **Found:** a lone shaded ball
+on a plain wall reads to MoGe-2 as a dish lit from the other side (its normals' x and y run against the ball's,
+Pearson -0.94 / -0.77), the old convex / concave ambiguity; on SP0's photos the normals were right. The test checks the
+frame against the model's own points instead (mean cos 0.93 to dP/dy × dP/dx, x right 99 %, y down 99.5 %, z > 0
+everywhere), so SP6 / SP7 can rely on x right, y down, z away and a seen normal with z < 0. **Tests:**
+`tools/deeppaint_helpers_test.js <modelsDir>` PASS on DirectML and on the CPU (`docs/measurements/sp2_2026-11-13/`):
+the albedo of the ball even (cv 0.062 against the picture's 0.212), its shading following the light (Pearson 0.995),
+its albedo red, every answer byte for byte the same in the helpers' process and on main's thread, the same seed the same
+bytes, another seed 0.004 apart on average, 301 x 227 back at its size, the refusals. Timings at 512 x 384 with the card
+mostly free: DirectML 2.7 s for the three sessions' load, then 0.1 s a run (encode 13, UNet 24, decode 50 ms), MoGe-2
+ViT-B 1.4 s cold; the CPU 19 s a run. In the dev app (own profile, `--no-comfy`): the two IPC calls answered through the
+helpers' process on DirectML, a side of 1,000 refused with the sentence, the three rows in Settings › Helpers.
+`download_test` 72 / 72, `scan_test`, `helpers_test --process`, lint, types green. Next: SP3 (decompose), which needs
+the files hosted only for other machines; it runs here on the files in place.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

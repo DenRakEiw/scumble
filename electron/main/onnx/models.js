@@ -127,8 +127,26 @@ const MODELS = [
         files: [{ name: "depth_anything_v2_small.onnx", role: "model", size: 99060839, sha256: "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c",
             url: `${HF}/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx` }],
     },
+    // MoGe-2 normal (Microsoft's own ONNX export, MIT; Deep paint, docs/PLAN_SURFACE_PAINT.md SP2): normals, points
+    // and a validity mask per pixel; ViT-B by default (clearly better on faces, SP0), ViT-S the small choice
+    {
+        id: "moge2_vitb_normal", kind: "normals", label: "MoGe-2 ViT-B normal", note: "surface normals and shape (Deep paint)",
+        source: "Ruicheng/moge-2-vitb-normal-onnx", sourceUrl: `${HF}/Ruicheng/moge-2-vitb-normal-onnx`, license: "MIT",
+        tokens: 1800,
+        files: [{ name: "moge2_vitb_normal.onnx", role: "model", size: 419411850, sha256: "bbf14e07a30f11e69d36ab861590123f5598ababcbc8946a063eb4a966f35a21",
+            url: `${HF}/Ruicheng/moge-2-vitb-normal-onnx/resolve/2d247a122ada42ce700fe59273cd62e076da1f32/model.onnx` }],
+    },
+    {
+        id: "moge2_vits_normal", kind: "normals", label: "MoGe-2 ViT-S normal", note: "smaller and faster, coarser on faces",
+        source: "Ruicheng/moge-2-vits-normal-onnx", sourceUrl: `${HF}/Ruicheng/moge-2-vits-normal-onnx`, license: "MIT",
+        tokens: 1800,
+        files: [{ name: "moge2_vits_normal.onnx", role: "model", size: 140852051, sha256: "24eacb5dc7a2c54c7bc98f7de085ffbed79ad006ea5b664c2c2cdc02ff3a52f0",
+            url: `${HF}/Ruicheng/moge-2-vits-normal-onnx/resolve/e50ffda41565591092adea54c6ac83d6212e1e23/model.onnx` }],
+    },
     // CorridorKey 2.0 (item 49, docs/PLAN_CORRIDORKEY.md §4.4): a placeholder, not offered until the set is hosted
     fromSetCatalogue(require("./corridorkey2.json")),
+    // Deep paint's decomposition (docs/PLAN_SURFACE_PAINT.md SP2): Scumble's export, not offered until it is hosted
+    fromSetCatalogue(require("./intrinsic.json")),
 ];
 
 const byId = (id) => MODELS.find((m) => m.id === id) || null;
@@ -143,7 +161,7 @@ function offered(model) {
 }
 
 /** Subfolders of the model folder that are searched too (a linked ComfyUI models folder). Sets never use these. */
-const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg", "inpaint", "lama", "depth"];
+const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg", "inpaint", "lama", "depth", "moge"];
 
 function isComfyModelsDir(dir) {
     return fs.existsSync(path.join(dir, "checkpoints")) || fs.existsSync(path.join(dir, "diffusion_models"));
@@ -219,10 +237,12 @@ function rowOf(m, dir, links, elsewhere) {
 
 /**
  * One row per model for Settings › Helpers. A model that is not offered (the CorridorKey set before it is hosted) is
- * left out unless `all`, so the row and its Download button stay hidden until there is something to download.
+ * left out unless `all` or its files are in place, so the row and its Download button stay hidden until there is
+ * something to download or to remove.
  */
 function describeAll(dir, links = null, elsewhere = null, { all = false } = {}) {
-    return MODELS.filter((m) => all || offered(m)).map((m) => rowOf(m, dir, links, elsewhere));
+    // a set put into its folder by hand shows too (Deep paint's before it is hosted), so it can be removed again
+    return MODELS.filter((m) => all || offered(m) || (m.subdir && locate(m, dir).present)).map((m) => rowOf(m, dir, links, elsewhere));
 }
 
 /** The row of one model (offered or not): what a feature's readiness line reads, e.g. the Key dialog's. */
@@ -280,6 +300,8 @@ const ONNX_ALIASES = {
     rmbg14: /rmbg[_-]?1\.4[^/]*\/onnx\/model\.onnx$/,
     rmbg2: /rmbg[_-]?2\.0[^/]*\/onnx\/model\.onnx$/,
     da2_small: /depth[-_]anything[-_]v2[-_]small(?![-_]onnx)[^/]*\/onnx\/model\.onnx$/,
+    moge2_vitb_normal: /moge[-_]2[-_]vitb[-_]normal[^/]*\/model\.onnx$/,
+    moge2_vits_normal: /moge[-_]2[-_]vits[-_]normal[^/]*\/model\.onnx$/,
 };
 
 /** The same weights in the formats the ComfyUI nodes use: reported, never loaded. */

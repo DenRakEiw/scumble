@@ -1,0 +1,28 @@
+{
+  "about": "The Deep paint decomposition set in the helper registry (electron/main/onnx/models.js fromSetCatalogue; docs/PLAN_SURFACE_PAINT.md SP2). Scumble's ONNX export of Marigold-IID-Lighting v1.1 (tools/deeppaint/export_onnx.py from prs-eth/marigold-iid-lighting-v1-1 @ 08c3930b, the fp16 variant, float32 in and out, the empty-prompt embedding baked into the UNet). Sizes and sha256 are the exported files' (docs/measurements/sp0_2026-11-13/sha256.txt). Not offered for download until the files are uploaded to the hosting repo (no `base`, so no file has a URL): then `base` gets that repo's resolve URL at the upload's commit. Files put into the folder by hand are used meanwhile (the tests do).",
+  "id": "intrinsic",
+  "kind": "intrinsic",
+  "label": "Marigold IID Lighting",
+  "note": "splits the picture into colour, light and reflections (Deep paint)",
+  "source": "Scumble's ONNX export of prs-eth/marigold-iid-lighting-v1-1 @ 08c3930b",
+  "sourceUrl": "https://huggingface.co/prs-eth/marigold-iid-lighting-v1-1",
+  "license": "CreativeML Open RAIL++-M (weights), Apache-2.0 (Marigold's code)",
+  "subdir": "onnx/intrinsic",
+  "placeholder": false,
+  "version": 1,
+  "base": null,
+  "terms": {
+    "version": 1,
+    "text": "Marigold IID Lighting by ETH Zurich's Photogrammetry and Remote Sensing group, CreativeML Open RAIL++-M: an ONNX export of their weights, about {size}, downloaded from {host}. The licence allows commercial use of the model and of your pictures and passes on its use restrictions: the model may not be used for the purposes its Attachment A lists (among them harm to minors, defamation, disinformation, and discrimination).",
+    "links": [
+      { "label": "CreativeML Open RAIL++-M", "url": "https://huggingface.co/stabilityai/stable-diffusion-2/blob/main/LICENSE-MODEL" },
+      { "label": "Marigold", "url": "https://huggingface.co/prs-eth/marigold-iid-lighting-v1-1" }
+    ]
+  },
+  "files": [
+    { "name": "vae_encoder.onnx", "role": "encoder", "size": 68427626, "sha256": "433fdb55168e36bdc06bed44e3b22423188f72932717e0e3deb499643bb944df" },
+    { "name": "unet.onnx", "role": "unet", "size": 1732865286, "sha256": "070d63996f3911ee9e6c6f6e42d6dabadb4ca8e44f02930a1f35fc67e6d65538" },
+    { "name": "vae_decoder.onnx", "role": "decoder", "size": 99095145, "sha256": "d28442c4b9b136a85563afdb03bfb062c4341355491db1d2bcfc70ccc77cdff7" },
+    { "name": "scheduler.json", "role": "scheduler", "size": 142, "sha256": "1f51c462262921d6d3a8cd33a4db46cf1fa7bb9344223e4e55116750e2a3d6f1" }
+  ]
+}
