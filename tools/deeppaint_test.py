@@ -147,6 +147,27 @@ JS = r"""
         } else check("the program held", false);
     }
 
+    // a light in stripes, one map pixel wide: half a pixel off in the sample position is several levels
+    {
+        const ss = new Uint16Array(n * 3);
+        for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) for (let c = 0; c < 3; c++) ss[3 * (y * mw + x) + c] = x % 2 ? 60000 : 15000;
+        const keep = sd.slice();
+        await ed.setMaps({ shading: makeMap("shading", mw, mh, ss, xf, { sScale, fp: "t" }, null, "rgb16") });
+        await settle(ed);
+        sd.set(ss);
+        const e2 = expect(pd);
+        const got = painted(await all(), e2);
+        check("striped light: the formula within a level (the pixel's centre)", got.inMax <= 1 && got.outN === 0, got);
+        const b2 = mk(W, H);
+        ed.drawLayersInto(b2.getContext("2d"), { forRun: true, upTo: ed.layers.indexOf(L) });
+        const cpu2 = applyFilter("surface", b2, L.params, { ...info(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+        check("striped light: the CPU twin within a level", painted(cpu2, e2).inMax <= 1, painted(cpu2, e2));
+        sd.set(keep);
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        check("the stripes' undo", diff(await all(), ref).max <= 1);
+    }
+
     // Keep reflections 0
     await shell.commands.call("set_filter", { doc: ed.node.id, layer: L.id, params: { reflections: 0 } });
     await settle(ed);

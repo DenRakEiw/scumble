@@ -1,0 +1,8 @@
+composite rc=0 8s PASS
+maps rc=0 8s PASS
+export rc=0 153s PASS
+layered rc=0 14s PASS
+commands rc=0 28s PASS
+lint rc=0 28s 
+types rc=0 6s 
+ALL PASS

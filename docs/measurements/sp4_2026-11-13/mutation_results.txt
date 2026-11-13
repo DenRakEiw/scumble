@@ -1,0 +1,29 @@
+== SP4a Deep paint layer mutation round 2026-11-13 14:22 on C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\e125c21a-3155-4585-80e0-e1c80b09fd75\scratchpad\sp4_tree (tools/mutation_round.py; 20 mutants, port 9571, re-check gates deeppaint, composite)
+orig (the untouched copy): build 12 s, both builds identical to the checkout's: True; green: the full px_test 196 s; green: the deeppaint gate 23 s; green: the composite gate 25 s; green: the document gate 63 s; 318 s
+SURVIVED gl_no_early_return: green: the deeppaint gate, the full px_test, the composite gate (the focused set, then the re-check); builds None; 251 s (the deeppaint gate 22 s, re-check the full px_test 204 s, re-check the composite gate 25 s); expected killed  <-- NOT AS EXPECTED
+KILLED   gl_no_reflections: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   gl_no_sscale: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   gl_mix_in_srgb: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   gl_own_flipped: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   gl_map_axes_swapped: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   gl_lo_hi_swapped: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   cpu_no_sscale: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+SURVIVED cpu_no_pixel_centre: green: the deeppaint gate, the full px_test, the composite gate (the focused set, then the re-check); builds None; 242 s (the deeppaint gate 22 s, re-check the full px_test 195 s, re-check the composite gate 25 s); expected killed  <-- NOT AS EXPECTED
+KILLED   k_ignored: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   own_origin_ignored: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+SURVIVED key_without_px_version: green: the deeppaint gate, the full px_test, the composite gate (the focused set, then the re-check); builds None; 240 s (the deeppaint gate 21 s, re-check the full px_test 194 s, re-check the composite gate 25 s); expected killed  <-- NOT AS EXPECTED
+KILLED   restore_ignores_paint: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   turn_keeps_old_paint: red: the deeppaint gate (FAIL); builds None; 22 s (the deeppaint gate 22 s); expected killed
+KILLED   straighten_keeps_old_paint: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   crop_keeps_old_paint: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   resize_keeps_old_paint: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   duplicate_not_stored: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   set_filter_retypes: red: the deeppaint gate (FAIL); builds None; 21 s (the deeppaint gate 21 s); expected killed
+KILLED   feature_never_matches: red: the document gate ([FAIL] node: ask refused; second job: SVC2.SCUMBLE is already being saved; wait until that is done); builds None; 8 s (the document gate 8 s); expected killed
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 17 killed (0 of them only on the re-check), 3 survived of 20; 3 not as expected; 1293 s for the mutants
+== SP4a Deep paint layer mutation round 2026-11-13 14:51 on C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\e125c21a-3155-4585-80e0-e1c80b09fd75\scratchpad\sp4_tree (tools/mutation_round.py; 1 mutants, port 9571, re-check gates deeppaint, composite)
+orig skipped (names given without 'orig'): the verdicts lean on an earlier orig run of this tree
+KILLED   cpu_no_pixel_centre: red: the deeppaint gate (FAIL); builds None; 23 s (the deeppaint gate 23 s); expected killed
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 1 killed (0 of them only on the re-check), 0 survived of 1; 0 not as expected; 237 s for the mutants

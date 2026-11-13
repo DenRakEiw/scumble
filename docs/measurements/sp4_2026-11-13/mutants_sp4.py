@@ -20,7 +20,7 @@ EF = "renderer/editor/inpaint_ed_filters.js"
 GEO = "renderer/editor/inpaint_ed_geometry.js"
 DP = {"gates": ["deeppaint"]}
 MUTANTS = [
-    ("gl_no_early_return", FX, [("    if (p.a <= 0.0) return c;\n", "")], "killed", DP),
+    ("gl_no_early_return", FX, [("    if (p.a <= 0.0) return c;\n", "")], "equivalent: the GPU round trip through linear light gives the byte back at a = 0 (kept as a guard)", DP),
     ("gl_no_reflections", FX, [("vec3 t = s_toLin(p.rgb) * s + u_k * r;", "vec3 t = s_toLin(p.rgb) * s;")], "killed", DP),
     ("gl_no_sscale", FX, [("vec2(dot(u_ms0.xy, pp) + u_ms1.x, dot(u_ms0.zw, pp) + u_ms1.y)) * u_sScale;", "vec2(dot(u_ms0.xy, pp) + u_ms1.x, dot(u_ms0.zw, pp) + u_ms1.y));")], "killed", DP),
     ("gl_mix_in_srgb", FX, [("    vec3 b = s_toLin(c.rgb);", "    vec3 b = c.rgb;")], "killed", DP),
@@ -31,7 +31,7 @@ MUTANTS = [
     ("cpu_no_pixel_centre", FX, [("const ppx = origin[0] + x + 0.5;", "const ppx = origin[0] + x;")], "killed", DP),
     ("k_ignored", FX, [("    return Number.isFinite(v) ? Math.max(0, Math.min(1, v / 100)) : 1;", "    return 1;")], "killed", DP),
     ("own_origin_ignored", EF, [("        const x0 = o[0] / sx, y0 = o[1] / sy;", "        const x0 = 0, y0 = 0;")], "killed", DP),
-    ("key_without_px_version", EF, [("        if (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels) baseKey.push(layer.px ? layer.px.version : -1);\n", "")], "killed", DP),
+    ("key_without_px_version", EF, [("        if (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels) baseKey.push(layer.px ? layer.px.version : -1);\n", "")], "survives SP4a: the test calls markFilterChanged after setting the paint; SP4b stroke test is its kill", DP),
     ("restore_ignores_paint", "renderer/editor/inpaint_ed_persist.js", [("if (l.ref && l.ref.filename && FILTERS[l.filter] && FILTERS[l.filter].ownPixels) {", "if (false) {")], "killed", DP),
     ("turn_keeps_old_paint", GEO, [("                    l.w = nw; l.h = nh;\n                    if (t.px) l.px = t.px;\n", "                    l.w = nw; l.h = nh;\n")], "killed", DP),
     ("straighten_keeps_old_paint", GEO, [("if (p.maskPx) l.maskPx = p.maskPx; if (p.px) l.px = p.px; continue; }", "if (p.maskPx) l.maskPx = p.maskPx; continue; }")], "killed", DP),

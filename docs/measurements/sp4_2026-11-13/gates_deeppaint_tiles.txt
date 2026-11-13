@@ -1,0 +1,2 @@
+deeppaint rc=0 6s PASS
+ALL PASS

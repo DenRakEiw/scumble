@@ -301,7 +301,13 @@ painted the picture byte for byte, painted within a level, the rest byte for byt
 the export's program the pass's bytes; k = 0, a mask, opacity, hidden, a part of the picture, a copy; set_filter /
 add_filter refused; a quarter turn within a level and its undo exact, a crop, a straighten, a resize and their undos;
 no maps the picture; `.scumble` and the autosave the same bytes, minReader 7) PASS on both backends; `composite`,
-`document`, `maps`, `export`, `layered`, `commands`, `lint`, `types` PASS on both (`sp4b`). Next: SP4b (strokes on the
+`document`, `maps`, `export`, `layered`, `commands`, `lint`, `types` PASS on both (`sp4b`). **Mutation round**
+(`docs/measurements/sp4_2026-11-13/`, `tools/mutation_round.py` on a copy, the untouched copy green first): 20 mutants,
+17 killed in the first run; of the three survivors `cpu_no_pixel_centre` showed the ramp maps too flat for half a pixel,
+so the gate got a light in stripes one map pixel wide (killed on the rerun); `gl_no_early_return` is equivalent (the
+GPU's round trip through linear light gives the byte back at a = 0; the early return stays as a guard);
+`key_without_px_version` survives because the test calls `markFilterChanged` after setting the paint, so SP4b's stroke
+test (no such call) has to kill it. Next: SP4b (strokes on the
 layer: brush and eraser on `px`, the live stroke in `ownPixelsFor`, undo of a stroke, the 15k pan).
 
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
