@@ -886,7 +886,7 @@ Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy
 OpenRouter and Oxen.ai carry most models as well. Seedream is the exception: its own API, BytePlus ModelArk, came
 later, and the two Seedream 5.0 recipes keep fal as their `default` (see "BytePlus ModelArk" below); Seedream 5.5
 keeps ModelArk, where it is in early access, as its `default`, and runs on WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy
-Router and Oxen.ai as well (see "Seedream 5.5 on other hosts" below). The order
+Router, Oxen.ai and OpenRouter as well (see "Seedream 5.5 on other hosts" below). The order
 of a recipe's `providers` is the order of its provider select, of Generate new and of `list_recipes`;
 ToAPIs comes first wherever it serves the model (see "ToAPIs" below), ModelArk right after it in the two
 Seedream 5.0 recipes, OpenRouter after the older hosts (see "OpenRouter" below), then Comfy Router, Oxen.ai and
@@ -3101,8 +3101,9 @@ model id or place in the list.
 
 Since 2026-11-11 `recipes/seedream_5_5.json` carries five variants beside `ark` (ModelArk stays its `default`), each
 written from its host's public page that day, **none run against the live API** (no key here), and each note says so.
-The order of `providers`: `toapis`, `ark`, `wavespeed`, `comfycloud`, `comfyrouter`, `oxen`. Not on fal, Replicate,
-OpenRouter or Magnific on that day.
+The order of `providers`: `toapis`, `ark`, `wavespeed`, `comfycloud`, `comfyrouter`, `oxen`, `openrouter`. Not on fal,
+Replicate, OpenRouter or Magnific on that day; **OpenRouter listed it on 2026-11-12** (`GET /api/v1/images/models`, read
+2026-11-13) and its variant came last on 2026-11-13, written from that list and the model's endpoints, not run live.
 
 | Host | Model id | Read from | Size | Pictures | Background |
 | --- | --- | --- | --- | --- | --- |
@@ -3111,6 +3112,7 @@ OpenRouter or Magnific on that day.
 | ToAPIs | `doubao-seedream-5-5` | `docs.toapis.com/docs/en/api-reference/images/seedream-5.5/generation.md` | `size` `WxH`, 0.92 to 4.62 MP, 16:1 | 10 (`image_urls`, uploaded) | row, as `metadata.background` |
 | Comfy Router | `byteplus/seedream-5-5-261028` | `docs.comfy.org/router-schemas/byteplus/seedream-5-5-261028.json` (saved in `tools/refs/comfyrouter/`) | `size` `WxH`, 0.92 to 4.62 MP (ModelArk's rule) | 10 (inline) | row, `background` (`options.background`) |
 | Oxen.ai | `bytedance-seedream-5-5` | `GET hub.oxen.ai/api/ai/models` (saved in `tools/refs/oxen/`) | `size` 1K / 2K (row, auto: the smallest that covers), `aspect_ratio` `auto` on an edit, a preset on a new image | 10 (`input_image`, inline) | row, `background` |
+| OpenRouter | `bytedance-seed/seedream-5-5` (one host: ByteDance's Seed) | `GET openrouter.ai/api/v1/images/models` and `.../bytedance-seed/seedream-5-5/endpoints` (2026-11-13) | `resolution` 1K / 1.5K / 2K (row, auto: the smallest tier that covers), no aspect on an edit, the closest of 17 presets on a new image | 10 (`input_references`, inline) | row, `background`; `output_format` png |
 
 - **WaveSpeedAI**: an `accepts` allowlist keeps everything but the fields its pages list at home (no `seed`, no
   `negative_prompt`); `output_format` png.
@@ -3124,6 +3126,9 @@ OpenRouter or Magnific on that day.
 - **Comfy Router**: the Router passes BytePlus's own body; the `byteplus` dialect sends `background` only for a
   variant with `options.background` (ModelArk's rule: Auto sends nothing).
 - **Oxen.ai**: the 5.5 schema has an `auto` aspect, so an edit asks `auto` (`edit_aspect`), not the closest preset.
+- **OpenRouter**: 0.02 USD an image, 0.035 at high resolution and 0.008 per picture sent (the endpoint's list). Its
+  endpoint also passes `layer_decomposition` and `layer_decomposition_options` through: *Split into layers* could run
+  there too, but its answer's shape through OpenRouter is not documented, so the variant has no `layers` yet.
 
 `tools/seedream55_test.js` holds the WaveSpeedAI and Comfy Cloud requests; `tools/comfyrouter_test.js`,
 `tools/oxen_test.js` and `tools/toapis_test.js` hold theirs to the saved schemas and pages.

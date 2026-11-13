@@ -133,15 +133,15 @@ async function main() {
     const spec = JSON.parse(fs.readFileSync(path.join(REFS, "comfy_cloud", "nodes", "ByteDanceSeedreamNodeV3.json"), "utf8"));
 
     await section("the recipe", async () => {
-        check("the hosts that list it: ModelArk, WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router, Oxen.ai; ModelArk stays the default",
-            eq(R.providerIds, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"]) && R.default === "ark", short([R.providerIds, R.default]));
-        check("the description names each host beside ModelArk", /Also on WaveSpeedAI\. Also on Comfy Cloud\. Also on ToAPIs\. Also on Comfy Router\. Also on Oxen\.ai\./.test(R.description), R.description);
-        check("every variant edits without a mask and says it has not run live", Object.values(R.providers).every((v) => v.input === "edit" && /not run against the live API yet/.test(v.note || "")), "");
+        check("the hosts that list it: ModelArk, WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router, Oxen.ai, OpenRouter (listed 2026-11-12); ModelArk stays the default",
+            eq(R.providerIds, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen", "openrouter"]) && R.default === "ark", short([R.providerIds, R.default]));
+        check("the description names each host beside ModelArk", /Also on WaveSpeedAI\. Also on Comfy Cloud\. Also on ToAPIs\. Also on Comfy Router\. Also on Oxen\.ai\. Also on OpenRouter\./.test(R.description), R.description);
+        check("every variant edits without a mask and says it has not run live", Object.values(R.providers).every((v) => v.input === "edit" && /not run against the live API yet|this model not yet/.test(v.note || "")), "");
         check("the model ids, each from its host's page", V("ark").model === "dola-seedream-5-5-261028" && V("wavespeed").model === "bytedance/seedream-v5.5/edit" && V("comfycloud").model === "seedream 5.5"
-            && V("toapis").model === "doubao-seedream-5-5" && V("comfyrouter").model === "byteplus/seedream-5-5-261028" && V("oxen").model === "bytedance-seedream-5-5",
+            && V("toapis").model === "doubao-seedream-5-5" && V("comfyrouter").model === "byteplus/seedream-5-5-261028" && V("oxen").model === "bytedance-seedream-5-5" && V("openrouter").model === "bytedance-seed/seedream-5-5",
             short(Object.fromEntries(Object.entries(R.providers).map(([k, v]) => [k, v.model]))));
-        check("ten pictures at most on every host", ["ark", "wavespeed", "toapis", "comfyrouter", "oxen"].every((p) => V(p).options.max_images === 10), "");
-        check("a Background row wherever the host passes it on and its answer keeps the alpha; none on Comfy Cloud", ["ark", "wavespeed", "toapis", "comfyrouter", "oxen"].every((p) => (V(p).settings || []).some((s) => s.key === "background" && eq(s.spec[0], ["auto", "transparent", "opaque"]))) && !(V("comfycloud").settings || []).length, "");
+        check("ten pictures at most on every host", ["ark", "wavespeed", "toapis", "comfyrouter", "oxen", "openrouter"].every((p) => V(p).options.max_images === 10), "");
+        check("a Background row wherever the host passes it on and its answer keeps the alpha; none on Comfy Cloud", ["ark", "wavespeed", "toapis", "comfyrouter", "oxen", "openrouter"].every((p) => (V(p).settings || []).some((s) => s.key === "background" && eq(s.spec[0], ["auto", "transparent", "opaque"]))) && !(V("comfycloud").settings || []).length, "");
     });
 
     await section("WaveSpeedAI", async () => {
