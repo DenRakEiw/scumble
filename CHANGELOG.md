@@ -4,6 +4,17 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Deep paint**: paint on the picture's surfaces. *Image › Surface Maps* splits the picture once into its light, its
+  reflections and its surface shapes, on your own computer (two models in Settings › Helpers: Marigold IID Lighting
+  and MoGe-2). On a *Deep paint layer* (Layer menu) what you paint lands under the picture's own light and keeps its
+  highlights; the eyedropper picks the surface's own colour, Fill and the bucket work on it, *Keep reflections* sets
+  how much shine stays, and a selection, a mask or the layer's Limit keep it in place. Where nothing is painted the
+  picture stays exactly as it was.
+- **Light brush**: *Layer › New Light Brush Layer* paints light where the brush goes; Relight layers on a picture with
+  surface maps light the picture's own colour and keep its reflections (the *Surface maps* switch).
+- **Wrap onto Surface** (Layer menu): a logo, a pattern or a word laid round a curved surface such as a cup or a
+  bottle, under the picture's light.
+- Agents: `surface_maps`, `add_surface_layer`, `wrap_layer`, and `relight`'s `surface` (122 tools).
 - Seedream 5.5 runs on OpenRouter too (one key for many models; 1K, 1.5K and 2K, a transparent background on request,
   up to ten pictures). Not run live yet.
 
