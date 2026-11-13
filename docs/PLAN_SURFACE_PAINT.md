@@ -377,6 +377,35 @@ and the fill by the formula with k 0.5. Gates `deeppaint commands editor brush l
 a button in the layer list (the menu only), the node's host needs no new member (the menu and the command are the
 app's). Next: the user's look (a hand test), then SP6 (the light brush).
 
+**SP6 built 2026-11-13: the light brush, as relight on the surface maps** (the user: "mache weiter"; §3.2's choice:
+relight reads S, no light channel of the Deep paint layer). The effect, said first: **a relight layer on a picture with
+surface maps lights the picture's own colour A = clamp((p - R) / S) and keeps its reflections R whole, in place of the
+colour fitted from the depth map's light (p / S_fit); without the maps, or with the switch off, relight is byte for byte
+as before.** In formulas (linear light, o Original light, a ambient, L the lights' sum as before): out = shoulder(R + o A S
++ A ((1 - o) a + L)), against o p + f ((1 - o) a + L) with f = p / S_fit before; at o = 1 and no light R + A S = p, the
+picture. **Code:** `relightSurfaceOn(params, info)` (`inpaint_relight.js`: the layer's new bool `surface` and both rgb16
+maps); `shadePixel`'s eighth argument `surf` ({ s, r } at the pixel, s times sScale) replaces `f` and the kept part, the
+rest of the light's maths is untouched; `applyRelight` samples S and R at each pixel's centre through `passToMap` as Deep
+paint does; the shader takes the maps as Deep paint's two RGBA8 textures each (`RGB16_GLSL` and `rgb16Views` now shared
+from `inpaint_surfacefx.js`), `keepLin` and `fLin` in its surface branch, the old expressions unchanged otherwise.
+FILTERS.relight: the param `surface` ("Surface maps", a switch in the layer's rows), `maps` names shading and residual
+when it is on (so a new set of maps redraws the layer). `addFilterLayer("relight")` turns `surface` on when the picture
+has the maps; layers made before keep theirs. **Layer › New Light Brush Layer** (`newLightBrushLayer()`): a relight
+layer named "Light brush n" with one warm sun from the upper left (4500 K, 120 %), its mask hiding all (one undo step),
+the mask in edit and the brush picked, so painting brings the light in and E takes it away; the Lights tool moves the
+light. The depth map comes as for any relight layer. **MCP:** `relight` takes `surface` (refused true without the maps);
+an agent's light brush is `relight` + `set_mask` from a selection. **Tests:** `deeppaint_test.py`'s SP6 block on the
+synthetic maps and a depth ramp: a new relight layer has `surface` on; Original 0, Ambient 0, no light gives R alone
+(within a level, every third pixel); the switch off gives the old result (black there); under a sun the surface branch
+differs from the fit, its GPU path ran and the CPU twin is within 2 levels of it; `surface: true` refused without the
+maps; the light brush layer leaves the picture byte for byte until its mask is painted, then changes it inside the
+stroke only (over 500 pixels by more than 6 levels, none outside). Gates `deeppaint relight composite commands editor
+lint types` PASS on both backends (`sp6-g`; relight's own gate unchanged), `mcp assistant help` on tiles,
+`docs/COMMANDS.md` regenerated. **Mutation round** (`docs/measurements/sp6_2026-11-13/`): 7 of 8 killed (R lost in the shader's kept part, in the twin's base, kept in the shader's colour; the twin without sScale; the branch never on; no `surface` on a new layer; the brush's mask revealing all); `maps_list_depth_only` survives and is equivalent (relight's cache keys on `mapsVersion` through the depth map already; the list stays as the statement of what the layer reads). Not done:
+MoGe-2's normals in place of the depth map's for the light's facing (relight's N1; the frame conversion and `xf`'s turn
+of the vectors are SP7's subject too), a light channel on the Deep paint layer itself (not needed: the brush is the
+relight layer's mask). Next: SP7 (wrap), and the user's look at SP4-SP6.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

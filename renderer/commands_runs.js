@@ -270,6 +270,7 @@ export const RunCommandsPart = {
             ambient: P.num("ambient light 0..100 % (default 15)"),
             depth_scale: P.num("depth scale 5..200 % (default 50)"),
             shadows: P.num("shadow strength 0..100 % (default 60)"),
+            surface: P.bool("route 'app': light the picture's own colour from Deep paint's surface maps (surface_maps) and keep its reflections, in place of the colour estimated from the depth map; a new layer has it on when the maps are there. Refused true without the maps"),
             route: P.str("relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders"),
             prompt: P.str("additional prompt text for generative routes"),
             // the generative routes' model values, as the Relight panel offers them for each route (stored on the layer)
@@ -301,6 +302,7 @@ export const RunCommandsPart = {
             const route = given || "app";
             // the model values, checked before anything changes
             const model = relightModel(a);
+            if ((a.surface === true || a.surface === "true") && !(ed.hasSurfaceMaps && ed.hasSurfaceMaps())) throw new Error("surface needs Deep paint's surface maps: run surface_maps first");
             let l;
             if (a.layer != null && a.layer !== "") {
                 l = findLayer(ed, a.layer);
@@ -313,6 +315,7 @@ export const RunCommandsPart = {
                 if (a.ambient !== undefined) raw.ambient = a.ambient;
                 if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
                 if (a.shadows !== undefined) raw.shadows = a.shadows;
+                if (a.surface !== undefined) raw.surface = a.surface;
                 // a route goes in the same step as the values, and only when it changes (a render on the layer's own
                 // route pushes no empty step)
                 if (given && given !== ((l.params && l.params.route) || "app")) raw.route = given;
@@ -338,6 +341,7 @@ export const RunCommandsPart = {
                 if (a.ambient !== undefined) raw.ambient = a.ambient;
                 if (a.depth_scale !== undefined) raw.depth_scale = a.depth_scale;
                 if (a.shadows !== undefined) raw.shadows = a.shadows;
+                if (a.surface !== undefined) raw.surface = a.surface;
                 const vals = Object.keys(raw).length ? checkParams("relight", raw, { width: ed.width, height: ed.height }) : {};
                 if (vals.lights) vals.lights = normalizeLights(raw.lights, { width: ed.width, height: ed.height });
 

@@ -1,0 +1,12 @@
+== SP6: relight on the surface maps, the light brush mutation round 2026-11-13 18:15 on C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\12752a79-3ec3-429a-bc64-0d7cb6b77f78\scratchpad\mut6 (tools/mutation_round.py; 8 mutants, port 9561, re-check gates deeppaint, relight)
+orig (the untouched copy): build 13 s, both builds identical to the checkout's: True; green: the full px_test 229 s; green: the deeppaint gate 29 s; green: the relight gate 47 s; 319 s
+KILLED   gl_keep_without_R: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the reflections lost on the GPU
+KILLED   cpu_base_without_R: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the CPU twin loses R in red
+KILLED   gl_albedo_without_R: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the GPU's colour keeps R (the twin disagrees)
+KILLED   cpu_no_sscale: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the CPU twin without sScale
+KILLED   surface_never_on: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the surface branch never runs
+KILLED   no_surface_default: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: a new relight layer keeps the fit
+KILLED   brush_mask_reveals: red: the deeppaint gate (FAIL); builds None; 29 s (the deeppaint gate 29 s); expected killed: the light brush lights everything at once
+SURVIVED maps_list_depth_only: green: the deeppaint gate, the full px_test, the relight gate (the focused set, then the re-check); builds None; 299 s (the deeppaint gate 29 s, re-check the full px_test 223 s, re-check the relight gate 47 s); expected unknown: relight already keys on mapsVersion for depth
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 7 killed (0 of them only on the re-check), 1 survived of 8; 0 not as expected; 722 s for the mutants

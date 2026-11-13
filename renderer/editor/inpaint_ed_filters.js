@@ -18,6 +18,7 @@ import { FREQ_MAX_PX, cpuDab, makeCanvas } from "./inpaint_consts.js";
 import { DISSOLVE_CLIP_SHADER, DISSOLVE_SHADER, EMULATED_BLEND_CLIP_SHADER, EMULATED_BLEND_SHADER, RANGE_PREVIEW_SHADER } from "./inpaint_shaders.js";
 import { UploadCache, sourceTag } from "./inpaint_strokebuf.js";
 import { canvasRows, loadImageEl, viewUrl } from "./inpaint_load.js";
+import { defaultLight, normalizeLights } from "./inpaint_relight.js";
 
 export class FiltersPart {
     /**
@@ -327,6 +328,8 @@ export class FiltersPart {
         if (id === "relight") {
             const relightConf = host.getRelightSettings ? host.getRelightSettings() : null;
             params.route = "app";
+            // SP6: a picture with surface maps lights its own colour (docs/PLAN_SURFACE_PAINT.md); a layer made before stays
+            if (this.hasSurfaceMaps && this.hasSurfaceMaps()) params.surface = true;
             if (relightConf) {
                 if (relightConf.strength !== undefined) params.strength = relightConf.strength;
                 if (relightConf.style !== undefined) params.style = relightConf.style;
@@ -379,6 +382,31 @@ export class FiltersPart {
         this.setTool("paint");
         this.renderLayers();
         this.setStatus(`${layer.name} added. Paint on it: the colour takes the picture's light and reflections. Alt+click picks the surface's own colour.`);
+        return layer;
+    }
+
+    /**
+     * *Layer › New Light Brush Layer* (SP6): a relight layer with one warm sun from the upper left and a mask that hides
+     * all of it, the mask in edit and the brush picked, so painting brings the light in where it is painted (the light
+     * follows the surfaces' facing from the depth map, and with the surface maps it lights the picture's own colour and
+     * keeps its reflections). The depth map is made by the relight layer as before. One undo step for the mask (adding
+     * a layer is none).
+     */
+    newLightBrushLayer() {
+        if (!this.width) { this.setStatus("Load an image first."); return null; }
+        const layer = this.addFilterLayer("relight");
+        if (!layer) return null;
+        layer.name = `Light brush ${this.filterCounter}`;
+        const size = { width: this.width, height: this.height };
+        const sun = { ...defaultLight(0, size), type: "sun", x: Math.round(this.width * 0.25), y: Math.round(this.height * 0.2), color: 4500, intensity: 120 };
+        layer.params = { ...layer.params, lights: normalizeLights([sun], size) };
+        this.fillLayerMask(layer, false);
+        layer.maskEdit = true;
+        this.activeLayerId = layer.id;
+        this.setTool("paint");
+        this.markFilterChanged(layer);
+        this.renderLayers();
+        this.setStatus(`${layer.name} added. Paint where the light should fall (the brush paints its mask, E takes the light away); the Lights tool (L) moves the light, its colour and strength are in the layer list.`);
         return layer;
     }
 

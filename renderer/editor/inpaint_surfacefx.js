@@ -155,7 +155,8 @@ export function applySurface(src, params, info) {
     return out;
 }
 
-const SURFACE_GLSL = `
+/** The shaders' rgb16 map read (two RGBA8 textures of `rgb16Views`) and its bilinear step: Deep paint's and relight's. */
+export const RGB16_GLSL = `
 vec3 rgb16At(sampler2D a, sampler2D b, ivec2 p) {
     ivec2 q = clamp(p, ivec2(0), textureSize(a, 0) - 1);
     vec4 u = texelFetch(a, q, 0) * 255.0;
@@ -166,6 +167,9 @@ vec3 rgb16Bilinear(sampler2D a, sampler2D b, vec2 px) {
     vec2 q = px - 0.5; ivec2 i = ivec2(floor(q)); vec2 f = q - floor(q);
     return mix(mix(rgb16At(a, b, i), rgb16At(a, b, i + ivec2(1, 0)), f.x), mix(rgb16At(a, b, i + ivec2(0, 1)), rgb16At(a, b, i + ivec2(1, 1)), f.x), f.y);
 }
+`;
+
+const SURFACE_GLSL = RGB16_GLSL + `
 vec3 s_toLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 vec3 s_toSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }
 

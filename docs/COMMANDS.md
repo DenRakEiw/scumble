@@ -639,6 +639,7 @@ Relight the picture: edits an existing relight layer or adds a new one. Computes
 | `ambient` | number | ambient light 0..100 % (default 15) |
 | `depth_scale` | number | depth scale 5..200 % (default 50) |
 | `shadows` | number | shadow strength 0..100 % (default 60) |
+| `surface` | boolean | route 'app': light the picture's own colour from Deep paint's surface maps (surface_maps) and keep its reflections, in place of the colour estimated from the depth map; a new layer has it on when the maps are there. Refused true without the maps |
 | `route` | string | relight route: 'app' (the in-app filter), 'magnific', 'fal-iclight', 'fal-bria', 'comfycloud' or 'comfyui' (a generative route renders now). Omitted: a new layer is 'app', an edited layer keeps its route and nothing renders |
 | `prompt` | string | additional prompt text for generative routes |
 | `strength` | number | magnific: light transfer strength 0..100 % (default 100); a value in (0, 1] is a fraction (0.8 = 80 %) |

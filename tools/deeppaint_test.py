@@ -392,6 +392,87 @@ JS = r"""
             check("after the menu and the command: the paint as before", ed.layers.filter((l) => l.filter === "surface").length === 1 && diff(await all(), ref).max === 0, { layers: ed.layers.map((l) => l.name), d: diff(await all(), ref), undo: ed.undo.slice(-4).map((u) => u.kind + ":" + (u.label || "")) });
         }
 
+        // SP6: relight lit from the surface maps, and the light brush layer (a relight layer whose mask hides all)
+        {
+            const doc = ed.node.id;
+            const ramp = new Uint16Array(mw * mh);
+            for (let i = 0; i < ramp.length; i++) ramp[i] = Math.round(i * 65535 / ramp.length);
+            await ed.setMap("depth", makeMap("depth", mw, mh, ramp, xf));
+            await settle(ed);
+            const rr = await shell.commands.call("relight", { doc, original: 0, ambient: 0, lights: [] });
+            const RL = rr.ok && ed.layers.find((l) => l.id === rr.result.layer.id);
+            check("a new relight layer lights the surface maps' colour", RL && RL.params.surface === true, rr);
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            // Original 0, Ambient 0 and no light: what stays is the reflections R alone
+            const g0 = await all();
+            let rmax = 0;
+            for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) {
+                const mx = (x + 0.5) * mw / W, my = (y + 0.5) * mh / H;
+                for (let c = 0; c < 3; c++) rmax = Math.max(rmax, Math.abs(g0[4 * (y * W + x) + c] - Math.round(srgb(bil(rd, mx, my, c)))));
+            }
+            check("surface relight, no light, Original 0: the reflections alone", rmax <= 1, rmax);
+            await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
+            await settle(ed);
+            const g1 = await all();
+            let bmax = 0;
+            for (let i = 0; i < W * H; i++) for (let c = 0; c < 3; c++) bmax = Math.max(bmax, g1[4 * i + c]);
+            check("surface off: relight as before (Original 0, no light: black)", bmax <= 1, bmax);
+            // a light: the GPU and the CPU twin of the surface branch agree, and it differs from the fitted colour
+            const sun = { id: "s", type: "sun", x: 120, y: 60, dist: -30, intensity: 150, color: 4500, diffusion: 30, on: true };
+            await shell.commands.call("relight", { doc, layer: RL.id, lights: [sun], original: 100, surface: true });
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            const lit = await all();
+            await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            const litFit = await all();
+            check("the surface branch differs from the fitted colour", diff(lit, litFit).max > 3, diff(lit, litFit));
+            await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: true } });
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            const rb = mk(W, H);
+            ed.drawLayersInto(rb.getContext("2d"), { forRun: true, upTo: ed.layers.indexOf(RL) });
+            const rinfo = () => ed.filterInfo(RL, { scale: 1, origin: [0, 0], full: [W, H], forRun: true, cache: {} });
+            const rgl = applyFilterGL("relight", rb, RL.params, rinfo());
+            check("surface relight: the GPU path ran", !!rgl);
+            if (rgl) {
+                const a1 = glToCanvas(rgl).getContext("2d").getImageData(0, 0, W, H).data;
+                const a2 = applyFilter("relight", rb, RL.params, { ...rinfo(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+                check("surface relight: the CPU twin within 2 levels of the GPU", diff(a1, a2).max <= 2, diff(a1, a2));
+            }
+            await shell.commands.call("remove_layer", { doc, layer: RL.id });
+            const nmaps = ed.maps.shading;
+            await ed.setMaps({ shading: null, residual: null });
+            const rx = await shell.commands.call("relight", { doc, surface: true });
+            check("relight surface true refused without the maps", !rx.ok && /surface_maps/.test(JSON.stringify(rx)), rx);
+            await shell.commands.call("undo", { doc });
+            check("the maps back", ed.maps.shading === nmaps);
+            await settle(ed);
+
+            // the light brush: nothing changes until the mask is painted, then the light only there
+            const LB = ed.newLightBrushLayer();
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            check("the light brush layer: relight, surface, its mask in edit, the brush", LB && LB.filter === "relight" && LB.params.surface === true && LB.maskPx && LB.maskEdit && ed.tool === "paint" && LB.params.lights.length === 1, LB && [LB.params.surface, !!LB.maskPx, LB.maskEdit, ed.tool]);
+            check("the light brush before painting: the picture as it was", diff(await all(), ref).max === 0, diff(await all(), ref));
+            ed.brushSize = 40; ed.hardness = 1; ed.brushOpacity = 1;
+            await stroke(380, 320, 600);
+            if (ed.relightSettled) await ed.relightSettled();
+            await settle(ed);
+            const lb = await all();
+            let inside = 0, outside = 0;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const d = Math.abs(lb[4 * (y * W + x)] - ref[4 * (y * W + x)]) + Math.abs(lb[4 * (y * W + x) + 1] - ref[4 * (y * W + x) + 1]);
+                const inStroke = x >= 360 && x <= 620 && y >= 300 && y <= 340;
+                if (inStroke) { if (d > 6) inside++; } else if (d) outside++;
+            }
+            check("the light brush: light where it was painted, nowhere else", inside > 500 && outside === 0, { inside, outside });
+            await shell.commands.call("remove_layer", { doc, layer: LB.id });
+            await settle(ed);
+        }
+
         // a filter layer without pixels of its own still refuses the brush
         const g = ed.addFilterLayer("grain");
         ed.activeLayerId = g.id;
