@@ -178,12 +178,15 @@ async function main() {
     const TODAY = {
         "openai:gpt-5.6-luna": (content) => ({ model: "gpt-5.6-luna", input: [{ role: "user", content }], max_output_tokens: 4096, reasoning: { effort: "low" } }),
         "gemini:gemini-3.8-flash": (parts) => ({ contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: 4096, responseModalities: ["TEXT"], thinkingConfig: { thinkingLevel: "low" } } }),
+        // Gemini 4 Hydrogen thinks at high unless told: the same low level as Gemini 3 (2026-11-13)
+        "gemini:gemini-4-hydrogen": (parts) => ({ contents: [{ role: "user", parts }], generationConfig: { maxOutputTokens: 4096, responseModalities: ["TEXT"], thinkingConfig: { thinkingLevel: "low" } } }),
         "anthropic:claude-haiku-4-5": (content) => ({ model: "claude-haiku-4-5", max_tokens: 4096, messages: [{ role: "user", content }] }),
         "compat:local-vision": (content) => ({ model: "local-vision", messages: [{ role: "user", content }], max_tokens: 4096, stream: false }),
     };
     const TODAY_PARTS = {
         "openai:gpt-5.6-luna": (crop) => [{ type: "input_text", text: INSTR }, ...(crop ? [{ type: "input_image", image_url: uri(crop), detail: "auto" }] : [])],
         "gemini:gemini-3.8-flash": (crop) => [{ text: INSTR }, ...(crop ? [{ inline_data: { mime_type: "image/png", data: b64(crop) } }] : [])],
+        "gemini:gemini-4-hydrogen": (crop) => [{ text: INSTR }, ...(crop ? [{ inline_data: { mime_type: "image/png", data: b64(crop) } }] : [])],
         "anthropic:claude-haiku-4-5": (crop) => [...(crop ? [{ type: "image", source: { type: "base64", media_type: "image/png", data: b64(crop) } }] : []), { type: "text", text: INSTR }],
         "compat:local-vision": (crop) => (crop ? [{ type: "text", text: INSTR }, { type: "image_url", image_url: { url: uri(crop) } }] : INSTR),
     };
@@ -196,6 +199,12 @@ async function main() {
                 !a.err && !b.err && a.calls.length === 1 && b.calls.length === 1 && a.calls[0].raw === want && b.calls[0].raw === want && a.res.pictures === 0 && b.res.pictures === 0 && a.res.note === "",
                 short({ err: a.err || b.err, got: a.calls[0] && a.calls[0].raw, want }));
         }
+    }
+
+    {
+        const h = await ask("gemini:gemini-4-hydrogen", { image: CROP });
+        check("Gemini 4 Hydrogen goes to its own generateContent URL",
+            !h.err && h.calls.length === 1 && h.calls[0].url.endsWith("/v1beta/models/gemini-4-hydrogen:generateContent"), short({ err: h.err, url: h.calls[0] && h.calls[0].url }));
     }
 
     // 3. eight pictures in, six out, in label order

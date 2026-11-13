@@ -10,8 +10,10 @@ cutouts fall back to the ComfyUI helper prompts too.
 Besides the ComfyUI language model nodes (Qwen3-VL, the Gemini API node), the
 upsample select in the Prompt section lists API vision language models once their key
 is stored under Settings › API providers: GPT-5.6 Luna / Terra (OpenAI key, Responses
-API, `reasoning.effort: low`), Gemini 3.8 Flash / 3.5 Flash Lite (Google key,
-`generateContent`, `thinkingLevel: low` on Gemini 3), Claude Opus 5 / Haiku 4.5
+API, `reasoning.effort: low`), Gemini 3.8 Flash / 3.5 Flash Lite / 4 Hydrogen (Google key,
+`generateContent`, `thinkingLevel: low` on Gemini 3 and 4; Hydrogen thinks at high unless told and refuses
+`minimal`; it comes after the 3.x rows, so the first row a Google key offers stays Gemini 3.8 Flash; added
+2026-11-13, not run live), Claude Opus 5 / Haiku 4.5
 (Anthropic key, Messages API; Anthropic has no image model, so its key row exists for
 this alone). The editor sends the same instruction and context crop it builds for the
 ComfyUI path (`promptContextCanvas`, long side ≤ 1024, the selection outlined), the
@@ -64,9 +66,10 @@ retry rule, the plain words and the "text only" note against a scripted fetch.
 
 ### Through the OpenRouter key
 
-A stored OpenRouter key (the image provider, docs/RECIPES.md "OpenRouter") adds four rows **after the
+A stored OpenRouter key (the image provider, docs/RECIPES.md "OpenRouter") adds five rows **after the
 Anthropic rows**, the last of the key rows (the ToAPIs rows stay first; a local endpoint's entry, below,
-comes after them): Gemini 3.8 Flash (`google/gemini-3.8-flash`), GPT-5.6 Luna (`openai/gpt-5.6-luna`), Claude Haiku 4.5
+comes after them): Gemini 3.8 Flash (`google/gemini-3.8-flash`), Gemini 4 Hydrogen (`google/gemini-4-hydrogen`,
+$1.50 / $7.50 from `GET /api/v1/models` on 2026-11-13, `{ effort: "low", exclude: true }` as Gemini 3.8 Flash), GPT-5.6 Luna (`openai/gpt-5.6-luna`), Claude Haiku 4.5
 (`anthropic/claude-haiku-4.5`, with a dot; the hyphenated id does not exist there) and Mistral Small 4
 (`mistralai/mistral-small-2603`), each labelled "(OpenRouter key)", ids `openrouter:<model>`. They go
 through the same client as the ToAPIs rows (`askCompatible`, strict, `<think>` stripping, 120 s timeout) to

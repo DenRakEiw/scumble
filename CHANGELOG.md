@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Gemini 4 Hydrogen for prompt upsampling**, on your Google key and on your OpenRouter key. It comes after Gemini 3.8 Flash in the list, so the model you have picked stays as it is.
+
 ## 0.1.56 - 2026-11-12
 
 Fixes from a review of the whole code (54 defects, two of them able to lose or change your pixels):
