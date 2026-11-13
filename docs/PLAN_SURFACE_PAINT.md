@@ -435,6 +435,18 @@ half only, a filter layer refused). Gates `wrap deeppaint commands composite lin
 `mcp assistant help` on tiles, `docs/COMMANDS.md` regenerated. Normal tier: no mutation round. Next: SP8 (docs, the
 user's live test, release prep), and the user's look at SP4-SP7 first.
 
+**The hand test of SP4-SP7, prepared the same night** (`dist/testfiles/handtest_deeppaint.md`, German steps; not in the
+repo): a dev instance on its own profile (`dist/testfiles/handtest_deeppaint_profile`, port 9555, `--no-comfy`) with
+the models in `dist/testfiles/deeppaint_models` (the intrinsic set and MoGe-2 copied from SP2's scratchpad, the depth
+model from the user's models folder), tab "03_cafe_a" (the cafe and car render, its maps in 7.0 s, a text layer on the
+cup) and tab "skin" (the portrait, its maps and a depth map). Looked at by Claude first on these pictures
+(`dist/testfiles/handtest_deeppaint_looks/`): the wrap follows the cup and takes its shade (178 ms for the 110 px icon,
+46 ms for the text); a picked absolute colour (a saturated red) comes out darker on the cup's shaded side, as the
+formula says; the light brush lights the cheek only under its mask, and with the surface maps the skin keeps its texture
+and highlights where the fitted route washes them out. **Found:** the light brush shows nothing without a depth map
+(relight needs it for the light's facing); the test folder lacked the depth model at first; in the app the depth map is
+made by the relight layer as before, and without its model the status line names the download.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;
