@@ -24,6 +24,12 @@ while those chains landed; its bracket is the longest block from the end of the 
 had landed, whatever held the window: it includes the selection's background encode and any other
 timer of that window, not only the landings and their draws.
 
+With --filter=surface the filter layer is a Deep paint layer (docs/PLAN_SURFACE_PAINT.md SP4b) on synthetic surface
+maps at the work size, painted in three rectangles, and four rows after the brush's time a stroke on it (a dab and its
+frame, the commit, the first frame after it, the undo step):
+
+    python tools/perf_test.py 15000x10000 --filter=surface
+
 With --filter=relight (and its depth map, --map=WxH, 4096x2731 by default) the run ends with relight's own rows
 (docs/PLAN_WASM_BUILD.md §4.5, K0b), after every row above so they stay comparable with runs before them: one light
 moved and three lights moved as a release does them, a drag step's quick map, a pan at 1:1 while the full march of a
@@ -146,6 +152,32 @@ BENCH = """
     if (chosenFilter === "relight" && fx && fx.filter === "relight") {
         const { applyLightPreset } = await import("./editor/inpaint_relight.js");
         fx.params = { ...fx.params, lights: applyLightPreset("cyberpunk_neon", { width: W, height: H }) };
+        ed.markFilterChanged(fx);
+    }
+    // Deep paint (docs/PLAN_SURFACE_PAINT.md SP4b): synthetic surface maps at the work size (the light a ramp across,
+    // the reflections a ramp down) and paint in three rectangles on the layer, so every row pans and draws over a
+    // painted Deep paint layer; the stroke rows after the brush's paint on it
+    if (chosenFilter === "surface" && fx && fx.filter === "surface") {
+        const { makeMap } = await import("./editor/inpaint_maps.js");
+        const sw = Math.min(4096, W), sh = Math.max(1, Math.round(sw * H / W)), sn = sw * sh;
+        const sd = new Uint16Array(sn * 3), rd = new Uint16Array(sn * 3), nd = new Uint8Array(sn * 4).fill(255);
+        for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+            const i = 3 * (y * sw + x), s = Math.round(65535 * (0.25 + 0.75 * x / Math.max(1, sw - 1))), r = Math.round(65535 * 0.08 * y / Math.max(1, sh - 1));
+            sd[i] = sd[i + 1] = sd[i + 2] = s; rd[i] = rd[i + 1] = rd[i + 2] = r;
+        }
+        const sxf = [W, 0, 0, H, 0, 0];
+        await ed.setMaps({
+            shading: makeMap("shading", sw, sh, sd, sxf, { sScale: 1.2, fp: "perf" }, null, "rgb16"),
+            residual: makeMap("residual", sw, sh, rd, sxf, { fp: "perf" }, null, "rgb16"),
+            normals: makeMap("normals", sw, sh, nd, sxf, { fp: "perf" }, null, "rgba8"),
+        });
+        const boxes = [[0.1, 0.1, 0.35, 0.45, "rgb(192,48,32)"], [0.45, 0.3, 0.8, 0.7, "rgba(32,96,192,0.6)"], [0.2, 0.6, 0.5, 0.9, "rgb(40,200,60)"]];
+        for (const [a, b, c, d, col] of boxes) {
+            const r = [Math.round(a * W), Math.round(b * H), Math.round(c * W), Math.round(d * H)];
+            fx.px.drawInto(r, (x) => { x.fillStyle = col; x.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); });
+        }
+        fx.dirty = true;
+        ed.markLayerChanged(fx);
         ed.markFilterChanged(fx);
     }
     const fxId = fx && fx.filter;
@@ -435,6 +467,38 @@ BENCH = """
     const undoAt = performance.now();
     await ed.undoStep();
     out.undo_step = [+(performance.now() - undoAt).toFixed(1), 0];
+
+    // --- a brush stroke on the Deep paint layer (--filter=surface) ----------------
+    // each dab's frame runs the layer's filter over the view with the live stroke drawn into its own pixels
+    if (fxId === "surface") {
+        ed.activeLayerId = fx.id;
+        const sp = { kind: "layerpaint", layer: fx, stroke: ed.newStrokeBuffer(fx.px), clip: null, erase: false, last: [10, 10], pressure: 1 };
+        ed.pointer = sp;
+        out.surface_stroke_frame = bench((i) => {
+            const x = 100 + i * Math.max(4, W / 200), y = 100 + (i %% 7) * 20;
+            ed.layerDab(sp, sp.last[0], sp.last[1], x, y);
+            sp.last = [x, y];
+            ed.draw();
+        }, 60);
+        settle(false);
+        await new Promise((r) => setTimeout(r, 300));
+        const sAt = performance.now();
+        const sBox = ed.strokeRect(sp, fx.px);
+        ed.commitStroke(sp);
+        ed.pointer = null;
+        ed.markLayerChanged(fx, sBox);
+        out.surface_stroke_commit = [+(performance.now() - sAt).toFixed(1), 0];
+        const fAt = performance.now();
+        ed.draw();
+        settle();
+        out.surface_after_commit_frame = [+(performance.now() - fAt).toFixed(1), 0];
+        const suAt = performance.now();
+        await ed.undoStep();
+        out.surface_undo_step = [+(performance.now() - suAt).toFixed(1), 0];
+        ed.activeLayerId = paintLayer.id;
+        ed.draw();
+        settle();
+    }
 
     // --- selection, autosave, full composite ------------------------------------
     settle();
@@ -1240,6 +1304,10 @@ ROWS = [
     ("brush dab + frame", "stroke_frame"),
     ("stroke commit (undo copy)", "stroke_commit"),
     ("undo step", "undo_step"),
+    ("Deep paint: dab + frame", "surface_stroke_frame"),
+    ("Deep paint: stroke commit", "surface_stroke_commit"),
+    ("Deep paint: frame after it", "surface_after_commit_frame"),
+    ("Deep paint: undo step", "surface_undo_step"),
     ("selection change", "selection_change"),
     ("getValue (autosave)", "get_value"),
     ("selection bounds scan", "bounds_scan"),

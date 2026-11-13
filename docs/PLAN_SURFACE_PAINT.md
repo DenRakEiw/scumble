@@ -322,6 +322,34 @@ canvas backend `layerWithStroke(layer)` in place of `px`. The 15k pan: `perf:150
 (the perf stack carries a filter layer; a `--filter=surface` needs the maps, so a row of its own or a perf option that
 sets synthetic maps).
 
+**SP4b done 2026-11-13: the brush and the eraser on the Deep paint layer** (the user: "baue weiter"). `hasOwnPixels(layer)`
+(`inpaint_ed_filters.js`): a filter layer whose type has `ownPixels`; the paint / erase press (`inpaint_ed_pointer.js`)
+lets such a layer through and refuses every other filter layer as before (smudge, tone, clone, heal, Remove, the
+gradient and the transform still refuse it: SP5 picks what else it takes). The stroke itself needed nothing: a filter
+layer has x, y = 0, 0 and the canvas's size, so `StrokeBuffer`, `commitStroke` / `commitStrokeTiles`, the `layerrect`
+undo step and `markLayerChanged` (its `bumpComposite` moves `compositeVersion`, which the filter's cache checks) work as
+for a whole-canvas paint layer. **The live stroke:** `ownPixelsFor` draws the stroke over the layer's tiles in the pass's
+scratch (`drawStrokeInto` with the pass's view, the eraser as `destination-out`, alpha lock as `source-atop`), on the
+canvas backend from `layerWithStroke`; never for a run or an export (`pass.forRun`), and `filterKey` takes
+`pixelVersion` while a stroke is on the layer, so each dab's frame runs the filter again (the screen region only).
+**Tests:** `tools/deeppaint_test.py`'s stroke block through real pointer events, no `markFilterChanged`: the screen
+shows the stroke under the light before the release with nothing in the layer yet, a run's picture then is the picture
+without it, the committed stroke by the formula within a level and the rest byte for byte, the step `layerrect`, undo
+gives the bytes back (and on the screen), redo; the eraser gives the picture back byte for byte where it went and its
+live view shows that; a grain layer still refuses the brush. Gate `deeppaint` and `composite editor brush document
+export commands lint types` PASS on both backends (`sp4b-g`). **Mutation round** (`docs/measurements/sp4b_2026-11-13/`,
+`mutants_sp4b.py`): 7 of 8 killed (the refusal back, any filter taking the brush, no live stroke on tiles / on canvas,
+the key without the dab count, the stroke in a run's picture, the live erase painting); `key_without_px_version`
+survives and is equivalent (a commit and an undo move `compositeVersion` too; the key part stays as a guard), which
+settles SP4a's survivor. **The 15k pan** (`tools/perf_test.py --filter=surface`: synthetic maps at 4096 x 2731, paint in
+three rectangles, four rows of a stroke on the layer; `perf_15k_*.txt`, two runs against one with the film look):
+pan at fit 10.7-10.9 ms median (film look 5.7), at 1:1 5.6-5.9 (3.7), worst frames 18-26 ms; a dab and its frame on
+the layer 12.3-12.8 ms (a paint layer's 0.9-1.1), the commit 1.9-2.5 ms, the first frame after it 67-70 ms (the
+filter's pass at fit again, once), the undo 33-36 ms. The difference to the film look is the read back of the layer's
+own pixels per pass (`getImageData` in `ownPixelsFor`) and their upload: the lever if it matters (the tiles straight
+into a texture), not done. Next: SP5 (the brush's UX: *New Deep paint layer*, the eyedropper's albedo, the colour mask
+and the selection limit, MCP).
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

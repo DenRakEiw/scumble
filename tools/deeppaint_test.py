@@ -9,6 +9,9 @@ On synthetic maps (the light a ramp across, 0.3 .. 1.2 after sScale; the reflect
   * Keep reflections 0, a layer mask (the masked half is the picture), opacity, a hidden layer, no maps (the picture);
   * a quarter turn turns the paint with the picture (the turned result within one level) and its undo gives the bytes
     back; a crop keeps the paint in place; a resize remakes it at the new size; undo of each;
+  * the brush and the eraser on the layer (SP4b): the live stroke on the screen before the release with nothing in the
+    layer yet, the committed stroke by the formula with no explicit cache reset, its undo (the bytes back) and redo;
+    another filter layer still refuses the brush;
   * the type picker: set_filter and add_filter refuse to turn anything into or out of Deep paint;
   * .scumble save and open and the autosave restore give the same bytes; the header asks for reader 7.
 
@@ -210,6 +213,95 @@ JS = r"""
     let pmax = 0;
     for (let y = 95; y < 210; y++) for (let x = 90; x < 230; x++) for (let c = 0; c < 4; c++) pmax = Math.max(pmax, Math.abs(part[4 * ((y - 95) * 140 + x - 90) + c] - ref[4 * (y * W + x) + c]));
     check("a part of the picture: the paint in its place", pmax <= 1, pmax);
+
+    // SP4b: the brush and the eraser on the layer, the live stroke on the screen, the stroke's undo; no
+    // markFilterChanged here (what the release does has to reach the filter's caches by itself)
+    {
+        const cur = () => ed.layers.find((l) => l.filter === "surface");
+        ed.activeLayerId = cur().id;
+        ed.fitView(); ed.sceneSig = null; ed.draw(); await wait(60);
+        const rect = ed.canvas.getBoundingClientRect();
+        const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+        const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 21, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+        const screenAt = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+        const redraw = () => { ed.sceneSig = null; ed.draw(); };
+        // a stroke whose middle is drawn and looked at before the release
+        const stroke = async (x0, y, x1, mid) => {
+            ed.canvas.dispatchEvent(ev("pointerdown", x0, y));
+            for (let i = 1; i <= 10; i++) { ed.canvas.dispatchEvent(ev("pointermove", x0 + (x1 - x0) * i / 10, y)); await wait(16); }
+            redraw(); await wait(30);
+            const seen = mid ? await mid() : null;
+            ed.canvas.dispatchEvent(ev("pointerup", x1, y));
+            await wait(60);
+            return seen;
+        };
+        const before = await all();
+        const scr0 = (redraw(), screenAt(160, 330));
+        ed.setTool("paint");
+        ed.color = "#28c83c"; ed.brushSize = 40; ed.hardness = 1; ed.brushOpacity = 1;
+        const live = await stroke(60, 330, 260, async () => ({ screen: screenAt(160, 330), layer: Array.from(cur().px.readRect(160, 330, 1, 1).data), run: await all() }));
+        await settle(ed);
+        const stepK = ed.undo[ed.undo.length - 1];
+        check("the brush on Deep paint: one stroke step", stepK && stepK.kind === "layerrect", stepK && stepK.kind);
+        const lp = Array.from(cur().px.readRect(160, 330, 1, 1).data);
+        check("the brush wrote the paint into the layer", lp[3] === 255 && Math.abs(lp[0] - 0x28) <= 1 && Math.abs(lp[1] - 0xc8) <= 1 && Math.abs(lp[2] - 0x3c) <= 1, lp);
+        check("the live stroke: nothing in the layer before the release", live && live.layer[3] === 0, live && live.layer);
+        check("the live stroke: a run's picture does not have it", live && diff(live.run, before).max === 0, live && diff(live.run, before));
+        const after = await all();
+        // the formula with the layer's paint as it is now (the first two rectangles and the stroke)
+        const pd2 = (await cur().px.readRect(0, 0, W, H)).data;
+        const exp2 = expect(pd2);
+        let smax = 0, sout = 0;
+        for (let i = 0; i < W * H; i++) for (let c = 0; c < 3; c++) {
+            const v = Math.abs(after[4 * i + c] - exp2[4 * i + c]);
+            if (pd2[4 * i + 3]) smax = Math.max(smax, v); else if (v) sout++;
+        }
+        check("the stroke: the formula within a level, the rest byte for byte", smax <= 1 && sout === 0, { smax, sout });
+        const q2 = 4 * (330 * W + 160);
+        const v = Array.from(after.slice(q2, q2 + 3));
+        check("the stroke changed the picture there", Math.abs(v[1] - before[q2 + 1]) > 20, [v, Array.from(before.slice(q2, q2 + 3))]);
+        const near = (a, b, t) => a && b && Math.abs(a[0] - b[0]) <= t && Math.abs(a[1] - b[1]) <= t && Math.abs(a[2] - b[2]) <= t;
+        check("the live stroke shows on the screen, under the light", live && near(live.screen, v, 8) && !near(scr0, v, 20), { live: live && live.screen, v, scr0 });
+        redraw(); await wait(30);
+        check("after the release the screen shows the stroke", near(screenAt(160, 330), v, 8), [screenAt(160, 330), v]);
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        check("the stroke's undo: the bytes back", diff(await all(), before).max === 0 && cur().px.readRect(160, 330, 1, 1).data[3] === 0, diff(await all(), before));
+        redraw(); await wait(30);
+        check("the stroke's undo on the screen", near(screenAt(160, 330), scr0, 2), [screenAt(160, 330), scr0]);
+        await shell.commands.call("redo", { doc: ed.node.id });
+        await settle(ed);
+        check("its redo", diff(await all(), after).max === 0, diff(await all(), after));
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+
+        // the eraser through the first rectangle: the picture comes back there
+        ed.setTool("erase");
+        ed.brushSize = 30;
+        const liveE = await stroke(90, 150, 230, () => screenAt(160, 150));
+        await settle(ed);
+        const erased = await all();
+        let eq = true;
+        for (let y = 140; y < 160; y++) for (let x = 105; x < 215; x++) for (let c = 0; c < 3; c++) if (erased[4 * (y * W + x) + c] !== bd[4 * (y * W + x) + c]) eq = false;
+        check("the eraser: the picture byte for byte where it went", eq && cur().px.readRect(160, 150, 1, 1).data[3] === 0);
+        check("the eraser leaves the rest of the paint", Math.abs(erased[4 * (120 * W + 160)] - ref[4 * (120 * W + 160)]) <= 1);
+        const pb = bd.slice(4 * (150 * W + 160), 4 * (150 * W + 160) + 3);
+        check("the live erase shows on the screen", near(liveE, Array.from(pb), 8), [liveE, Array.from(pb)]);
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        check("the eraser's undo: the paint back", diff(await all(), ref).max === 0, diff(await all(), ref));
+
+        // a filter layer without pixels of its own still refuses the brush
+        const g = ed.addFilterLayer("grain");
+        ed.activeLayerId = g.id;
+        ed.setTool("paint");
+        const n0 = ed.undo.length;
+        await stroke(60, 330, 260);
+        check("another filter layer refuses the brush", ed.undo.length === n0 && /no pixels/i.test(ed.status), [ed.undo.length - n0, ed.status]);
+        await shell.commands.call("remove_layer", { doc: ed.node.id, layer: g.id });
+        await settle(ed);
+        check("after the strokes: the paint as before", diff(await all(), ref).max === 0, diff(await all(), ref));
+    }
 
     // an undo puts the step's copies of the layers in place: the layer is found again
     const cur = () => ed.layers.find((l) => l.filter === "surface");

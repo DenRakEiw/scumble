@@ -587,7 +587,8 @@ export class PointerPart {
                 this.draw();
                 return;
             }
-            if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Add a mask (from selection) and enable mask editing to limit where the filter applies."); return; }
+            // a Deep paint layer is a filter layer with pixels of its own: the brush and the eraser paint those
+            if (layer && layer.kind === "filter" && !this.hasOwnPixels(layer)) { this.setStatus("Filter layers have no pixels. Add a mask (from selection) and enable mask editing to limit where the filter applies."); return; }
             if (!layer) {
                 if (this.tool === "erase") { this.setStatus("The base layer cannot be erased. Select a layer or add a paint layer."); return; }
                 layer = this.addPaintLayer();

@@ -362,6 +362,11 @@ export class FiltersPart {
         return layer;
     }
 
+    /** A filter layer whose own pixels are an input (Deep paint): the brush and the eraser paint into its `px`. */
+    hasOwnPixels(layer) {
+        return !!(layer && layer.kind === "filter" && layer.px && FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels);
+    }
+
     setFilterType(layer, id) {
         if (!FILTERS[id] || layer.filter === id) return;
         if (FILTERS[id].ownPixels || (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels)) return;   // Deep paint keeps its type
@@ -526,7 +531,11 @@ export class FiltersPart {
         if (readsMap) {
             baseKey.push(this.mapsVersion || 0);
         }
-        if (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels) baseKey.push(layer.px ? layer.px.version : -1);
+        if (FILTERS[layer.filter] && FILTERS[layer.filter].ownPixels) {
+            baseKey.push(layer.px ? layer.px.version : -1);
+            // a stroke on the layer is drawn over its pixels per pass (`ownPixelsFor`): every dab moves `pixelVersion`
+            if (!forRun && this.liveStrokeOn(layer)) baseKey.push("stroke", this.pixelVersion);
+        }
         const isEffectView = this.effectViewOf(layer, forRun);
         if (isEffectView) baseKey.push(true);
         if (layer.params && layer.params.limit) baseKey.push(!!plain);
@@ -594,6 +603,10 @@ export class FiltersPart {
         const x0 = o[0] / sx, y0 = o[1] / sy;
         const c = this.passScratch("_ownPixels", w, h);
         const ctx = c.getContext("2d");
+        // the screen during a brush or eraser stroke on this layer: the stroke over the layer's pixels, as the filter
+        // mask's stroke in `applyFilterLayer` (a run and an export never see a stroke that is not committed)
+        const p = !pass.forRun && this.liveStrokeOn(layer) && this.pointer.kind === "layerpaint" ? this.pointer : null;
+        const op = p ? (p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over")) : null;
         ctx.save();
         try {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -601,8 +614,12 @@ export class FiltersPart {
             ctx.globalCompositeOperation = "source-over";
             ctx.clearRect(0, 0, w, h);
             if (isTilePixels(layer.px)) {
+                const vp = { x: x0, y: y0, w: w / sx, h: h / sy, sx, sy };
                 ctx.setTransform(sx, 0, 0, sy, -x0 * sx, -y0 * sy);
-                this.drawTilesInto(ctx, layer.px, 0, 0, W, H, { x: x0, y: y0, w: w / sx, h: h / sy, sx, sy });
+                this.drawTilesInto(ctx, layer.px, 0, 0, W, H, vp);
+                if (p) this.drawStrokeInto(ctx, { x: 0, y: 0, w: W, h: H }, layer.px, op, vp, [0, 0, w, h]);
+            } else if (p) {
+                ctx.drawImage(this.layerWithStroke(layer), x0, y0, w / sx, h / sy, 0, 0, w, h);   // as `drawTo` draws
             } else {
                 layer.px.drawTo(ctx, x0, y0, w / sx, h / sy, 0, 0, w, h);
             }

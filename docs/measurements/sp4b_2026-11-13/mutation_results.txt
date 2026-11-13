@@ -1,0 +1,12 @@
+== SP4b: strokes on the Deep paint layer mutation round 2026-11-13 16:22 on C:\Users\SCHOEN~1\AppData\Local\Temp\claude\9a199ca2a3624e76\12752a79-3ec3-429a-bc64-0d7cb6b77f78\scratchpad\mut4b (tools/mutation_round.py; 8 mutants, port 9561, re-check gates deeppaint)
+orig (the untouched copy): build 12 s, both builds identical to the checkout's: True; green: the full px_test 217 s; green: the deeppaint gate 25 s; green: the deeppaint gate 24 s; 278 s
+KILLED   pointer_refuses_own: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: the brush refused on Deep paint
+KILLED   own_pixels_any_filter: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: grain takes the brush
+KILLED   no_live_stroke_tiles: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: the live stroke does not show
+KILLED   no_live_stroke_canvas: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: the live stroke does not show (canvas)
+KILLED   key_without_stroke: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: the cached pass hides the stroke
+KILLED   live_stroke_in_runs: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: a run's picture has the uncommitted stroke
+KILLED   live_erase_paints: red: the deeppaint gate (FAIL); builds None; 24 s (the deeppaint gate 24 s); expected killed: the live erase paints
+SURVIVED key_without_px_version: green: the deeppaint gate, the full px_test (the focused set, then the re-check); builds None; 243 s (the deeppaint gate 24 s, re-check the full px_test 219 s); expected unknown: a commit and an undo also move compositeVersion
+restored copy: every mutated file back: True; green: the full px_test
+mutants: 7 killed (0 of them only on the re-check), 1 survived of 8; 0 not as expected; 637 s for the mutants
