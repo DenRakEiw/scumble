@@ -10,6 +10,20 @@ let COMMANDS = null;
 
 /** @satisfies {Record<string, Command>} */
 export const DepthCommandsPart = {
+    surface_maps: {
+        needsImage: true,
+        description: "Compute or refresh Deep paint's surface maps: the picture's light, its reflections and its surface normals (Marigold IID Lighting and MoGe-2 in the app). One undo step; a fresh set is kept unless force.",
+        params: {
+            force: P.bool("recompute even if a fresh set is present", { default: false }),
+            view: P.enum("show a map on the screen in place of the picture (the screen only), or the picture again", ["none", "shading", "residual", "normals"]),
+        },
+        async run(ed, a) {
+            const info = await ed.computeSurfaceMaps({ recompute: a.force === true || a.force === "true" });
+            if (!info) throw new Error("the surface maps were dropped: the picture was turned or cropped meanwhile");
+            if (a.view) info.view = ed.setSurfaceView(a.view) || "none";
+            return info;
+        },
+    },
     depth_map: {
         needsImage: true,
         description: "Compute or refresh the document's depth map (Depth Anything V2 Small).",

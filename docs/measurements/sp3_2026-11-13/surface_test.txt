@@ -1,0 +1,15 @@
+(node:17696) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///F:/canvas/renderer/editor/inpaint_surface.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\F:\canvas\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ok   the scale fit finds the light's and the reflections' scale  a 1.999, b 2.501
+ok   synthetic 96 x 64: the picture back from the stored maps within a level, R in [0, I]  max 0.000, mean 0.0000 levels, sScale 0.941, A clamped 0.00 %, 10 ms
+ok   synthetic 288 x 192: the picture back from the stored maps within a level, R in [0, I]  max 0.000, mean 0.0000 levels, sScale 0.947, A clamped 0.00 %, 30 ms
+ok   a black picture: the identity holds, R zero  max 0.000
+ok   the normals pack: (n + 1) / 2 per axis, the mask in A  255,128,128,255,128,0,128,128,128,128,0,0
+ok   the model's size: long side 768, at least 16
+ok   portrait 1500 x 2000: the picture back from the stored maps within a level  max 0.025, mean 0.0002; a 2.48, b 1.57, sScale 2.45, r 3, A clamped 5.88 % (at 0: 3.33 %; excess: 3.94 %); model 4379 ms on dml, maps 1149 ms
+ok   cafe_car 2048 x 1465: the picture back from the stored maps within a level  max 0.025, mean 0.0009; a 2.12, b 2.13, sScale 2.17, r 3, A clamped 23.89 % (at 0: 23.45 %; excess: 7.92 %); model 1310 ms on dml, maps 1013 ms
+ok   house 2048 x 1465: the picture back from the stored maps within a level  max 0.025, mean 0.0003; a 1.54, b 1.45, sScale 1.70, r 3, A clamped 17.74 % (at 0: 13.80 %; excess: 15.95 %); model 946 ms on dml, maps 1037 ms
+ok   barn_door 2048 x 1363: the picture back from the stored maps within a level  max 0.022, mean 0.0015; a 2.18, b 1.79, sScale 2.11, r 3, A clamped 40.96 % (at 0: 40.93 %; excess: 10.87 %); model 1189 ms on dml, maps 912 ms
+PASS

@@ -210,14 +210,53 @@ the four files (Hugging Face's LFS sha256 equal to the registry's), `LICENSE-MOD
 Attachment A holds only the template's "[insert use restrictions]", so the terms paragraph names paragraph 5 and no list;
 the first draft had listed restrictions this licence does not carry), and a README (the licence's Section III, 4: the
 files marked as converted, the notices kept, the licence included; the graphs, the step, the sha256, the citation).
-**The repo stays private until the user makes it public**: the app's download needs the HF token meanwhile (a run
-without one got 401). `intrinsic.json`'s `base` is the resolve URL at `17a90768`, so the set is offered. **Found with
+The repo was private for the upload (a run without the token got 401) and **public since 2026-11-13** (the user:
+"ja, schalte public"; `scheduler.json` fetched without a token, its sha256 equal). `intrinsic.json`'s `base` is the resolve URL at `17a90768`, so the set is offered. **Found with
 it:** the app's `Downloader` was built without `termsAccepted`, so a model with terms could never download in the app
 (CK2 was a placeholder, so nobody hit it): the terms dialog in Settings › Helpers and `helpers.terms[id]` (HELPERS.md
 "Downloads"); run in the dev app: refused without the yes and with a wrong version, Cancel downloads nothing, Accept
 starts it and stores version 1, the next Download asks no more. The full download through `Downloader` into an empty
 folder with the token: sizes and sha256 checked (`docs/measurements/sp2_2026-11-13/download.txt`). Next: SP3
 (decompose).
+
+**SP3 done 2026-11-13: the surface maps** (the user: "ja, schalte public und baue weiter"). `renderer/editor/
+inpaint_surface.js` (plain functions, in the node build's FILES): `surfaceMaps` = §3.1 at last as built: the joint
+least-squares fit `I ~ a A S + b R` on the model's size in linear light (`fitScale`), S' and R' up to the work size by a
+bilinear step and an unclamped guided filter (guide: the work picture's grey, r = the upsampling factor, at least 2;
+eps 1e-3), S' stored as S / `sScale` (its largest value, so light above 1 is kept in a 0..1 16-bit map), then **R made
+exact against the stored S**: `A_up = clamp((I - R_up) / S_q)`, `R = I - A_up S_q` (R in [0, I]); `packNormals` (MoGe's
+vectors (n + 1) / 2, the mask in A); `surfaceModelSize` (long side 768). The pool's worker op `surface_maps`.
+**The editor** (`inpaint_ed_depth.js`): `computeSurfaceMaps({ recompute })` (the picture without filter layers on grey,
+as depth, at 768 -> `host.surfaceAnalysis` (the decomposition, then the normals, in the helpers' process) -> the job at
+the work size -> three maps: `shading` and `residual` rgb16 at the work size, `normals` rgba8 at the model's size, all
+with the document's `xf`; a fresh set (the 64 x 64 fingerprint) is kept), `setMaps` (several maps in **one undo step**:
+`inpaint_ed_history.js` reads a `maps` step with `maps: { kind: prev }` beside the one-map form), `hasSurfaceMaps`,
+`surfaceMapsInfo`, `setSurfaceView` / `surfaceProxy` (the screen shows the light, the reflections or the normals in place
+of the picture through `mapView`, never in an export). *Image › Surface Maps* (Compute, Show Light / Reflections /
+Normals / the Picture), the MCP command **`surface_maps`** (`force`, `view`; AUTO in the assistant's policy, 900 s;
+120 tools, 100 core). Host members `surfaceModels`, `surfaceAnalysis` (`host_helpers.js`); **the node's `js/host.js`
+needs two stubs at the next node build** (`surfaceModels() { return null; }`, `async surfaceAnalysis() { throw new
+Error("Deep paint is a Scumble feature"); }`), or `build_node.py --check` refuses (not run here: it reads the user's live
+node folder). **Found, and the design changed:** an "excess" residual (the light's scale from the low-residual half,
+R = what A S does not explain) looked better by its numbers (A at 0 on 8-11 % instead of 23-41 % on two pictures) but
+was wrong to the eye: the model's albedo is blurred and its colour a little off, so that R held the albedo's error in the
+complementary colour (the orange car's residual teal, a purple face paint's blue; the contact sheet of the portrait and
+the cafe scene, `docs/measurements/sp3_2026-11-13/`, kept out of the repo as SP0's: the user's pictures). The model's own
+residual is colourless (highlights, sparkle, fine texture), so the joint fit is the default and "excess" stays as
+`surfaceMaps(..., mode: "excess")` for the comparison. Where b R' reaches the picture A clamps at 0 (paint there would
+add light, not cover: 3 % of the portrait's channel values, 14-41 % of the three street pictures', mostly where by eye
+the model calls sky, glass and openings residual; not measured where): **SP5's "Keep reflections" must scale R in the
+brush's formula** (`P S + k R`). **Tests:** `tools/surface_test.js` (synthetic: the fit finds a = 2, b = 2.5; a picture
+made as A S + R back within 0 levels at two sizes; black; the normals' pack; the model's size; with the models and
+SP0's four pictures prepared as raw RGBA: the identity within 0.025 levels at 1,500 x 2,000 and 2,048 wide, the maps'
+job about 1 s there in plain Node) PASS (`docs/measurements/sp3_2026-11-13/surface_test.txt`). In the dev app (own
+profile, `--no-comfy`, the portrait 1,500 x 2,000): `surface_maps` in 10.5 s cold (sessions' load included), a second
+call 18 ms (kept), one undo step takes all three and redo brings the same data, a `.scumble` saved and opened in a new
+tab gives the same samples and meta, the three views looked at (light grey and smooth, reflections, normals). Gates
+`sp3-t` (maps, document, commands, mcp, lint, types) PASS on tiles. **Not done in SP3:** the 15k timing (next), a
+gate step in `maps_test.py` for the surface maps (they need the 1.9 GB set: a stand-in for `host.surfaceAnalysis`
+would test the rest), staleness shown in a panel (the fingerprint is kept; `mapStale("shading")` answers), the
+`albedo` view (it needs the picture: (I - R) / S). Next: the 15k timing and the gate step, then SP4.
 
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 

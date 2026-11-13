@@ -7,6 +7,7 @@ import { editorPool } from "./inpaint_jobs.js";
 import { uploadCanvas } from "./inpaint_upload.js";
 import { GUIDE, STALE_DIFF, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 import { deriveMap, editMap, fingerprint, fingerprintDiff, makeMap, packMap, selectionOnMap } from "./inpaint_maps.js";
+import { linToSrgb255, packNormals, surfaceModelSize } from "./inpaint_surface.js";
 import { SNAP_DEFAULT } from "./inpaint_edges.js";
 import { failKind } from "./inpaint_status.js";
 import { makeCanvas } from "./inpaint_consts.js";
@@ -184,6 +185,181 @@ export class DepthPart {
         };
         const p = run();
         this.depthPending = p;
+        return p;
+    }
+
+    // ---- Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md SP3) --------------------------------------------
+
+    /**
+     * Whether the document has all three surface maps: the light (`shading`, rgb16, S / sScale), the reflections
+     * (`residual`, rgb16) and the normals (`normals`, rgba8).
+     */
+    hasSurfaceMaps() {
+        return !!(this.maps && this.maps.shading && this.maps.residual && this.maps.normals);
+    }
+
+    /**
+     * Show one surface map in place of the picture (the screen only: exports and runs never see it): "shading" the
+     * light, "residual" the reflections, "normals" the normals, "none" (or anything else) the picture. -> the view
+     */
+    setSurfaceView(kind) {
+        const k = ["shading", "residual", "normals"].includes(kind) && this.maps && this.maps[kind] ? kind : null;
+        if (kind && kind !== "none" && !k) this.setStatus("No surface maps yet: Image › Surface Maps › Compute Surface Maps.", "warn");
+        if (this.mapView !== "depth" || k) this.mapView = k;
+        this.draw();
+        return this.mapView;
+    }
+
+    /**
+     * The screen's picture of a surface map at the map's size, cached by its data: the light and the reflections as
+     * sRGB of their linear values (the light can pass 1: clamped there), the normals as (n + 1) / 2.
+     */
+    surfaceProxy(kind) {
+        const map = this.maps && this.maps[kind];
+        if (!map) return null;
+        if (!this._surfaceProxies) this._surfaceProxies = new Map();
+        const have = this._surfaceProxies.get(kind);
+        if (have && have.data === map.data) return have.canvas;
+        const w = map.w, h = map.h, n = w * h;
+        const c = makeCanvas(w, h);
+        const cx = c.getContext("2d");
+        const img = cx.createImageData(w, h);
+        const d = img.data, src = map.data;
+        if (map.enc === "rgba8") {
+            for (let i = 0; i < n; i++) { d[4 * i] = src[4 * i]; d[4 * i + 1] = src[4 * i + 1]; d[4 * i + 2] = src[4 * i + 2]; d[4 * i + 3] = 255; }
+        } else {
+            const k = kind === "shading" ? ((map.meta && map.meta.sScale) || 1) / 65535 : 1 / 65535;
+            const lut = new Uint8ClampedArray(4096);   // linear 0..1 in 4096 steps -> sRGB
+            for (let i = 0; i < 4096; i++) lut[i] = Math.round(linToSrgb255(i / 4095));
+            for (let i = 0; i < n; i++) {
+                for (let ch = 0; ch < 3; ch++) {
+                    const v = src[3 * i + ch] * k;
+                    d[4 * i + ch] = lut[v >= 1 ? 4095 : Math.round(v * 4095)];
+                }
+                d[4 * i + 3] = 255;
+            }
+        }
+        cx.putImageData(img, 0, 0);
+        this._surfaceProxies.set(kind, { data: map.data, canvas: c });
+        return c;
+    }
+
+    /** What a command answers about the surface maps (no pixels). */
+    surfaceMapsInfo() {
+        if (!this.hasSurfaceMaps()) return { present: false };
+        const s = this.maps.shading, r = this.maps.residual, n = this.maps.normals;
+        const m = s.meta || {};
+        return {
+            present: true, size: [s.w, s.h], normalsSize: [n.w, n.h], sScale: m.sScale, scale: m.a,
+            identity: (r.meta || {}).identity || null, reflectionsOnly: (r.meta || {}).zeroA ?? null,
+            model: m.model, normalsModel: m.normalsModel, provider: m.provider, ms: m.ms,
+        };
+    }
+
+    /**
+     * Several maps in one undo step (the surface maps): `maps` is { kind: map | null }. Each is uploaded first (its
+     * packed file into the mirror), then all land together. -> false when the picture was turned or cropped meanwhile
+     * (`token`) or the editor went away.
+     */
+    async setMaps(maps, { label = "Surface maps", token = null } = {}) {
+        if (token !== null && token !== this.geometryToken()) return false;
+        if (this._destroyed) return false;
+        const nodeId = (this.node && this.node.id != null) ? this.node.id : "0";
+        for (const [kind, map] of Object.entries(maps)) {
+            if (map && !map.ref) {
+                try { map.ref = (await uploadCanvas(packMap(map), `n${nodeId}_${kind}`)).ref; } catch (_) { /* standalone / offline / test mode */ }
+            }
+        }
+        if (token !== null && token !== this.geometryToken()) return false;
+        if (this._destroyed) return false;
+        const prevs = {};
+        let bytes = 0;
+        for (const [kind, map] of Object.entries(maps)) {
+            const prev = (this.maps && this.maps[kind]) || null;
+            prevs[kind] = prev;
+            if (prev && (!map || prev.data !== map.data)) bytes += prev.data ? prev.data.byteLength : 0;
+        }
+        this.pushUndoSnapshot({ kind: "maps", maps: prevs, bytes }, { label });
+        if (!this.maps) this.maps = {};
+        for (const [kind, map] of Object.entries(maps)) {
+            if (map) this.maps[kind] = map;
+            else delete this.maps[kind];
+        }
+        this.mapsVersion++;
+        const kinds = Object.keys(maps);
+        for (const l of this.layers) {
+            if (l.kind === "filter" && kinds.some((kind) => l.params?.limit?.source === kind || this.mapsOf(l).includes(kind))) this.markFilterChanged(l);
+        }
+        this.sceneSig = null;
+        this.renderHistory();
+        this.draw();
+        this.notifyChanged();
+        return true;
+    }
+
+    /**
+     * Compute or refresh Deep paint's surface maps: the picture without filter layers at the model's size (long side
+     * 768) through the decomposition and the normal model (host.surfaceAnalysis, the helpers' process), then the pool's
+     * `surface_maps` job: the light's scale, the light and the reflections up to the work size (long side up to 4096)
+     * along the picture's edges, the reflections made exact (inpaint_surface.js). One undo step for the three maps.
+     * A fresh set (the same picture's fingerprint) is kept unless `recompute`. -> surfaceMapsInfo() or null (dropped)
+     */
+    async computeSurfaceMaps({ recompute = false } = {}) {
+        if (!this.base) throw new Error("No image loaded in document");
+        if (this.surfacePending) return this.surfacePending;
+        const models = host.surfaceModels();
+        if (!models || !models.intrinsic || !models.normals) {
+            const msg = !models || !models.intrinsic
+                ? "Deep paint needs the Marigold IID Lighting model: download it in Settings › Helpers."
+                : "Deep paint needs a MoGe-2 normal model: download it in Settings › Helpers.";
+            this.setStatus(msg, "warn");
+            throw new Error(msg);
+        }
+        const run = async () => {
+            try {
+                const token = this.geometryToken();
+                const W = this.width, H = this.height;
+                const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
+                const fp = fingerprint(fpInp.image, 64, 64);
+                const cur = this.maps && this.maps.shading;
+                if (!recompute && this.hasSurfaceMaps() && cur.meta && cur.meta.fp === fp) return this.surfaceMapsInfo();
+                const [mw, mh] = surfaceModelSize(W, H);
+                const [gw, gh] = workSize(W, H, WORK_MAX);
+                const t0 = performance.now();
+                const inp = await host.pictureInput(this, mw, mh, { skipFilters: true, background: "#808080" });
+                this.setStatus("Deep paint: splitting the picture into colour, light and reflections with " + models.intrinsic.label + " ...");
+                const res = await host.surfaceAnalysis(this, { image: inp.image, width: mw, height: mh });
+                const pic = await host.pictureInput(this, gw, gh, { skipFilters: true, background: "#808080" });
+                this.setStatus("Deep paint: fitting the light to the picture ...");
+                const d = res.intrinsic;
+                const job = await editorPool().run("surface_maps", {
+                    albedo: d.albedo, shading: d.shading, residual: d.residual, model: inp.image, mw, mh, picture: pic.image, gw, gh,
+                }, [pic.image.buffer], { priority: INTERACTIVE });
+                const ms = Math.round(performance.now() - t0);
+                const xf = [W, 0, 0, H, 0, 0];
+                const common = { fp, model: d.model, normalsModel: res.normals.model, provider: d.provider, ms };
+                const maps = {
+                    shading: makeMap("shading", gw, gh, new Uint16Array(job.shading), xf, { ...common, sScale: job.sScale, a: job.a }, null, "rgb16"),
+                    residual: makeMap("residual", gw, gh, new Uint16Array(job.residual), xf, { ...common, identity: job.identity, zeroA: job.zeroA }, null, "rgb16"),
+                    normals: makeMap("normals", mw, mh, packNormals(res.normals.normal, res.normals.mask, mw * mh), xf, { ...common, frame: "camera", scale: res.normals.scale }, null, "rgba8"),
+                };
+                const ok = await this.setMaps(maps, { label: recompute ? "Recompute surface maps" : "Surface maps", token });
+                if (!ok) {
+                    this.setStatus("The surface maps were dropped: the picture was turned or cropped meanwhile.");
+                    return null;
+                }
+                this.setStatus(`Surface maps ${gw}x${gh} (normals ${mw}x${mh}) with ${models.intrinsic.label} and ${models.normals.label} in ${(ms / 1000).toFixed(2)} s (${d.provider}).`);
+                return this.surfaceMapsInfo();
+            } catch (err) {
+                console.error("Surface maps failed:", err);
+                this.setStatus("Surface maps failed: " + (err.message || err), failKind(err));
+                throw err;
+            } finally {
+                this.surfacePending = null;
+            }
+        };
+        const p = run();
+        this.surfacePending = p;
         return p;
     }
 

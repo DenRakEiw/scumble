@@ -778,6 +778,18 @@ function buildMenu() {
                 { label: "Key Green / Blue Screen...", click: () => send("menu", "key-screen") },
                 // a paid run on the recipe's host with a layer mode (renderer/splitdialog.js); the dialog says why when it cannot
                 { label: "Split into Layers...", click: () => send("menu", "split-layers") },
+                // Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md SP3): the analysis and a look at its maps
+                {
+                    label: "Surface Maps",
+                    submenu: [
+                        { label: "Compute Surface Maps", click: () => send("menu", "surface-maps") },
+                        { type: "separator" },
+                        { label: "Show Light", click: () => send("menu", "surface-view:shading") },
+                        { label: "Show Reflections", click: () => send("menu", "surface-view:residual") },
+                        { label: "Show Normals", click: () => send("menu", "surface-view:normals") },
+                        { label: "Show the Picture", click: () => send("menu", "surface-view:none") },
+                    ],
+                },
             ],
         },
         {

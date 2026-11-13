@@ -48,7 +48,7 @@ const POLICY = {
     // ---- read the app -------------------------------------------------------------------
     ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_loras: AUTO, list_plugins: AUTO, list_layers: AUTO,
     list_brush_tips: AUTO, filter_types: AUTO, status: AUTO, get_state: AUTO, read_log: AUTO,
-    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, depth_edit: AUTO, depth_from_layer: AUTO, screenshot: AUTO, compare: AUTO,
+    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, surface_maps: AUTO, depth_edit: AUTO, depth_from_layer: AUTO, screenshot: AUTO, compare: AUTO,
 
     // ---- selection ----------------------------------------------------------------------
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,
@@ -495,7 +495,7 @@ function clamp(call, opts = {}) {
         args.timeout = clampInt(args.timeout, 5, 3600, TIMEOUT_DEFAULTS[name]);
     }
     if (name === "select_point") args.timeout = 600;   // the command ignores it; the Bridge waits by it
-    if (name === "depth_map") args.timeout = 900;
+    if (name === "depth_map" || name === "surface_maps") args.timeout = 900;
     return { ...call, args };
 }
 

@@ -271,6 +271,16 @@ Compute or refresh the document's depth map (Depth Anything V2 Small).
 | `edges` | integer | edge snap strength 0..100; 0 keeps the plain sample |
 | `detail` | string | standard, fine (2x2) or finest (3x3) (default `"standard"`; one of `standard`, `fine`, `finest`) |
 
+### `surface_maps` *(image)*
+
+Compute or refresh Deep paint's surface maps: the picture's light, its reflections and its surface normals (Marigold IID Lighting and MoGe-2 in the app). One undo step; a fresh set is kept unless force.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `force` | boolean | recompute even if a fresh set is present (default `false`) |
+| `view` | string | show a map on the screen in place of the picture (the screen only), or the picture again (one of `none`, `shading`, `residual`, `normals`) |
+
 ### `sample_depth` *(image)* *(read-only)*
 
 Sample the document's depth map at (x, y) in image pixels (Depth Anything V2 Small). Returns normalized depth (0..1, near to far), 16-bit depth (0..65535), raw disparity, disparity bounds, resolution, provider and whether the map is stale. Requires running depth_map first.

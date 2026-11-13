@@ -18,8 +18,8 @@ export const HostHelpersPart = {
     // availableCutoutBackends() / cutoutLayer(); when
     // no in-app model is present, the ComfyUI helper prompts run as in the node.
 
-    /** @type {{ models: any[], sam2?: any, matting?: any, inpaint?: any, runtime?: any, depth?: any }} */
-    helpers: { models: [], sam2: null, matting: null, inpaint: null, runtime: null, depth: null },
+    /** @type {{ models: any[], sam2?: any, matting?: any, inpaint?: any, runtime?: any, depth?: any, intrinsic?: any, normals?: any }} */
+    helpers: { models: [], sam2: null, matting: null, inpaint: null, runtime: null, depth: null, intrinsic: null, normals: null },
     onHelpersChanged: null,   // set by the shell: (status) => void
 
     /** Ask the main process what is downloaded and refresh the editors' model lists. */
@@ -505,6 +505,30 @@ export const HostHelpersPart = {
         } finally {
             editor._pointPending = false;
         }
+    },
+
+    /**
+     * Deep paint's two models (docs/PLAN_SURFACE_PAINT.md SP3): the decomposition set and the normal model, each the
+     * chosen one when present, else the first present, else null.
+     */
+    surfaceModels() {
+        const pick = (kind, id) => { const all = this.presentHelpers(kind); return all.find((m) => m.id === id) || all[0] || null; };
+        return { intrinsic: pick("intrinsic", this.helpers.intrinsic), normals: pick("normals", this.helpers.normals) };
+    },
+
+    /**
+     * Deep paint's analysis of one picture (RGBA at w x h, both sides 16-768): the decomposition and the normals, one
+     * after the other in the helpers' process. -> { intrinsic: { albedo, shading, residual, provider, model, ... },
+     * normals: { normal, points, mask, scale, provider, model, ... } }
+     */
+    async surfaceAnalysis(editor, { image, width, height }) {
+        const m = this.surfaceModels();
+        if (!m.intrinsic) throw new Error("Deep paint needs the Marigold IID Lighting model: download it in Settings › Helpers.");
+        if (!m.normals) throw new Error("Deep paint needs a MoGe-2 normal model: download it in Settings › Helpers.");
+        const intrinsic = await this.helperCall("intrinsic", { model: m.intrinsic.id, image, width, height, seed: 0 });
+        const normals = await this.helperCall("normals", { model: m.normals.id, image, width, height });
+        editor.helperUsed = true;
+        return { intrinsic, normals };
     },
 
     /** The depth model (Depth Anything V2 Small): the chosen one when present, else the first present. */
