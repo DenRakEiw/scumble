@@ -15,6 +15,16 @@ import { orientIsUp, validXf } from "./inpaint_orient.js";
 import { CROP_DEFAULTS, CROP_LEGACY, GEN_DEFAULTS, randomSeed } from "./inpaint_backends.js";
 import { imageOfBlob, loadImageEl, pixelsFromPngStream, pixelsOffThread, viewUrl } from "./inpaint_load.js";
 
+
+/** A stored wrap link (inpaint_ed_filters.js putWrap) as it was, or null when it is not one. */
+function wrapLink(w) {
+    if (!w || typeof w !== "object" || typeof w.source !== "string") return null;
+    const n = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const box = Array.isArray(w.box) && w.box.length === 4 && w.box.every((v) => n(v) !== null) ? w.box.slice() : null;
+    if ([w.x, w.y, w.w, w.h].some((v) => n(v) === null)) return null;
+    return { source: w.source, angle: n(w.angle) || 0, x: w.x, y: w.y, w: w.w, h: w.h, box };
+}
+
 export class PersistPart {
     getValue() {
         if (!this.base) return this.lastValueString || "{}";
@@ -47,6 +57,7 @@ export class PersistPart {
                 ...(l.kind === "filter" ? { filter: l.filter, params: l.params, lut: l.lut || null, plate: l.plate || null } : {}),
                 ...(l.kind === "text" && l.text ? { text: l.text } : {}),
                 ...(l.relightOf ? { relightOf: l.relightOf } : {}),
+                ...(l.kind === "filter" && l.wrap ? { wrap: l.wrap } : {}),
             })),
             history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise,
                 ...(h.negative ? { negative: h.negative } : {}), ...(h.refs && typeof h.refs === "object" ? { refs: { ...h.refs } } : {}),
@@ -219,6 +230,8 @@ export class PersistPart {
                                 maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                                 filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
                                 plate: plateImg ? l.plate : null, _plateImg: plateImg,
+                                // a wrap's link to its source (Deep paint), checked: numbers and a source id, else none
+                                wrap: wrapLink(l.wrap),
                             }, this.pixels));
                             this.filterCounter += 1;
                         } catch (err) {

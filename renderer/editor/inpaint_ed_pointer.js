@@ -894,6 +894,7 @@ export class PointerPart {
             this.snapGuides = null;
             if (!e.altKey) this.snapLayer(p.layer, p);
             if (p.group) this.applyGroupBox(p);
+            this.syncWrapsSoon();   // a wrap's source: its wrap follows
         } else if (p.kind === "scale" && p.group) {
             this.applyScale(p, ix, iy);
             this.snapGuides = null;
@@ -913,6 +914,7 @@ export class PointerPart {
                 this.snapGuides = null;
                 if (!e.altKey) this.snapScale(p, ix, iy);
             }
+            this.syncWrapsSoon();
         } else if (p.kind === "guide") {
             p.pos = Math.round(p.axis === "x" ? ix : iy);
         } else if (p.kind === "split") {

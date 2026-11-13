@@ -547,8 +547,9 @@ tool (L); its colour, strength and type are in the layer's row, as on any Religh
 **Wrap.** Place a picture, paint or text layer flat where it should go (a logo, a pattern, a word), then
 *Layer › Wrap onto Surface*. It is laid onto the surface by its length along the surface from its centre: on a cup or a bottle seen
 from the side it bends round exactly and gets narrower towards the edges, and it takes the picture's light and
-reflections. It lands as a new Deep paint layer right above, and the flat layer is hidden. To move it, undo, move the
-flat layer and wrap again. With a selection it lands only inside it.
+reflections. It lands as a new Deep paint layer right above, and the flat layer is hidden but stays selected with the
+Transform tool: drag or scale it and the wrap follows while you drag (a very large picture follows when you let go).
+Undo and redo of the move take the wrap with them. With a selection it lands only inside it.
 
 ### Notes
 
@@ -558,6 +559,8 @@ flat layer and wrap again. With a selection it lands only inside it.
   the picture (sky, glass, a lamp) for reflection, paint there adds to the light rather than covering it.
 - A colour you choose yourself lands under the picture's light, so a saturated colour on a surface in shade comes out
   darker than the swatch; pick from the picture when the result should match what is there.
+- The sparkle button at the top of the layer list holds the three: a Deep paint layer, a light brush, and Wrap onto
+  Surface for the selected layer.
 - Wrap treats the view as flat (no perspective) and works best on surfaces curved one way (a cup, an arm, a pillar); on a
   surface curved both ways (a face, a ball) the picture is stretched where the curve is strongest.
 - Agents and the assistant: `surface_maps` computes the maps, `add_surface_layer` adds the layer (its `color` fills the

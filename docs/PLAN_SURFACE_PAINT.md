@@ -459,6 +459,19 @@ made by the relight layer as before, and without its model the status line names
   left half turned to face a sun from the left gets more light and the right half the same, the twin within 2 levels,
   with the switch off a changed normals map changes nothing; `relight` gate unchanged on both backends.
 
+- **Wrap follows its source live**: the wrap layer keeps `wrap` (its source's id, the angle, the placement it was made
+  from, its box, a stamp), stored in the `.scumble` and the autosave (`wrapLink` checks it on the way in; an older
+  reader drops it and keeps the baked wrap). After a wrap the hidden source stays active with the Transform tool;
+  `syncWraps` (from `notifyChanged`, so after a move's release, an undo, a redo or a command) wraps every wrap again whose
+  source's placement differs from its link, or whose pixels carry another stamp than its link (an undo step's copy of
+  the layer shares the pixels it was written into), with the selection of that moment; during a move or scale
+  `syncWrapsSoon` does it at most every 40 ms (a decal above about 6 MP waits for the release). The wrap is no undo step
+  of its own: the source's move is, and its undo brings the wrap back. `applyFilterLayer` keeps a filter drawn during a
+  gesture on a hidden layer below it (the hidden source changes nothing below). Tests: the SP7 block drags the source
+  40 px with real pointer events: during the drag the lines already stand at x0 + R sin((R asin(40 / R) + d) / R)
+  within a pixel and the screen shows them, after the release one step (the move's) and the link follows, its undo
+  gives the old lines back within 0.01 px and its redo the new ones; the link is in `getValue`.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

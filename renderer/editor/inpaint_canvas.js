@@ -1324,6 +1324,7 @@ class InpaintEditor {
     // ---- persistence -------------------------------------------------------
 
     notifyChanged() {
+        if (this.syncWraps) this.syncWraps();   // a wrap's source moved, undone or redone: its wrap follows (Deep paint)
         if (this.boxes) this.boxes.refresh();   // a box written, an undo or redo of one, a restored workflow
         host.changed(this);
     }

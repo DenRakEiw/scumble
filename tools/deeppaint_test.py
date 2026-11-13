@@ -542,7 +542,7 @@ JS = r"""
             const rw = await shell.commands.call("wrap_layer", { doc, layer: D.id });
             await settle(ed);
             const WL = rw.ok && ed.layers.find((l) => l.id === rw.result.id);
-            check("wrap_layer: a Deep paint layer just above, the source hidden, one step", WL && WL.filter === "surface" && WL.name === "Wrap: Decal" && ed.layers.indexOf(WL) === ed.layers.indexOf(D) + 1 && D.visible === false && ed.activeLayerId === WL.id && ed.undo.length === n1 + 1, rw);
+            check("wrap_layer: a Deep paint layer just above, the source hidden and active with the Transform tool, one step", WL && WL.filter === "surface" && WL.name === "Wrap: Decal" && ed.layers.indexOf(WL) === ed.layers.indexOf(D) + 1 && D.visible === false && ed.activeLayerId === D.id && ed.tool === "transform" && ed.undo.length === n1 + 1, rw);
             const lineCentres = (px, y) => {
                 const row = px.readRect(0, y, W, 1).data, found = [];
                 let s = 0, n = 0;
@@ -560,6 +560,47 @@ JS = r"""
             check("wrap: the picture outside the decal's rows byte for byte", rowsSame);
             const q = 4 * (310 * W + Math.round(want[3] - 0.5));
             check("wrap: the line takes the light (not the flat white of the decal)", wa[q] !== placed[q] && wa[q] < 250, [wa[q], placed[q]]);
+            check("wrap: the link is stored", JSON.parse(ed.getValue()).layers.some((l) => l.wrap && l.wrap.source === D.id && l.wrap.x === D.x), "");
+            // the live wrap: the hidden source dragged 40 px to the right with the Transform tool (Alt: no snapping)
+            {
+                const rect2 = ed.canvas.getBoundingClientRect();
+                ed.fitView(); ed.sceneSig = null; ed.draw(); await wait(60);
+                const cl = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect2.left + sx * rect2.width / ed.canvas.width, clientY: rect2.top + sy * rect2.height / ed.canvas.height }; };
+                const pe = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 23, pointerType: "mouse", isPrimary: true, altKey: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, cl(ix, iy)));
+                const scr = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+                const x0 = X0, y0 = 310, n2 = ed.undo.length;
+                ed.canvas.dispatchEvent(pe("pointerdown", x0, y0));
+                for (let i = 1; i <= 8; i++) { ed.canvas.dispatchEvent(pe("pointermove", x0 + 5 * i, y0)); await wait(20); }
+                await wait(120);
+                ed.sceneSig = null; ed.draw(); await wait(40);
+                const midCentres = lineCentres(WL.px, 310);
+                // the decal's middle now 40 px right of the axis: arc lengths from there, s_c = R asin(40 / R)
+                const sc = Rc * Math.asin(40 / Rc);
+                const want2 = offs.map((o) => X0 + Rc * Math.sin((sc + o) / Rc));
+                const near1 = (a, b) => a.length === b.length && a.every((g, i) => Math.abs(g - b[i]) <= 1);
+                // the middle line at x0 + 40 on the screen: the wrap is drawn during the drag, not the picture without it
+                const mx2 = Math.round(midCentres[3] || 0);
+                const scrMid = scr(mx2, 312), plainMid = Array.from(placed.slice(4 * (312 * W + mx2), 4 * (312 * W + mx2) + 3));
+                ed.canvas.dispatchEvent(pe("pointerup", x0 + 40, y0));
+                await settle(ed);
+                check("live wrap: the source moved 40 px", D.x === X0 - 120 + 40, D.x);
+                check("live wrap: during the drag the lines already followed, each at x0 + R sin((s_c + d) / R) within a pixel", near1(midCentres, want2), { midCentres: midCentres.map((g) => +g.toFixed(2)), want2: want2.map((g) => +g.toFixed(2)) });
+                check("live wrap: the screen shows the wrap during the drag", Math.abs(scrMid[0] - plainMid[0]) + Math.abs(scrMid[1] - plainMid[1]) > 6, { scrMid, plainMid });
+                const after2 = lineCentres(WL.px, 310);
+                check("live wrap: after the release the link and the pixels follow the source, one step (the move's)", WL.wrap && WL.wrap.x === D.x && near1(after2, want2) && ed.undo.length === n2 + 1, { after2, wrap: WL.wrap });
+                await shell.commands.call("undo", { doc });
+                await settle(ed);
+                const WLu = ed.layers.find((l) => l.name === "Wrap: Decal"), Du = ed.layers.find((l) => l.id === D.id);
+                const back = WLu ? lineCentres(WLu.px, 310) : [];
+                check("live wrap: the move's undo puts the wrap back", Du && Du.x === X0 - 120 && back.length === 6 && back.every((g, i) => Math.abs(g - got[i]) < 0.01), { back, got });
+                await shell.commands.call("redo", { doc });
+                await settle(ed);
+                const WLr = ed.layers.find((l) => l.name === "Wrap: Decal");
+                const fwd = WLr ? lineCentres(WLr.px, 310) : [];
+                check("live wrap: its redo moves it again", fwd.length === 6 && fwd.every((g, i) => Math.abs(g - after2[i]) < 0.01), { fwd, after2 });
+                await shell.commands.call("undo", { doc });
+                await settle(ed);
+            }
             await shell.commands.call("undo", { doc });
             await settle(ed);
             const Dn = ed.layers.find((l) => l.id === D.id);   // an undo puts the step's copies in place
