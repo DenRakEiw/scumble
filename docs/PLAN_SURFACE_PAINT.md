@@ -258,6 +258,20 @@ gate step in `maps_test.py` for the surface maps (they need the 1.9 GB set: a st
 would test the rest), staleness shown in a panel (the fingerprint is kept; `mapStale("shading")` answers), the
 `albedo` view (it needs the picture: (I - R) / S). Next: the 15k timing and the gate step, then SP4.
 
+**SP3's leftovers done 2026-11-13** (the user: "baue weiter"). **The gate step:** `tools/maps_test.py`'s fourth group
+"surface maps" runs `computeSurfaceMaps` on a stand-in for `host.surfaceModels` / `host.surfaceAnalysis` (S a ramp
+0.3-1.2, R 0.02, A = (I - R) / S, normals facing the viewer; the real host members put back in `finally`): the two
+missing-model sentences and no maps, two calls one run, the sizes (work size, model size), encodings, xf, the identity
+within one level, the normals' bytes (128, 128, 0, 255), the files uploaded, one undo step per set; a fresh set kept,
+`surface_maps` `force` recomputes, the command's view and the picture again; undo / redo of two sets; the autosave
+restore keeps `sScale` and the fingerprint; a quarter turn while the model runs drops the maps with the status line.
+Gate `sp3b` (maps) PASS on both backends; a mutation (`setMaps` without the token) turns the turn's step red. **The 15k
+timing** (`docs/measurements/sp3_2026-11-13/15k.txt`, `tools/deeppaint/surface_15k.js`; the real models on DirectML,
+the card held 23.6 GB by another process): 11.2-11.3 s warm (20.1 s with the sessions' load), of which the model at 768
+5.5-6.3 s, the pool's job at 4096 x 2731 about 3.6 s, `setMaps` (two 4096 x 5462 PNGs packed and uploaded) 1.2-1.8 s,
+the pictures 0.2-0.4 s; the window's longest task 86-421 ms; the maps 130 MB, a kept set answers in 15 ms. Nothing to
+fix before SP4; a Rust guided filter would be the lever for the pool's part. Next: SP4 (the surface layer, Full tier).
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

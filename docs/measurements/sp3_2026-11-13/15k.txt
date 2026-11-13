@@ -1,0 +1,20 @@
+SP3's 15k timing of computeSurfaceMaps (2026-11-13), the dev app on tiles, own profile, --no-comfy,
+the real models (intrinsic set + MoGe-2 ViT-B normal) on DirectML; the card held 23.6 GB by another process (0 % load).
+Script: tools/deeppaint/surface_15k.js (__W__ 15000, __H__ 10000, __RUNS__ 3; the models folder is a scratchpad path).
+A synthetic 15000 x 10000 picture (gradient and 40 discs). recompute: true each run, so run 1 includes the sessions' load.
+
+run 1: total 20144 ms; pictureInput(64x64) 16, pictureInput(768x512) 7, surfaceAnalysis 14372, pictureInput(4096x2731) 439, setMaps 1372; pool job and the rest 3938 ms; window's longest task 95 ms (2 long tasks)
+       maps [4096, 2731] normals [768, 512], identity max 0.0067 levels, mean 0.000030
+run 2: total 11208 ms; pictureInput(64x64) 18, pictureInput(768x512) 8, surfaceAnalysis 5495, pictureInput(4096x2731) 233, setMaps 1775; pool job and the rest 3679 ms; window's longest task 421 ms (2 long tasks)
+       maps [4096, 2731] normals [768, 512], identity max 0.0067 levels, mean 0.000030
+run 3: total 11280 ms; pictureInput(64x64) 44, pictureInput(768x512) 9, surfaceAnalysis 6291, pictureInput(4096x2731) 187, setMaps 1195; pool job and the rest 3554 ms; window's longest task 86 ms (3 long tasks)
+       maps [4096, 2731] normals [768, 512], identity max 0.0067 levels, mean 0.000030
+
+a fresh set kept: 15 ms
+maps in memory: 129.5 MB (shading and residual 64 MB each at 4096 x 2731, normals 1.5 MB); undo after three sets: 259 MB
+
+Reading: the picture's size above the work size (4096 long side) costs only the two pictureInput calls (0.2-0.4 s);
+the model at 768 is 5.5-6.3 s warm on a card another job holds (1-4 s at SP3 with it freer), the pool's job
+(the fit, six guided filters and R made exact at 11.2 MP) about 3.6 s, setMaps (two 4096 x 5462 PNGs packed and
+uploaded) 1.2-1.8 s. The window never blocks long (86-421 ms, the one 421 ms not traced). Nothing to fix for SP4;
+a Rust guided filter would be the lever if the pool job matters later.

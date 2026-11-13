@@ -26,6 +26,11 @@ Third group "colour maps" (PLAN_SURFACE_PAINT.md SP1):
   * .scumble save and open and the autosave restore give every value back exactly, with encoding and xf;
     the header says version 2 / minReader 7 and the stored encodings u16rg / rgb16 / rgba8.
 
+Fourth group "surface maps" (PLAN_SURFACE_PAINT.md SP3), on a stand-in for host.surfaceAnalysis:
+  * the two missing-model sentences, no maps; one run for two calls; the sizes, encodings, xf, the identity
+    within one level, the normals' bytes; a fresh set kept, force recomputes; the command's views; one undo step
+    per set; the autosave restore keeps the meta; a turn during the analysis drops the maps.
+
 Runs Node test tools/maps_test.js first, then connects to running app via CDP if available.
 """
 import asyncio
@@ -488,6 +493,165 @@ JS_COLOR = r"""
 """
 
 
+# Fourth group "surface maps" (PLAN_SURFACE_PAINT.md SP3) on a stand-in for host.surfaceAnalysis (the real set is
+# 1.9 GB; tools/surface_test.js runs it): the models' check, the three maps at their sizes and encodings, the identity,
+# a fresh set kept, force recomputes, one undo step, the views and the command, a turn during the analysis drops the
+# maps, the autosave restore keeps the set's meta.
+JS_SURFACE = r"""
+(async () => {
+    const shell = await import("./shell.js");
+    const { host } = await import("./editor/host.js");
+    const { surfaceModelSize } = await import("./editor/inpaint_surface.js");
+    const fails = [];
+    const check = (name, ok, info) => {
+        if (!ok) fails.push(name + (info !== undefined ? ": " + JSON.stringify(info).slice(0, 400) : ""));
+    };
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const settle = async (ed) => { await ed.mipsSettled(); await new Promise((r) => setTimeout(r, 100)); };
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+
+    const realModels = host.surfaceModels, realAnalysis = host.surfaceAnalysis;
+    const stand = { calls: 0, sizes: [], gate: null, entered: null };
+    const fake = { intrinsic: { id: "stand_in", label: "a stand-in" }, normals: { id: "stand_in_n", label: "a stand-in" } };
+    // a decomposition the joint fit can explain: S a ramp from 0.3 to 1.2 (light above 1), R 0.02, A = (I - R) / S
+    host.surfaceModels = () => fake;
+    host.surfaceAnalysis = async (editor, { image, width, height }) => {
+        stand.calls++;
+        stand.sizes.push([width, height]);
+        if (stand.entered) { stand.entered(); stand.entered = null; }
+        if (stand.gate) await stand.gate;
+        const n = width * height;
+        const albedo = new Float32Array(n * 3), shading = new Float32Array(n * 3), residual = new Float32Array(n * 3);
+        const normal = new Float32Array(n * 3), points = new Float32Array(n * 3), mask = new Float32Array(n);
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            const i = y * width + x, s = 0.3 + 0.9 * x / (width - 1);
+            for (let c = 0; c < 3; c++) {
+                const I = lin(image[4 * i + c]);
+                shading[3 * i + c] = s;
+                residual[3 * i + c] = Math.min(0.02, I);
+                albedo[3 * i + c] = Math.max(0, Math.min(1, (I - residual[3 * i + c]) / s));
+            }
+            normal[3 * i + 2] = -1;   // facing the viewer (x right, y down, z away)
+            mask[i] = 1;
+        }
+        return {
+            intrinsic: { albedo, shading, residual, provider: "stand-in", model: "stand_in" },
+            normals: { normal, points, mask, scale: 1, provider: "stand-in", model: "stand_in_n" },
+        };
+    };
+    try {
+        const W = 1600, H = 1000;
+        const ed = shell.newDocument();
+        shell.activate(ed);
+        await new Promise((r) => setTimeout(r, 200));
+        ed.resizeCanvas();
+        const base = mk(W, H);
+        {
+            const x = base.getContext("2d");
+            const g = x.createLinearGradient(0, 0, W, H);
+            g.addColorStop(0, "#284868"); g.addColorStop(1, "#e8b080");
+            x.fillStyle = g; x.fillRect(0, 0, W, H);
+            for (let i = 0; i < 6; i++) { x.fillStyle = `hsl(${i * 60},55%,50%)`; x.fillRect(120 + i * 230, 200 + (i % 2) * 300, 180, 260); }
+        }
+        Object.defineProperty(base, "naturalWidth", { value: W });
+        Object.defineProperty(base, "naturalHeight", { value: H });
+        await ed.setBaseFromCanvas(base, { keepLayers: false });
+        await settle(ed);
+
+        // no models: the sentence, no maps
+        host.surfaceModels = () => ({ intrinsic: null, normals: fake.normals });
+        let err = null;
+        try { await ed.computeSurfaceMaps(); } catch (e) { err = e; }
+        check("without the decomposition model it refuses with the sentence", err && /Marigold IID Lighting/.test(err.message), err && err.message);
+        host.surfaceModels = () => ({ intrinsic: fake.intrinsic, normals: null });
+        err = null;
+        try { await ed.computeSurfaceMaps(); } catch (e) { err = e; }
+        check("without a normal model it refuses with the sentence", err && /MoGe-2/.test(err.message), err && err.message);
+        check("no maps after the refusals", !ed.hasSurfaceMaps() && stand.calls === 0, { calls: stand.calls });
+        host.surfaceModels = () => fake;
+
+        // the set: sizes, encodings, xf, the identity, the normals' bytes
+        const [mw, mh] = surfaceModelSize(W, H);
+        const steps0 = ed.undo.length;
+        const p1 = ed.computeSurfaceMaps();
+        const p2 = ed.computeSurfaceMaps();
+        const info = await p1;
+        check("a second call during the run gets the same answer", (await p2) === info);
+        check("the analysis ran once at the model's size", stand.calls === 1 && stand.sizes[0][0] === mw && stand.sizes[0][1] === mh, stand.sizes);
+        check("info present", info && info.present === true, info);
+        check("the light and the reflections at the work size", JSON.stringify(info.size) === JSON.stringify([W, H]), info.size);
+        check("the normals at the model's size", JSON.stringify(info.normalsSize) === JSON.stringify([mw, mh]), info.normalsSize);
+        const s = ed.maps.shading, r = ed.maps.residual, nm = ed.maps.normals;
+        check("encodings", s.enc === "rgb16" && r.enc === "rgb16" && nm.enc === "rgba8", [s.enc, r.enc, nm.enc]);
+        const xf = JSON.stringify([W, 0, 0, H, 0, 0]);
+        check("every map has the document's xf", [s, r, nm].every((m) => JSON.stringify(m.xf) === xf), [s.xf, r.xf, nm.xf]);
+        check("the light's scale is kept", s.meta && s.meta.sScale > 0 && s.meta.fp, s.meta);
+        check("the identity within one level", info.identity && info.identity.maxLevels <= 1, info.identity);
+        const k = 4 * (Math.floor(mh / 2) * mw + Math.floor(mw / 3));
+        check("the normals packed as (n + 1) / 2 with the mask", [nm.data[k], nm.data[k + 1], nm.data[k + 2], nm.data[k + 3]].join() === "128,128,0,255", Array.from(nm.data.slice(k, k + 4)));
+        check("the files uploaded", [s, r, nm].every((m) => m.ref && m.ref.filename), [s.ref, r.ref, nm.ref]);
+        check("one undo step for the three maps", ed.undo.length === steps0 + 1, [steps0, ed.undo.length]);
+
+        // a fresh set is kept, force recomputes
+        const again = await ed.computeSurfaceMaps();
+        check("a fresh set is kept", stand.calls === 1 && ed.maps.shading === s && again && again.present, { calls: stand.calls });
+        const forced = await shell.commands.call("surface_maps", { doc: ed.node.id, force: true });
+        check("force recomputes", stand.calls === 2 && ed.maps.shading !== s && forced.ok && forced.result.present, { calls: stand.calls, forced });
+        const s2 = ed.maps.shading;
+
+        // the views and the command
+        const v = await shell.commands.call("surface_maps", { doc: ed.node.id, view: "residual" });
+        check("the command's view", v.ok && v.result.view === "residual" && ed.mapView === "residual" && stand.calls === 2, [v, ed.mapView, stand.calls]);
+        check("the view shows the map on the screen", ed.setSurfaceView("normals") === "normals" && !!ed.surfaceProxy("normals"));
+        check("the picture again", !ed.setSurfaceView("none") && !ed.mapView, ed.mapView);
+
+        // undo takes the recompute's three maps back at once, a second undo all of them, redo brings them
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        check("undo brings the first set back, all three", ed.maps.shading === s && ed.maps.residual === r && ed.maps.normals === nm);
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        check("a second undo removes the three", !ed.maps.shading && !ed.maps.residual && !ed.maps.normals, Object.keys(ed.maps || {}));
+        await shell.commands.call("redo", { doc: ed.node.id });
+        await shell.commands.call("redo", { doc: ed.node.id });
+        await settle(ed);
+        check("redo brings the recomputed set", ed.maps.shading === s2 && ed.hasSurfaceMaps());
+
+        // the autosave restore keeps the set and its meta
+        const edRestore = shell.newDocument();
+        await edRestore.setValue(ed.getValue());
+        await settle(edRestore);
+        const rs = edRestore.maps && edRestore.maps.shading;
+        check("restored: the three maps", edRestore.hasSurfaceMaps(), Object.keys(edRestore.maps || {}));
+        check("restored: the light's scale and fingerprint", rs && rs.meta && rs.meta.sScale === s2.meta.sScale && rs.meta.fp === s2.meta.fp, rs && rs.meta);
+        shell.closeDocument && shell.closeDocument(edRestore, { force: true });
+
+        // a turn while the model runs drops the maps
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await shell.commands.call("undo", { doc: ed.node.id });
+        await settle(ed);
+        let release;
+        stand.gate = new Promise((res) => { release = res; });
+        const entered = new Promise((res) => { stand.entered = res; });
+        const pT = ed.computeSurfaceMaps();
+        await entered;
+        await shell.commands.call("rotate_canvas", { doc: ed.node.id, angle: 90 });
+        release();
+        stand.gate = null;
+        const dropped = await pT;
+        check("a turn during the analysis drops the maps", dropped === null && !ed.hasSurfaceMaps(), { dropped, maps: Object.keys(ed.maps || {}) });
+        check("the status says why", /dropped/.test(String(ed.status || "")), ed.status);
+
+        shell.closeDocument && shell.closeDocument(ed, { force: true });
+        return { fails, tiles: !!ed.tileMode };
+    } finally {
+        host.surfaceModels = realModels;
+        host.surfaceAnalysis = realAnalysis;
+    }
+})()
+"""
+
+
 async def run(c):
     # 1. picture_input group
     r1 = await c.eval(JS_PICTURE_INPUT, timeout=300)
@@ -577,7 +741,15 @@ async def run(c):
     if not fails3:
         print(f"[ok] colour maps on {'tiles' if r3.get('tiles') else 'canvas'}")
 
-    return not fails1 and not fails2 and not fails3
+    # 4. surface maps group
+    r4 = await c.eval(JS_SURFACE, timeout=300)
+    fails4 = list(r4.get("fails", []))
+    for f in fails4:
+        print("[FAIL surface maps]", f)
+    if not fails4:
+        print(f"[ok] surface maps on {'tiles' if r4.get('tiles') else 'canvas'}")
+
+    return not fails1 and not fails2 and not fails3 and not fails4
 
 
 def main():
