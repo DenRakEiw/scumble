@@ -180,14 +180,55 @@ export function wrapBox(place, W, H) {
  *   place: { cx: number, cy: number, w: number, h: number, angle?: number }, sel?: Uint8Array|null, points?: any }} o
  *   place: the decal's centre and its size in document pixels; angle in degrees, clockwise on the screen
  */
+/**
+ * A decal at half its size: each pixel the alpha-weighted mean of a 2 x 2 block (its premultiplied mean), the alpha the
+ * block's mean with pixels past an odd edge counted transparent, so pixel j covers the source's pixels 2j and 2j + 1.
+ * @param {{ data: ArrayLike<number>, width: number, height: number }} src straight RGBA
+ */
+export function halveDecal(src) {
+    const sw = src.width, sh = src.height, d = src.data;
+    const w = Math.ceil(sw / 2), h = Math.ceil(sh / 2);
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let r = 0, g = 0, b = 0, a = 0;
+        for (let k = 0; k < 4; k++) {
+            const xx = 2 * x + (k & 1), yy = 2 * y + (k >> 1);
+            if (xx >= sw || yy >= sh) continue;
+            const i = 4 * (yy * sw + xx), al = d[i + 3];
+            r += d[i] * al; g += d[i + 1] * al; b += d[i + 2] * al; a += al;
+        }
+        const o = 4 * (y * w + x);
+        if (a > 0) { out[o] = Math.round(r / a); out[o + 1] = Math.round(g / a); out[o + 2] = Math.round(b / a); }
+        out[o + 3] = Math.round(a / 4);
+    }
+    return { data: out, width: w, height: h };
+}
+
+/**
+ * The decal's level for a placement `place.w` x `place.h`: halved while it stays at least twice the placed size on both
+ * axes, so the bilinear read below never skips source pixels (a 1,302 px text placed 237 px wide read every fifth pixel:
+ * stair-stepped edges). -> { level, k } with 2^k source pixels per level pixel
+ */
+export function decalLevel(decal, place) {
+    let level = decal, k = 0;
+    while (decal.width / (1 << (k + 1)) >= place.w && decal.height / (1 << (k + 1)) >= place.h && level.width > 1 && level.height > 1) {
+        level = halveDecal(level);
+        k++;
+    }
+    return { level, k };
+}
+
 export function wrapDecal({ map, box, decal, place, sel = null, points = null }) {
     const [x0, y0, x1, y1] = box;
     const w = x1 - x0, h = y1 - y0;
     // the points' perspective when the document has them, else the normals' orthographic slopes
     const { gx, gy } = (points && wrapSlopesPoints(points, map, box, place.cx, place.cy)) || wrapSlopes(map, box);
     const { u, v } = wrapCoords(gx, gy, w, h, place.cx - x0, place.cy - y0);
-    const dw = decal.width, dh = decal.height, d = decal.data;
-    const sx = place.w / dw, sy = place.h / dh;
+    const dw0 = decal.width, dh0 = decal.height;
+    const sx = place.w / dw0, sy = place.h / dh0;
+    // a decal placed much smaller than its pixels is read from a halved copy (decalLevel), in the source's coordinates
+    const { level, k } = decalLevel(decal, place);
+    const dw = level.width, dh = level.height, d = level.data, step = 1 << k;
     const th = ((place.angle || 0) * Math.PI) / 180, co = Math.cos(th), si = Math.sin(th);
     const out = new Uint8ClampedArray(w * h * 4);
     const px = (xx, yy, c) => d[4 * (yy * dw + xx) + c];
@@ -196,8 +237,9 @@ export function wrapDecal({ map, box, decal, place, sel = null, points = null })
         if (!m) continue;
         // turned back by the angle, then into the decal's pixels (its centre at its middle)
         const ur = co * u[i] + si * v[i], vr = -si * u[i] + co * v[i];
-        const s = ur / sx + dw / 2 - 0.5, t = vr / sy + dh / 2 - 0.5;
-        if (s < -0.5 || t < -0.5 || s > dw - 0.5 || t > dh - 0.5) continue;
+        const s0 = ur / sx + dw0 / 2 - 0.5, t0 = vr / sy + dh0 / 2 - 0.5;
+        if (s0 < -0.5 || t0 < -0.5 || s0 > dw0 - 0.5 || t0 > dh0 - 0.5) continue;
+        const s = (s0 + 0.5) / step - 0.5, t = (t0 + 0.5) / step - 0.5;
         const sa = Math.floor(s), ta = Math.floor(t), fs = s - sa, ft = t - ta;
         let pr = 0, pg = 0, pb = 0, pa = 0;
         for (let k = 0; k < 4; k++) {

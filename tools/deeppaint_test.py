@@ -51,6 +51,7 @@ JS = r"""
     shell.activate(ed);
     await wait(250);
     ed.resizeCanvas();
+    ed.maxUndo = 200;   // the gate counts undo steps over many blocks: the default 30 would drop the early ones
     const base = mk(W, H);
     {
         const x = base.getContext("2d");
@@ -415,7 +416,8 @@ JS = r"""
             // Original 0, Ambient 0 and no light: what stays is the reflections R alone
             const g0 = await all();
             let rmax = 0;
-            for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) {
+            // from x 90 on: the light's luma there is past RELIGHT_SURFACE_TRUST's upper end (0.35 at about x 55)
+            for (let y = 0; y < H; y += 3) for (let x = 90; x < W; x += 3) {
                 const mx = (x + 0.5) * mw / W, my = (y + 0.5) * mh / H;
                 for (let c = 0; c < 3; c++) rmax = Math.max(rmax, Math.abs(g0[4 * (y * W + x) + c] - Math.round(srgb(bil(rd, mx, my, c)))));
             }
@@ -449,6 +451,44 @@ JS = r"""
                 const a1 = glToCanvas(rgl).getContext("2d").getImageData(0, 0, W, H).data;
                 const a2 = applyFilter("relight", rb, RL.params, { ...rinfo(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
                 check("surface relight: the CPU twin within 2 levels of the GPU", diff(a1, a2).max <= 2, diff(a1, a2));
+            }
+            // a dark light map is not divided by (RELIGHT_SURFACE_TRUST): the left half's S at 0.024 and tinted (red 1.6
+            // times the others) gives the fitted route there (surface off), the lit right half stays as it was, and the
+            // CPU twin follows the GPU through the blend. The depth flat for it (its normals face the viewer as the flat
+            // MoGe normals do, so the two routes differ only by the surface branch); maps set without an undo step (big
+            // steps would push the earlier ones out of the undo budget)
+            {
+                const putMaps = async (m) => { Object.assign(ed.maps, m); ed.mapsVersion++; ed.markFilterChanged(RL); ed.sceneSig = null; ed.draw(); if (ed.relightSettled) await ed.relightSettled(); await settle(ed); };
+                const keepS = ed.maps.shading, keepD = ed.maps.depth;
+                await putMaps({ depth: makeMap("depth", mw, mh, new Uint16Array(mw * mh).fill(32768), xf) });
+                const refOn = await all();
+                const sdk = new Uint16Array(sd);
+                for (let y = 0; y < mh; y++) for (let x = 0; x < mw / 2; x++) {
+                    const i = y * mw + x;
+                    sdk[3 * i] = Math.round(65535 * 0.036 / sScale); sdk[3 * i + 1] = Math.round(65535 * 0.0225 / sScale); sdk[3 * i + 2] = Math.round(65535 * 0.0225 / sScale);
+                }
+                await putMaps({ shading: makeMap("shading", mw, mh, sdk, xf, { sScale, fp: "t" }, null, "rgb16") });
+                const darkOn = await all();
+                await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const darkOff = await all();
+                await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: true } });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const half = (a, b, x0, x1) => { let m = 0; for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) for (let c = 0; c < 3; c++) m = Math.max(m, Math.abs(a[4 * (y * W + x) + c] - b[4 * (y * W + x) + c])); return m; };
+                check("a dark light map: the fitted route there, no division", half(darkOn, darkOff, 0, W / 2 - 16) <= 2, half(darkOn, darkOff, 0, W / 2 - 16));
+                check("a dark light map: the lit half as before", half(darkOn, refOn, W / 2 + 16, W) <= 1, half(darkOn, refOn, W / 2 + 16, W));
+                const rb2 = mk(W, H);
+                ed.drawLayersInto(rb2.getContext("2d"), { forRun: true, upTo: ed.layers.indexOf(RL) });
+                const ri2 = () => ed.filterInfo(RL, { scale: 1, origin: [0, 0], full: [W, H], forRun: true, cache: {} });
+                const g2 = applyFilterGL("relight", rb2, RL.params, ri2());
+                if (g2) {
+                    const a1 = glToCanvas(g2).getContext("2d").getImageData(0, 0, W, H).data;
+                    const a2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+                    check("a dark light map: the CPU twin within 2 levels of the GPU", diff(a1, a2).max <= 2, diff(a1, a2));
+                }
+                await putMaps({ shading: keepS, depth: keepD });
             }
             // MoGe-2's normals give the facing: the left half turned to face left takes more of a sun from the left; with
             // the switch off the normals map changes nothing

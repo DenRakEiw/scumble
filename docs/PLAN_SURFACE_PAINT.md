@@ -500,6 +500,24 @@ made by the relight layer as before, and without its model the status line names
   points names the download); red with the route taken out. Gates `deeppaint relight lint types` on tiles,
   `deeppaint relight` on canvas.
 
+- **Two finds of the user's hand test (2026-11-14), fixed:** (1) relight with the surface maps divided the picture by
+  the light S per channel, so in a deep shadow (S 0.03-0.12 on the cafe picture against 1.8 on the lit cobbles) every
+  bit of noise grew 15-40 times and S's unequal channels coloured it: speckles and rainbow fringes on the grille. Now
+  `RELIGHT_SURFACE_TRUST` (`inpaint_relight.js`, [0.1, 0.35] on S's luma): w = smoothstep of it; at w = 1 the branch as
+  before, below it S's channels go towards their luma and the result towards the fitted route (surface off), which it
+  is at w = 0; the upper end keeps 1 / S under about 3, the fitted route's Recover. CPU twin and shader alike. The
+  cafe picture's grille and shadow: the 3 x 3 high-frequency measure 8.41 before, 7.27 after, 6.83 with the surface off.
+  (2) Wrap read a decal placed far smaller than its pixels (a 1,302 px text placed 237 px wide) with four taps: stray
+  columns, stair-stepped edges. Now `decalLevel` / `halveDecal` (`inpaint_wrap.js`) halve it while it stays at least
+  twice the placed size, read in the source's coordinates. Not a fault of the code: the cup's printed logo landed in the
+  reflections map (R red 0.48 against 0.04 beside it), so a Deep paint layer with Keep reflections 100 % shows it through
+  the new paint, with the 768 px model's stair steps; the user's way out is Keep reflections down or retouching the
+  print first. Tests: `wrap_test.js` (a 1-px column pattern placed 6.4 times smaller an even grey, red without the
+  levels; `halveDecal`, `decalLevel`), the `deeppaint` gate's SP6 block (a dark tinted left half of S: surface on equals
+  surface off there within 2 levels, the lit half unchanged, the CPU twin within 2 of the GPU; red with the trust always
+  1; the reflections-alone check from x 90, where S's luma passes 0.35; the gate's undo depth raised to 200, the default 30
+  dropped the early steps). Gates `deeppaint relight` on both backends, `wrap composite commands lint types` on tiles.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

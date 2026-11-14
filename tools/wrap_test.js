@@ -58,6 +58,23 @@ const ROOT = path.join(__dirname, "..");
         check("scaled: the left half red, the right blue", at(150, 100)[0] > 200 && at(250, 100)[2] > 200 && at(139, 100)[3] === 0 && at(261, 100)[3] === 0, [at(150, 100), at(250, 100), at(139, 100), at(261, 100)]);
     }
 
+    // a decal placed far smaller than its pixels: columns one pixel wide, black and white, 640 wide placed 100 wide
+    // (6.4 to 1); read from the halved levels it is an even grey, read straight it would pick stray columns (stripes)
+    {
+        const dw = 640, dh = 64, dd = new Uint8ClampedArray(dw * dh * 4);
+        for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) { const v = x % 2 ? 255 : 0; dd.set([v, v, v, 255], 4 * (y * dw + x)); }
+        const place = { cx: 200, cy: 100, w: 100, h: 10 };
+        const box = Wr.wrapBox(place, W, H), bw = box[2] - box[0];
+        const out = Wr.wrapDecal({ map: flat, box, decal: { data: dd, width: dw, height: dh }, place });
+        let lo = 255, hi = 0;
+        for (let x = 155; x < 245; x++) { const v = out[4 * ((100 - box[1]) * bw + (x - box[0]))]; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+        check("a decal placed 6.4 times smaller: an even grey, no stray columns", hi - lo <= 24 && lo > 100 && hi < 155, [lo, hi]);
+        const hv = Wr.halveDecal({ data: new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 0, 9, 9, 9, 0]), width: 3, height: 1 });
+        check("halveDecal: the alpha-weighted colour, an odd edge counted transparent", hv.width === 2 && [...hv.data.slice(0, 4)].join() === "255,0,0,64" && hv.data[7] === 0, [...hv.data]);
+        const lv = Wr.decalLevel({ data: dd, width: dw, height: dh }, place);
+        check("decalLevel: halved while twice the placed size", lv.k === 2 && lv.level.width === 160, [lv.k, lv.level.width]);
+    }
+
     // a quarter turn clockwise: the left half on top
     {
         const place = { cx: 200, cy: 100, w: 60, h: 40, angle: 90 };
