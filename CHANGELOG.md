@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+## 0.1.56 - 2026-11-14
+
 - **Deep paint**: paint on the picture's surfaces. *Image › Surface Maps* splits the picture once into its light, its
   reflections and its surface shapes, on your own computer (two models in Settings › Helpers: Marigold IID Lighting
   and MoGe-2). On a *Deep paint layer* (Layer menu) what you paint lands under the picture's own light and keeps its
@@ -22,8 +24,7 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Agents: `surface_maps`, `add_surface_layer`, `wrap_layer`, and `relight`'s `surface` (122 tools).
 - Seedream 5.5 runs on OpenRouter too (one key for many models; 1K, 1.5K and 2K, a transparent background on request,
   up to ten pictures). Not run live yet.
-
-## 0.1.56 - 2026-11-12
+- **Gemini 4 Hydrogen for prompt upsampling**, on your Google key and on your OpenRouter key. It comes after Gemini 3.8 Flash in the list, so the model you have picked stays as it is.
 
 Fixes from a review of the whole code (54 defects, two of them able to lose or change your pixels):
 

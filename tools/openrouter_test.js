@@ -827,9 +827,9 @@ async function main() {
         // Oxen.ai's rows (0.1.29) follow OpenRouter's
         const beforeOxen = rows.filter((r) => r.provider !== "oxen");
         const firstOr = beforeOxen.findIndex((r) => r.provider === "openrouter");
-        check("llm.list(): four openrouter rows, after every other row but Oxen.ai's, each with key true", orRows.length === 4 && firstOr === beforeOxen.length - 4 && rows.findIndex((r) => r.provider === "oxen") > rows.indexOf(orRows[3]) && orRows.every((r) => r.key === true) && rows.filter((r) => r.provider !== "openrouter").every((r) => r.key === false), short(rows.map((r) => `${r.id}:${r.key}`)));
+        check("llm.list(): five openrouter rows, after every other row but Oxen.ai's, each with key true", orRows.length === 5 && firstOr === beforeOxen.length - 5 && rows.findIndex((r) => r.provider === "oxen") > rows.indexOf(orRows[4]) && orRows.every((r) => r.key === true) && rows.filter((r) => r.provider !== "openrouter").every((r) => r.key === false), short(rows.map((r) => `${r.id}:${r.key}`)));
         check("no listed row carries a reasoning field (list() names id, provider, model, label, key)", rows.every((r) => !("reasoning" in r)) && eq(Object.keys(orRows[0] || {}).sort(), ["id", "key", "label", "model", "provider"]), short(orRows[0]));
-        check("the rows are the curated ids", eq(orRows.map((r) => r.id), ["openrouter:google/gemini-3.8-flash", "openrouter:openai/gpt-5.6-luna", "openrouter:anthropic/claude-haiku-4.5", "openrouter:mistralai/mistral-small-2603"]), short(orRows.map((r) => r.id)));
+        check("the rows are the curated ids", eq(orRows.map((r) => r.id), ["openrouter:google/gemini-3.8-flash", "openrouter:google/gemini-4-hydrogen", "openrouter:openai/gpt-5.6-luna", "openrouter:anthropic/claude-haiku-4.5", "openrouter:mistralai/mistral-small-2603"]), short(orRows.map((r) => r.id)));
 
         const realFetch = globalThis.fetch;
         const IMAGE = pngOf(64, 64, 90, "UPSAMPLE");
@@ -875,6 +875,8 @@ async function main() {
         check("ask: provider {data_collection: deny, ignore: the hosts in China}", !!c && eq(c.body.provider, { data_collection: "deny", ignore: EXPECT_IGNORE }), short(c && c.body.provider));
         check("ask: model, max_tokens, stream false", !!c && c.body.model === "google/gemini-3.8-flash" && c.body.max_tokens === 4096 && c.body.stream === false, short(c && { model: c.body.model, max_tokens: c.body.max_tokens, stream: c.body.stream }));
         check("ask: the answer is the text, with no note", !!a.res && a.res.text === "a rewritten prompt" && a.res.note === "" && a.res.model === "google/gemini-3.8-flash", short(a.res));
+        const hy = await scenario("openrouter:google/gemini-4-hydrogen", [answer("a hydrogen prompt")]);
+        check("the Gemini 4 Hydrogen row: its model id and the low reasoning switch", !hy.err && hy.chats.length === 1 && hy.chats[0].body.model === "google/gemini-4-hydrogen" && eq(hy.chats[0].body.reasoning, { effort: "low", exclude: true }) && hy.res.text === "a hydrogen prompt", short({ err: hy.err, body: hy.chats[0] && { model: hy.chats[0].body.model, reasoning: hy.chats[0].body.reasoning } }));
         const hk = await scenario(HAIKU, [answer("a haiku prompt")]);
         check("the Haiku row sends no reasoning field, and the same provider object", !hk.err && hk.chats.length === 1 && !("reasoning" in hk.chats[0].body) && eq(hk.chats[0].body.provider, { data_collection: "deny", ignore: EXPECT_IGNORE }) && hk.chats[0].body.model === "anthropic/claude-haiku-4.5", short({ err: hk.err, body: hk.chats[0] && Object.keys(hk.chats[0].body) }));
         const d = await scenario(GEMINI, [fail(402, "Insufficient credits. Add more using https://openrouter.ai/credits"), answer("never")]);

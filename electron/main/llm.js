@@ -42,6 +42,11 @@ const MODELS = [
     { provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra (OpenAI key)" },
     { provider: "gemini", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash (Google key)" },
     { provider: "gemini", model: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite (Google key)" },
+    // Gemini 4 Hydrogen (Google's announcement and the AI Studio model page, read 2026-11-13; released 2026-11-12,
+    // stable): $1.50 / $7.50 per million tokens, text and pictures in, text out; thinking levels low / medium / high
+    // (the default) / xhigh, `minimal` refused, temperature / top_p / top_k ignored. After the 3.x rows, so the first
+    // row a Google key offers stays the cheaper one. Not run against the live API.
+    { provider: "gemini", model: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen (Google key)" },
     { provider: "anthropic", model: "claude-opus-5", label: "Claude Opus 5 (Anthropic key)" },
     { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 (Anthropic key)" },
     // OpenRouter, from GET /api/v1/models on 2026-09-19 (per million tokens in / out): Gemini 3.8 Flash $0.75 / $3.75,
@@ -49,6 +54,8 @@ const MODELS = [
     // France). `reasoning` is OpenRouter's switch: the lowest effort each model takes, and never returned; Haiku and
     // Mistral Small think only when asked. Gemini 3.8 Flash reasons always, so "none" would be refused.
     { provider: "openrouter", model: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
+    // google/gemini-4-hydrogen from GET /api/v1/models on 2026-11-13: $1.50 / $7.50, its lowest level is low.
+    { provider: "openrouter", model: "google/gemini-4-hydrogen", label: "Gemini 4 Hydrogen (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
     { provider: "openrouter", model: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
     { provider: "openrouter", model: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5 (OpenRouter key)" },
     { provider: "openrouter", model: "mistralai/mistral-small-2603", label: "Mistral Small 4 (OpenRouter key)" },
@@ -219,9 +226,10 @@ async function askOpenAI({ model, key, instruction, image, images, maxTokens }) 
 async function askGemini({ model, key, instruction, image, images, maxTokens }) {
     const parts = turn(instruction, image, images).map((p) => (p.png ? { inline_data: { mime_type: "image/png", data: b64(p.png) } } : { text: p.text }));
     // Thinking tokens count against maxOutputTokens, so the limit stays generous and the
-    // Gemini 3 models think at the low level (thinkingLevel is a Gemini 3 field).
+    // Gemini 3 and 4 models think at the low level (thinkingLevel is a Gemini 3 field; Gemini 4 Hydrogen thinks at
+    // high unless told, and refuses minimal).
     const generationConfig = { maxOutputTokens: maxTokens, responseModalities: ["TEXT"] };
-    if (/^gemini-3/.test(model)) generationConfig.thinkingConfig = { thinkingLevel: "low" };
+    if (/^gemini-[34]/.test(model)) generationConfig.thinkingConfig = { thinkingLevel: "low" };
     const body = { contents: [{ role: "user", parts }], generationConfig };
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify(body),
