@@ -37,7 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 TIER_BASE = {"512": 512, "0.5K": 512, "1K": 1024, "2K": 2048, "4K": 4096}
 # the upsampling rows of electron/main/llm.js MODELS (provider "openrouter"), 2026-09-19
-CHAT_MODELS = ["google/gemini-3.8-flash", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5", "mistralai/mistral-small-2603"]
+CHAT_MODELS = ["google/gemini-3.8-flash", "google/gemini-4-hydrogen", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4.5", "mistralai/mistral-small-2603"]
 # GET /api/v1/providers: the shape of the live list (scratchpad img_api/providers.json), four made-up hosts
 PROVIDERS = [
     {"name": "Mock US", "slug": "mock-us-host", "privacy_policy_url": None, "terms_of_service_url": None, "status_page_url": None, "headquarters": "US", "datacenters": ["US"]},

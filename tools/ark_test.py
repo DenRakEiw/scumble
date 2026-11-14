@@ -129,7 +129,7 @@ const order = {};
 for (const r of withArk) {
     const raw = host.shell.recipes().find((x) => x.id === r.id);
     if (r.id === ONLY) {
-        if (JSON.stringify(r.providers) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"]) || r.provider !== "ark" || raw.default !== "ark") throw new Error(r.id + ": providers " + r.providers.join(", ") + ", provider " + r.provider + ", the file's default " + raw.default);
+        if (JSON.stringify(r.providers) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "openrouter", "comfyrouter", "oxen"]) || r.provider !== "ark" || raw.default !== "ark") throw new Error(r.id + ": providers " + r.providers.join(", ") + ", provider " + r.provider + ", the file's default " + raw.default);
         if (r.background !== true) throw new Error(r.id + ": list_recipes says background " + r.background);
     } else {
         const i = r.providers.indexOf("toapis");
@@ -151,7 +151,7 @@ try {
         if (!sel) throw new Error("no provider select for " + id);
         const values = Array.from(sel.options).map((o) => o.value);
         const i = values.indexOf("ark");
-        if (id === ONLY ? JSON.stringify(values) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"]) : (i < 0 || values[i - 1] !== "toapis")) throw new Error(id + ": the select's options are " + values.join(", "));
+        if (id === ONLY ? JSON.stringify(values) !== JSON.stringify(["toapis", "ark", "wavespeed", "comfycloud", "openrouter", "comfyrouter", "oxen"]) : (i < 0 || values[i - 1] !== "toapis")) throw new Error(id + ": the select's options are " + values.join(", "));
         options[id] = sel.options[i].textContent;
         if (options[id] !== __LABEL__ + " (no key)") throw new Error(id + ": the ark option reads " + options[id]);
     }
