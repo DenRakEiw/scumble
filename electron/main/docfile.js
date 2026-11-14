@@ -133,14 +133,14 @@ const FEATURES = [
     {
         // colour maps (PLAN_SURFACE_PAINT.md SP1: shading and residual rgb16, normals rgba8): an older reader would load
         // the two-band file as a u16 map and write it back as "u16rg" over the colour map's meaning
-        id: "maps-color", since: "0.1.57", reader: 7,
+        id: "maps-color", since: "0.1.56", reader: 7,
         sample: { maps: { shading: { enc: "rgb16" } } },
         test: (d) => !!(d && d.maps && typeof d.maps === "object" && Object.values(d.maps).some((m) => m && m.enc != null && m.enc !== "u16rg")),
     },
     {
         // a Deep paint layer (PLAN_SURFACE_PAINT.md SP4): a filter layer whose file is its paint; an older reader loads
         // it empty and passes the picture through, and its next save drops the paint
-        id: "surface-layer", since: "0.1.57", reader: 7,
+        id: "surface-layer", since: "0.1.56", reader: 7,
         sample: { layers: [{ kind: "filter", filter: "surface" }] },
         test: (d) => layersOf(d).some((l) => l && l.kind === "filter" && l.filter === "surface"),
     },

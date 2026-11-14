@@ -92,7 +92,7 @@ export const EditCommandsPart = {
             const vals = a.reflections != null ? checkParams("surface", { reflections: a.reflections }, { width: ed.width, height: ed.height }) : null;
             if (!ed.hasSurfaceMaps()) {
                 if (a.compute === true || a.compute === "true") await ed.computeSurfaceMaps();
-                if (!ed.hasSurfaceMaps()) throw new Error("Deep paint needs the surface maps: run surface_maps first, or pass compute: true");
+                if (!ed.hasSurfaceMaps()) throw new Error(a.compute === true || a.compute === "true" ? `the surface maps could not be made: ${ed.status}` : "Deep paint needs the surface maps: run surface_maps first, or pass compute: true");
             }
             const l = ed.addSurfaceLayer();
             if (!l) throw new Error(ed.status);

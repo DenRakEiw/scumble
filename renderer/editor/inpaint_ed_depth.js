@@ -380,7 +380,9 @@ export class DepthPart {
      */
     async computeSurfaceMaps({ recompute = false } = {}) {
         if (!this.base) throw new Error("No image loaded in document");
-        if (this.surfacePending) return this.surfacePending;
+        // a Recompute asked while a run goes waits for it, then runs again on the picture as it is then
+        if (this.surfacePending && !recompute) return this.surfacePending;
+        if (this.surfacePending) await this.surfacePending.catch(() => null);
         const models = host.surfaceModels();
         if (!models || !models.intrinsic || !models.normals) {
             const msg = !models || !models.intrinsic
@@ -419,7 +421,8 @@ export class DepthPart {
                 };
                 // MoGe-2's points (Wrap's perspective): kept when the answer has them and a focal length can be read
                 const pts = res.normals.points ? packPoints(res.normals.points, res.normals.mask, mw, mh) : null;
-                if (pts) maps.points = makeMap("points", mw, mh, pts.data, xf, { ...common, frame: "camera", ...pts.meta }, null, "rgb16");
+                // none readable: the old picture's points go too (setMaps drops a null), so nothing measures by them
+                maps.points = pts ? makeMap("points", mw, mh, pts.data, xf, { ...common, frame: "camera", ...pts.meta }, null, "rgb16") : null;
                 const ok = await this.setMaps(maps, { label: recompute ? "Recompute surface maps" : "Surface maps", token });
                 if (!ok) {
                     this.setStatus("The surface maps were dropped: the picture was turned or cropped meanwhile.");

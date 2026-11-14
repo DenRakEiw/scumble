@@ -145,7 +145,7 @@ const MODELS = [
     },
     // CorridorKey 2.0 (item 49, docs/PLAN_CORRIDORKEY.md §4.4): a placeholder, not offered until the set is hosted
     fromSetCatalogue(require("./corridorkey2.json")),
-    // Deep paint's decomposition (docs/PLAN_SURFACE_PAINT.md SP2): Scumble's export, not offered until it is hosted
+    // Deep paint's decomposition (docs/PLAN_SURFACE_PAINT.md SP2): Scumble's export, hosted at a pinned commit
     fromSetCatalogue(require("./intrinsic.json")),
 ];
 

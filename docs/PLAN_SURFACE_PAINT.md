@@ -518,6 +518,24 @@ made by the relight layer as before, and without its model the status line names
   1; the reflections-alone check from x 90, where S's luma passes 0.35; the gate's undo depth raised to 200, the default 30
   dropped the early steps). Gates `deeppaint relight` on both backends, `wrap composite commands lint types` on tiles.
 
+- **The release review (2026-11-14, for 0.1.56; three read-only agents: data safety, pixel paths, main process):**
+  fixed: (1) relight's surface branch took the sampled R, so above the maps' 4096 px a pixel whose A clamps lost its
+  fine detail even with no light on it; R is now the pixel's own p - A S in both twins (`RELIGHT_SURFACE_TRUST`'s
+  blend kept), so Original 100 gives the picture back exactly; (2) a re-wrap cleared hand paint on the wrap layer and
+  the source's undo could not bring it back: `markLayerChanged` drops a wrap's link when anything but `putWrap` writes
+  it (`_wrapWriting`), a wrap within a selection is never linked (`made.limited`), a link whose `geo` (the document's
+  geometry token, not stored) is not the current one is dropped (a turn, crop, resize or extend leaves the wrap as it
+  is), and a re-wrap never takes the selection of that moment; (3) `computeSurfaceMaps` drops the old `points` when the
+  new ones are unreadable, and a Recompute during a run waits and runs again; (4) Wrap's box grows by `wrapGrow`
+  (z_c over the nearest point's z, at most 4) on the points route, and its slopes are floored at 0.05; (5) Deep paint
+  composites "over" in straight alpha (a transparent picture below kept the paint's colour, not half black); plus the
+  relight `surface` row hidden where `host.surfaceSupported` is not true (the node), `tokens` checked in `normals.js`,
+  the licence dialog's default on Read, the docfile rows' `since` 0.1.56. Gate steps (each red with its fix taken out):
+  relight with a 1-pixel checker below and a light of strength 0, Original 100, the picture back within a level; a
+  stroke on the wrap layer drops the link and a moved source leaves the paint; a wrap within a selection has no link.
+  Gates `deeppaint relight wrap composite commands maps export layered document lint types` on tiles,
+  `deeppaint relight composite maps export document` on canvas. The rest is in `docs/BUGS.md`.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;

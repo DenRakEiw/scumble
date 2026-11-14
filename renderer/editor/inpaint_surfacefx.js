@@ -140,15 +140,17 @@ export function applySurface(src, params, info) {
             const ppx = origin[0] + x + 0.5;
             rgb16Bilinear(S.data, S.w, S.h, ms[0] * ppx + ms[2] * py + ms[4], ms[1] * ppx + ms[3] * py + ms[5], s);
             rgb16Bilinear(R.data, R.w, R.h, mr[0] * ppx + mr[2] * py + mr[4], mr[1] * ppx + mr[3] * py + mr[5], r);
-            const al = a / 255;
+            // the paint over the picture below ("over" in straight alpha: where the picture is transparent the paint's
+            // colour stays its own instead of mixing with the black of nothing; over an opaque picture mix(B, t, a))
+            const al = a / 255, ab = px[i + 3] / 255, ao = ab + (1 - ab) * al;
             for (let c = 0; c < 3; c++) {
                 const b = SRGB_TO_LIN[px[i + c]];
                 const t = SRGB_TO_LIN[p[i + c]] * s[c] * sScale + k * r[c];
-                let v = b + (t - b) * al;
+                let v = (b * ab * (1 - al) + t * al) / ao;
                 v = v < 0 ? 0 : v > 1 ? 1 : v;
                 px[i + c] = Math.round(linToSrgb255(v));
             }
-            px[i + 3] = Math.round(px[i + 3] + (255 - px[i + 3]) * al);
+            px[i + 3] = Math.round(ao * 255);
         }
     }
     octx.putImageData(img, 0, 0);
@@ -181,8 +183,10 @@ vec4 shade(vec4 c, vec2 uv) {
     vec3 r = rgb16Bilinear(u_r1, u_r2, vec2(dot(u_mr0.xy, pp) + u_mr1.x, dot(u_mr0.zw, pp) + u_mr1.y));
     vec3 b = s_toLin(c.rgb);
     vec3 t = s_toLin(p.rgb) * s + u_k * r;
-    vec3 v = clamp(mix(b, t, p.a), 0.0, 1.0);
-    return vec4(s_toSrgb(v), c.a + (1.0 - c.a) * p.a);
+    // "over" in straight alpha (the CPU twin's comment)
+    float ao = c.a + (1.0 - c.a) * p.a;
+    vec3 v = clamp((b * c.a * (1.0 - p.a) + t * p.a) / ao, 0.0, 1.0);
+    return vec4(s_toSrgb(v), ao);
 }
 `;
 

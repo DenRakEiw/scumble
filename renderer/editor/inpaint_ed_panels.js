@@ -84,6 +84,7 @@ export class PanelsPart {
         let presetSel = null;
         for (const p of def.params) {
             if (p.hidden) continue;
+            if (p.surfaceOnly && host.surfaceSupported !== true) continue;   // Deep paint's rows: not in the ComfyUI node
             if (p.onlyWithPlate && !layer.plate) continue;
             if (p.notWithPlate && layer.plate) continue;
             if (p.when) {

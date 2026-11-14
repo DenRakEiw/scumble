@@ -31,7 +31,8 @@ class Normals {
             x[plane + i] = rgba[4 * i + 1] / 255;
             x[2 * plane + i] = rgba[4 * i + 2] / 255;
         }
-        const n = Math.max(256, Math.min(9000, Math.round(tokens || this.model.tokens || 1800)));
+        const want = Number(tokens), base = Number(this.model.tokens);
+        const n = Math.max(256, Math.min(9000, Math.round(Number.isFinite(want) && want > 0 ? want : Number.isFinite(base) && base > 0 ? base : 1800)));
         const t0 = Date.now();
         const out = await session.run({
             image: this.runtime.tensor("float32", x, [1, 3, h, w]),

@@ -490,6 +490,27 @@ JS = r"""
                 }
                 await putMaps({ shading: keepS, depth: keepD });
             }
+            // detail finer than the maps (they are 80 x 50 here, the picture 640 x 400): with no light and Original 100
+            // the picture comes back as it is, where p < R (A clamped at 0) and p > R + S (A clamped at 1) too
+            {
+                const cv = mk(W, H), cx2 = cv.getContext("2d"), cd = cx2.createImageData(W, H);
+                for (let i = 0; i < W * H; i++) { const v = ((i % W) + Math.floor(i / W)) % 2 ? 255 : 3; cd.data.set([v, v, v, 255], 4 * i); }
+                cx2.putImageData(cd, 0, 0);
+                const CK = ed.addLayer({ name: "Checker", kind: "image", ref: null, dirty: true, px: ed.pixels.Layer.fromCanvas(cv), x: 0, y: 0, w: W, h: H });
+                ed.layers.splice(ed.layers.indexOf(CK), 1); ed.layers.splice(ed.layers.indexOf(RL), 0, CK);
+                ed.sceneSig = null;
+                // a light of strength 0, so the pass runs (no light at Original 100 skips it)
+                await shell.commands.call("relight", { doc, layer: RL.id, lights: [{ id: "z", type: "sun", x: 100, y: 100, dist: -20, intensity: 0, color: 5500, diffusion: 30, on: true }], original: 100, ambient: 0, surface: true });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const withRL = await all();
+                RL.visible = false; ed.markLayerChanged(RL); await settle(ed);
+                const plain = await all();
+                RL.visible = true; ed.markLayerChanged(RL); await settle(ed);
+                check("surface relight, no light, Original 100: the picture's detail finer than the maps comes back", diff(withRL, plain).max <= 1, diff(withRL, plain));
+                await shell.commands.call("remove_layer", { doc, layer: CK.id });
+                await settle(ed);
+            }
             // MoGe-2's normals give the facing: the left half turned to face left takes more of a sun from the left; with
             // the switch off the normals map changes nothing
             {
@@ -640,6 +661,27 @@ JS = r"""
                 check("live wrap: its redo moves it again", fwd.length === 6 && fwd.every((g, i) => Math.abs(g - after2[i]) < 0.01), { fwd, after2 });
                 await shell.commands.call("undo", { doc });
                 await settle(ed);
+                // a stroke on the wrap layer makes it a bake: its source moved afterwards wraps nothing over the paint
+                {
+                    const nH = ed.undo.length;
+                    const WLh = ed.layers.find((l) => l.name === "Wrap: Decal");
+                    ed.activeLayerId = WLh.id;
+                    ed.setTool("paint");
+                    const pn = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 24, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, cl(ix, iy)));
+                    ed.canvas.dispatchEvent(pn("pointerdown", X0 - 60, 360));
+                    for (let i = 1; i <= 6; i++) { ed.canvas.dispatchEvent(pn("pointermove", X0 - 60 + 20 * i, 360)); await wait(20); }
+                    ed.canvas.dispatchEvent(pn("pointerup", X0 + 60, 360));
+                    await settle(ed);
+                    const rowA = (l) => { const r = l.px.readRect(0, 360, W, 1).data; let s = 0; for (let x = 0; x < W; x++) s += r[4 * x + 3]; return s; };
+                    const painted = rowA(WLh);
+                    check("a stroke on the wrap layer: it paints, and the live link goes", painted > 0 && !WLh.wrap, { painted, wrap: WLh.wrap });
+                    const Dh = ed.layers.find((l) => l.id === D.id);
+                    Dh.x += 20;
+                    const synced = ed.syncWraps();
+                    Dh.x -= 20;
+                    check("a stroke on the wrap layer: a source moved afterwards leaves the paint", !synced && rowA(WLh) === painted, { synced, now: rowA(WLh), painted });
+                    await undoTo(nH);
+                }
             }
             await shell.commands.call("undo", { doc });
             await settle(ed);
@@ -651,6 +693,7 @@ JS = r"""
             const WS = rs.ok && ed.layers.find((l) => l.id === rs.result.id);
             const gs = WS ? lineCentres(WS.px, 310) : [];
             check("wrap within the selection: the lines right of it only", gs.length === 3 && gs.every((g) => g > X0), gs);
+            check("wrap within the selection: a bake, no live link (the selection of a later moment would change it)", WS && !WS.wrap, WS && WS.wrap);
             const rf = await shell.commands.call("wrap_layer", { doc, layer: L.id });
             check("wrap_layer refuses a filter layer", !rf.ok, rf);
             await undoTo(n0);

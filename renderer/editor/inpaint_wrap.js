@@ -121,10 +121,12 @@ export function wrapSlopesPoints(pmap, nmap, box, cx, cy) {
         for (let x = 0; x < w; x++) {
             const i = y * w + x, px = x0 + x + 0.5;
             if (masked(px, py)) { gx[i] = 1; gy[i] = 1; continue; }
+            // at least 0.05: at the picture's edge both samples clamp to one map column (a length of 0 would repeat one
+            // decal column as a smear)
             P(px - 0.5, py, a); P(px + 0.5, py, b);
-            gx[i] = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit;
+            gx[i] = Math.max(0.05, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit);
             P(px, py - 0.5, a); P(px, py + 0.5, b);
-            gy[i] = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit;
+            gy[i] = Math.max(0.05, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / unit);
         }
     }
     return { gx, gy };
@@ -166,11 +168,31 @@ export function wrapCoords(gx, gy, w, h, cx, cy) {
  * @param {number} H
  * @returns {number[]|null}
  */
-export function wrapBox(place, W, H) {
-    const r = 0.5 * Math.hypot(place.w, place.h) + 2;
+export function wrapBox(place, W, H, grow = 1) {
+    const r = 0.5 * Math.hypot(place.w, place.h) * Math.max(1, grow) + 2;
     const x0 = Math.max(0, Math.floor(place.cx - r)), y0 = Math.max(0, Math.floor(place.cy - r));
     const x1 = Math.min(W, Math.ceil(place.cx + r)), y1 = Math.min(H, Math.ceil(place.cy + r));
     return x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+}
+
+/**
+ * How much larger than its placed size a decal can land on the points' route: a surface nearer than the decal's centre
+ * is shorter per picture pixel (z / z_c), so the decal covers more pixels there. z_c (the centre's depth) over the
+ * nearest kept point's depth (`meta.lo[2]`), at most 4. 1 when the points cannot say.
+ * @param {any} pmap a points map (packPoints)
+ * @param {number} cx document pixels
+ * @param {number} cy
+ */
+export function wrapGrow(pmap, cx, cy) {
+    const meta = pmap && pmap.meta;
+    if (!meta || !Array.isArray(meta.lo) || !Array.isArray(meta.hi) || !pmap.data) return 1;
+    const pw = pmap.w, ph = pmap.h;
+    const inv = xfInv(pmap.xf || [pw, 0, 0, ph, 0, 0]);
+    const u = Math.max(0, Math.min(pw - 1, Math.floor((inv[0] * cx + inv[2] * cy + inv[4]) * pw)));
+    const v = Math.max(0, Math.min(ph - 1, Math.floor((inv[1] * cx + inv[3] * cy + inv[5]) * ph)));
+    const zc = meta.lo[2] + (pmap.data[3 * (v * pw + u) + 2] / 65535) * (meta.hi[2] - meta.lo[2]);
+    if (!(zc > 0) || !(meta.lo[2] > 0)) return 1;
+    return Math.max(1, Math.min(4, zc / meta.lo[2]));
 }
 
 /**

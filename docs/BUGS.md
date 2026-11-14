@@ -45,6 +45,19 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### Deep paint: small points left from the 0.1.56 release review (found 2026-11-14, read, not run)
+
+Three review agents read `e0ff04cd..` (Deep paint, Seedream 5.5 on OpenRouter, Gemini 4 Hydrogen). Fixed before the
+release: relight on the surface maps above the maps' size, a re-wrap over hand paint, a wrap link after a turn or crop,
+a wrap within a selection followed later, a stale points map after a Recompute, Wrap's box on the points route, Deep
+paint over a transparent picture (`docs/PLAN_SURFACE_PAINT.md` §6, "The release review"). Left, none of them losing data:
+- Wrap takes the source's pixels only: its opacity, layer mask and blend mode are not in the wrap (`wrapPixels`).
+- Relight's MoGe-2 normals are used where MoGe's mask is 0 (the sky); Wrap keeps the depth's way there, relight does not.
+- MoGe-2 ViT-S cannot be chosen while ViT-B is downloaded (no select in *Settings › Helpers*, `DEFAULTS.normals`).
+- An autosave of 0.1.56 restored in 0.1.55 or older loses a Deep paint layer's paint and stores a colour map as `u16rg`
+  (the `.scumble` is guarded by `minReader`, the autosave is not; true of every new layer kind before too).
+- A map whose upload fails keeps `ref: null` and is not in the next save (as `setMap` before).
+
 ### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review)
 
 Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directory, each layer and the base upload as slices of the `File` (as D0's PSD route does), where it used to read the whole file into memory first. A file dropped from Explorer is a snapshot on disk: if another program saves over it during the seconds a 15k ORA takes to open, Chromium refuses the later reads (`NotReadableError`) and the open ends with a decode or upload error instead of a plain message. Opening again works. Suggested when it is next touched: map a `NotReadableError` from the slices to "<name> changed on disk while it was opened; open it again".

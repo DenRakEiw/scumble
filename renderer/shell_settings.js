@@ -715,7 +715,8 @@ function renderHelpers(status) {
                             title: `${m.label}: licence`, message: m.termsText,
                             detail: links.map((l) => `${l.label}: ${l.url}`).join("\n"),
                             buttons: ["Accept and download", ...(links.length ? ["Read the licence"] : []), "Cancel"],
-                            defaultId: 0, cancelId: links.length ? 2 : 1,
+                            // Enter does not accept a licence: the default is Read (or Cancel)
+                            defaultId: 1, cancelId: links.length ? 2 : 1,
                         });
                         if (links.length && i === 1) { window.scumble.openExternal(links[0].url); continue; }
                         if (i !== 0) return;

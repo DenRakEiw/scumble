@@ -19,7 +19,7 @@ import { DISSOLVE_CLIP_SHADER, DISSOLVE_SHADER, EMULATED_BLEND_CLIP_SHADER, EMUL
 import { UploadCache, sourceTag } from "./inpaint_strokebuf.js";
 import { canvasRows, loadImageEl, viewUrl } from "./inpaint_load.js";
 import { defaultLight, normalizeLights } from "./inpaint_relight.js";
-import { wrapBox, wrapDecal } from "./inpaint_wrap.js";
+import { wrapBox, wrapDecal, wrapGrow } from "./inpaint_wrap.js";
 
 export class FiltersPart {
     /**
@@ -437,6 +437,8 @@ export class FiltersPart {
         if (layer.group) out.group = layer.group;
         this.putWrap(out, layer, made);
         layer.visible = false;
+        // a wrap within a selection is a bake: wrapping it again later could only use the selection of that moment
+        if (made.limited) out.wrap = null;
         // the hidden source stays active with the Transform tool: moving it wraps it again (syncWraps)
         this.activeLayerId = layer.id;
         if (this.setTool) this.setTool("transform");
@@ -444,7 +446,7 @@ export class FiltersPart {
         this.sceneSig = null;
         this.renderLayers();
         this.draw();
-        this.setStatus(`${layer.name} wrapped onto the surface in ${Math.round(performance.now() - t0)} ms, as ${out.name}: it takes the picture's light and reflections. Move or scale ${layer.name} with the Transform tool and the wrap follows.`);
+        this.setStatus(`${layer.name} wrapped onto the surface in ${Math.round(performance.now() - t0)} ms, as ${out.name}: it takes the picture's light and reflections. ` + (out.wrap ? `Move or scale ${layer.name} with the Transform tool and the wrap follows.` : "Wrapped within the selection, it stays as it is: to move it, undo and wrap again."));
         return out;
     }
 
@@ -452,13 +454,13 @@ export class FiltersPart {
      * The wrapped pixels of `src` at its placement now: `{ box, data, place }`, `{ error }` when the selection does not
      * reach it, null outside the picture. The selection of this moment limits it, as a fresh wrap.
      */
-    wrapPixels(src, angle) {
+    wrapPixels(src, angle, { useSelection = true } = {}) {
         const place = { cx: src.x + src.w / 2, cy: src.y + src.h / 2, w: src.w, h: src.h, angle };
-        const box = wrapBox(place, this.width, this.height);
+        const box = wrapBox(place, this.width, this.height, this.maps.points ? wrapGrow(this.maps.points, place.cx, place.cy) : 1);
         if (!box) return null;
         const [x0, y0, x1, y1] = box, bw = x1 - x0, bh = y1 - y0;
         let sel = null;
-        if (this.sel && this.getBounds()) {
+        if (useSelection && this.sel && this.getBounds()) {
             const a = this.sel.readRect(x0, y0, bw, bh).data;
             sel = new Uint8Array(bw * bh);
             let any = false;
@@ -466,7 +468,7 @@ export class FiltersPart {
             if (!any) return { error: "The selection does not reach the layer: nothing to wrap." };
         }
         const decal = src.px.readRect(0, 0, src.px.width, src.px.height);
-        return { box, place, data: wrapDecal({ map: this.maps.normals, box, decal, place, sel, points: this.maps.points || null }) };
+        return { box, place, limited: !!sel, data: wrapDecal({ map: this.maps.normals, box, decal, place, sel, points: this.maps.points || null }) };
     }
 
     /** `made` (wrapPixels) into the wrap layer `out`: the box of the wrap before cleared, the new one written; no undo. */
@@ -482,14 +484,17 @@ export class FiltersPart {
             const [x0, y0, x1, y1] = made.box;
             out.px.writeRect({ data: made.data, width: x1 - x0, height: y1 - y0 }, x0, y0, "copy");
         }
+        // geo: the document's geometry the link is in (a turn, crop, resize or extend leaves the wrap as it is)
         // a new object: an undo step's copy of the layer keeps its own. The pixels are written in place, so the same
         // number goes on them and on the link: an undo step that puts back an older link over these pixels shows as a
         // mismatch and is wrapped again (syncWraps)
         const stamp = (this._wrapSeq = (this._wrapSeq || 0) + 1);
         out.px._wrapStamp = stamp;
-        out.wrap = { source: src.id, angle: made && made.place ? made.place.angle : (out.wrap ? out.wrap.angle : 0), x: src.x, y: src.y, w: src.w, h: src.h, box: made ? made.box.slice() : null, stamp };
+        out.wrap = { source: src.id, angle: made && made.place ? made.place.angle : (out.wrap ? out.wrap.angle : 0), x: src.x, y: src.y, w: src.w, h: src.h, box: made ? made.box.slice() : null, stamp, geo: this.geometryToken() };
         out.dirty = true;
-        if (changed) this.markLayerChanged(out, changed);
+        // markLayerChanged drops the link of a wrap changed by any other hand (the brush, Fill, Delete): not for this write
+        this._wrapWriting = true;
+        try { if (changed) this.markLayerChanged(out, changed); } finally { this._wrapWriting = false; }
     }
 
     /**
@@ -506,12 +511,16 @@ export class FiltersPart {
             for (const l of this.layers) {
                 const w = l.wrap;
                 if (!w || l.kind !== "filter") continue;
+                // a link read from a file or the autosave takes the document's geometry as it is now
+                if (w.geo === undefined) w.geo = this.geometryToken();
+                // the picture turned, cropped, resized or extended since: the wrap stays as that operation left it
+                if (w.geo !== this.geometryToken()) { l.wrap = null; continue; }
                 const src = this.layers.find((x) => x.id === w.source);
                 if (!src || !src.px || (this.pending && this.pending.layer === src)) continue;
                 const stale = l.px && l.px._wrapStamp !== undefined && w.stamp !== undefined && l.px._wrapStamp !== w.stamp;
                 if (!stale && src.x === w.x && src.y === w.y && src.w === w.w && src.h === w.h) continue;
                 if (live && src.w * src.h > 6e6) continue;
-                const made = this.wrapPixels(src, w.angle || 0);
+                const made = this.wrapPixels(src, w.angle || 0, { useSelection: false });
                 this.putWrap(l, src, made && !made.error ? made : null);
                 any = true;
             }

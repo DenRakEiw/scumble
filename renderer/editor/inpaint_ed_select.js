@@ -1529,6 +1529,9 @@ export class SelectPart {
 
     markLayerChanged(layer, rect) {
         layer.dirty = true;
+        // a wrap changed by hand (a stroke, Fill, Delete, an undo of one) is a bake from then on: following its source
+        // would write over that change (putWrap writes with _wrapWriting set)
+        if (layer.wrap && !this._wrapWriting) layer.wrap = null;
         layer._refAvatar = null;
         layer._maskedValid = false;
         layer._mcache = null;

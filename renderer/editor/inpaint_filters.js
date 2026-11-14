@@ -1290,7 +1290,7 @@ export const FILTERS = {
             // Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md SP6): the light lands on the picture's own colour
             // (B - R) / S and keeps its reflections, in place of the colour fitted from the depth map's light, and its
             // facing comes from MoGe-2's normals when the document has them (the shadows still from the depth map)
-            { key: "surface", label: "Surface maps", type: "bool", default: false, title: "Light the picture's own colour from its surface maps (Image › Surface Maps), keep its reflections and take the surfaces' facing from their normals, in place of the colour and the facing estimated from the depth map (the shadows still come from it). Off, or without the maps, relight works as before." },
+            { key: "surface", label: "Surface maps", type: "bool", default: false, surfaceOnly: true, title: "Light the picture's own colour from its surface maps (Image › Surface Maps), keep its reflections and take the surfaces' facing from their normals, in place of the colour and the facing estimated from the depth map (the shadows still come from it). Off, or without the maps, relight works as before." },
             { key: "route", type: "custom", default: "app" },
         ],
         maps: (p) => (p && p.surface ? ["depth", "shading", "residual", "normals"] : ["depth"]),

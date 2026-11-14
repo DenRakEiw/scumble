@@ -1085,7 +1085,9 @@ export function shadePixel(srcRgba, normal, mapCoord, lights, params = null, fit
             const ar = al(pr, 0), ag = al(pg, 1), ab = al(pb, 2);
             fr += (ar - fr) * w; fg += (ag - fg) * w; fb += (ab - fb) * w;
             keepR = pr + (ar * se[0] - pr) * w; keepG = pg + (ag * se[1] - pg) * w; keepB = pb + (ab * se[2] - pb) * w;
-            rR = surf.r[0] * w; rG = surf.r[1] * w; rB = surf.r[2] * w;
+            // the reflections as this pixel's own: p - A S, which is R where A is not clamped and keeps the picture's
+            // detail finer than the maps (they are at most 4096 px wide) where it is, so R + o A S is p at o = 1
+            rR = (pr - ar * se[0]) * w; rG = (pg - ag * se[1]) * w; rB = (pb - ab * se[2]) * w;
         }
     }
 
@@ -2034,7 +2036,7 @@ vec4 shade(vec4 c, vec2 uv) {
         vec3 se = mix(vec3(sY), sS, w);
         vec3 a = clamp(vec3(se.r > 1e-4 ? (pLin.r - sR.r) / se.r : 0.0, se.g > 1e-4 ? (pLin.g - sR.g) / se.g : 0.0, se.b > 1e-4 ? (pLin.b - sR.b) / se.b : 0.0), 0.0, 1.0);
         fLin = mix(fLin, a, w);
-        keepLin = w * sR + u_original * mix(pLin, a * se, w);
+        keepLin = w * (pLin - a * se) + u_original * mix(pLin, a * se, w);   // p - A S: R with the picture's fine detail
     }
 
     vec3 lsum = vec3(0.0);
