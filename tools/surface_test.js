@@ -62,7 +62,32 @@ async function main() {
     check("a black picture: the identity holds, R zero", rb.identity.maxLevels <= 1 && rb.residual.every((v) => v === 0), `max ${rb.identity.maxLevels.toFixed(3)}`);
     const nrm = S.packNormals(Float32Array.from([1, 0, 0, 0, -1, 0, 0, 0, -1]), Float32Array.from([1, 0.5, 0]), 3);
     check("the normals pack: (n + 1) / 2 per axis, the mask in A", [...nrm].join(",") === "255,128,128,255,128,0,128,128,128,128,0,0", [...nrm].join(","));
-    check("the model's size: long side 768, at least 16", S.surfaceModelSize(15000, 10000).join("x") === "768x512" && S.surfaceModelSize(500, 300).join("x") === "500x300" && S.surfaceModelSize(4000, 20).join("x") === "768x16");
+    {
+        // the depth from MoGe-2's points: a pinhole wall at z 2 on the left, z 4 on the right, the top row the sky
+        const w = 8, h = 4, pts = new Float32Array(w * h * 3), mk = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const i = y * w + x, z = x < 4 ? 2 : 4;
+            if (y === 0) continue;
+            mk[i] = 1;
+            pts[3 * i] = (x + 0.5 - w / 2) * z / 6; pts[3 * i + 1] = (y + 0.5 - h / 2) * z / 6; pts[3 * i + 2] = z;
+        }
+        const pk = S.packPoints(pts, mk, w, h);
+        const nmask = new Uint8Array(w * h * 4);
+        for (let i = 0; i < w * h; i++) nmask[i * 4 + 3] = mk[i] ? 255 : 0;
+        const pm = { data: pk.data, w, h, meta: pk.meta };
+        const W = 80, H = 40, inv = [1 / W, 0, 0, 1 / H, 0, 0];
+        const got = S.disparityFromPoints(pm, nmask, inv, W, H, w, h);
+        const at = (x, y) => got.raw[y * w + x];
+        check("depth from points: 1 / z near high, the sky the farthest kept", Math.abs(at(1, 2) - 0.5) < 1e-3 && Math.abs(at(6, 2) - 0.25) < 1e-3 && at(1, 0) === got.lo && Math.abs(got.lo - 0.25) < 1e-3 && Math.abs(got.hi - 0.5) < 1e-3,
+            `${at(1, 2).toFixed(4)} ${at(6, 2).toFixed(4)} sky ${at(1, 0)} lo ${got.lo} hi ${got.hi}`);
+        const noMask = S.disparityFromPoints(pm, null, inv, W, H, w, h);
+        check("depth from points: without the normals' mask the all-zero point is the dropped one", noMask && noMask.raw[1] === noMask.lo && Math.abs(noMask.raw[2 * w + 1] - 0.5) < 1e-3);
+        // a map mirrored left to right: the document's left is the map's right (z 4)
+        const mir = S.disparityFromPoints(pm, nmask, [-1 / W, 0, 0, 1 / H, 1, 0], W, H, w, h);
+        check("depth from points: read through the map's xf", Math.abs(mir.raw[2 * w + 1] - 0.25) < 1e-3 && Math.abs(mir.raw[2 * w + 6] - 0.5) < 1e-3);
+        check("depth from points: too few kept pixels -> null", S.disparityFromPoints(pm, new Uint8Array(w * h * 4), inv, W, H, w, h) === null);
+    }
+    check("the model's size: long side 768, at least 16",S.surfaceModelSize(15000, 10000).join("x") === "768x512" && S.surfaceModelSize(500, 300).join("x") === "500x300" && S.surfaceModelSize(4000, 20).join("x") === "768x16");
 
     // ---- the real decomposition ------------------------------------------------------------------------------
     const [modelsDir, picsDir] = process.argv.slice(2);

@@ -264,6 +264,52 @@ export function packPoints(points, mask, w, h) {
     return { data, meta: { lo, hi, f } };
 }
 
+/**
+ * A depth map's raw disparity (1 / z, near high) from a points map (packPoints), for a document without Depth Anything:
+ * the depth map's own convention, so the guided filter and everything that reads the depth map take it as they are.
+ * Sampled at the rw x rh pixel centres of the document (W x H), each through `inv` (the points map's xf inverted: a
+ * document point to the map's unit square), nearest neighbour (a bilinear sample across the mask's border would mix a
+ * kept point with the 0 of a dropped one, a near halo around the sky). A pixel the mask drops (`mask`, the normals map's
+ * alpha bytes at the same size, or the all-zero point packPoints writes there) and a pixel outside the map get the
+ * farthest kept disparity. -> { raw, lo, hi, kept } or null when fewer than 16 pixels are kept.
+ * @param {{ data: Uint16Array, w: number, h: number, meta: { lo: number[], hi: number[] } }} pm
+ * @param {Uint8Array|Uint8ClampedArray|null} mask rgba8 bytes of pm.w x pm.h (alpha read), or null
+ * @param {number[]} inv
+ * @param {number} W
+ * @param {number} H
+ * @param {number} rw
+ * @param {number} rh
+ */
+export function disparityFromPoints(pm, mask, inv, W, H, rw, rh) {
+    if (!pm || !pm.data || !pm.meta || !pm.w || !pm.h) return null;
+    const w = pm.w, h = pm.h, d = pm.data;
+    const z0 = pm.meta.lo[2], zs = (pm.meta.hi[2] - pm.meta.lo[2]) / 65535;
+    const useMask = !!(mask && mask.length >= w * h * 4);
+    const raw = new Float32Array(rw * rh);
+    const hit = new Uint8Array(rw * rh);
+    let kept = 0, lo = Infinity, hi = -Infinity;
+    for (let v = 0; v < rh; v++) {
+        const dy = (v + 0.5) * H / rh;
+        for (let u = 0; u < rw; u++) {
+            const dx = (u + 0.5) * W / rw;
+            const sx = inv[0] * dx + inv[2] * dy + inv[4], sy = inv[1] * dx + inv[3] * dy + inv[5];
+            const mx = Math.floor(sx * w), my = Math.floor(sy * h);
+            if (mx < 0 || my < 0 || mx >= w || my >= h) continue;
+            const i = my * w + mx;
+            if (useMask ? mask[i * 4 + 3] < 128 : (d[i * 3] === 0 && d[i * 3 + 1] === 0 && d[i * 3 + 2] === 0)) continue;
+            const z = z0 + d[i * 3 + 2] * zs;
+            if (!(z > 0)) continue;
+            const t = v * rw + u, disp = 1 / z;
+            raw[t] = disp; hit[t] = 1; kept++;
+            if (disp < lo) lo = disp;
+            if (disp > hi) hi = disp;
+        }
+    }
+    if (kept < 16) return null;
+    for (let t = 0; t < raw.length; t++) if (!hit[t]) raw[t] = lo;
+    return { raw, lo, hi, kept };
+}
+
 /** The model's size for a picture of W x H: the long side 768 (or the picture's, if smaller), both sides at least 16. */
 export function surfaceModelSize(W, H, long = 768) {
     const s = Math.min(1, long / Math.max(W, H));

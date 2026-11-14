@@ -745,6 +745,64 @@ JS = r"""
     check("restored: the same bytes", diff(await all(e3), ref).max === 0, diff(await all(e3), ref));
     shell.closeDocument && shell.closeDocument(e3, { force: true });
 
+    // without Depth Anything the depth map comes from the surface maps' points, so the light brush works after
+    // Compute Surface Maps alone: a wall at z 2 on the left, z 4 on the right, the top fifth the sky (masked)
+    {
+        const e4 = shell.newDocument();
+        shell.activate(e4);
+        await wait(250);
+        e4.resizeCanvas();
+        await e4.setBaseFromCanvas(base, { keepLayers: false });
+        await settle(e4);
+        const pd = new Uint16Array(n * 3), pn = new Uint8Array(n * 4);
+        for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+            const i = y * mw + x;
+            pn.set([128, 128, 0, y < mh / 5 ? 0 : 255], 4 * i);
+            if (y < mh / 5) continue;
+            pd.set([32768, 32768, x < mw / 2 ? 0 : 65535], 3 * i);
+        }
+        await e4.setMaps({
+            shading: makeMap("shading", mw, mh, sd, xf, { sScale, fp: "t" }, null, "rgb16"),
+            residual: makeMap("residual", mw, mh, rd, xf, { fp: "t" }, null, "rgb16"),
+            normals: makeMap("normals", mw, mh, pn, xf, { fp: "t" }, null, "rgba8"),
+            points: makeMap("points", mw, mh, pd, xf, { fp: "t", lo: [-1, -1, 2], hi: [1, 1, 4], f: 100 }, null, "rgb16"),
+        });
+        const keepModel = host.depthModel;
+        host.depthModel = () => null;
+        try {
+            const LB = e4.newLightBrushLayer();
+            check("light brush without Depth Anything: the layer is made", !!LB, e4.status);
+            for (let t = 0; t < 100 && (e4.depthPending || !(e4.maps && e4.maps.depth)); t++) await wait(100);
+            const dm = e4.maps && e4.maps.depth;
+            check("depth from points: a depth map, its source the points", !!dm && dm.meta && dm.meta.source === "points", dm && dm.meta && { source: dm.meta.source, status: e4.status });
+            if (dm) {
+                const at = (fx, fy) => dm.data[Math.floor(fy * dm.h) * dm.w + Math.floor(fx * dm.w)];
+                check("depth from points: the near wall nearer than the far one, the sky farthest", at(0.2, 0.6) < at(0.8, 0.6) && at(0.5, 0.05) >= at(0.8, 0.6) - 2000, [at(0.2, 0.6), at(0.8, 0.6), at(0.5, 0.05)]);
+                check("depth from points: the status names the points", /points/i.test(e4.status), e4.status);
+            }
+            if (LB) {
+                const before = await all(e4);
+                e4.fillLayerMask(LB, true);
+                e4.markFilterChanged(LB);
+                if (e4.relightSettled) await e4.relightSettled();
+                await settle(e4);
+                const after = await all(e4);
+                check("light brush on the points' depth: the painted mask brings the light in", diff(before, after).max > 3, diff(before, after));
+            }
+            // a second ask with the same picture keeps the map
+            const again = await e4.ensureDepthMap().catch((e) => String(e));
+            check("depth from points: kept while the picture is the same", again === e4.maps.depth && again === dm);
+            // no points and no model: the download is named, as before
+            await e4.setMaps({ points: null });
+            let err = null;
+            try { await e4.ensureDepthMap({ force: true }); } catch (e) { err = e; }
+            check("no points and no depth model: the download is named", !!err && /Depth Anything/.test(e4.status), e4.status);
+        } finally {
+            host.depthModel = keepModel;
+        }
+        shell.closeDocument && shell.closeDocument(e4, { force: true });
+    }
+
     shell.closeDocument && shell.closeDocument(ed, { force: true });
     return { fails, tiles: !!ed.tileMode };
 })()

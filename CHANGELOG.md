@@ -11,7 +11,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   how much shine stays, and a selection, a mask or the layer's Limit keep it in place. Where nothing is painted the
   picture stays exactly as it was.
 - **Light brush**: *Layer › New Light Brush Layer* paints light where the brush goes; Relight layers on a picture with
-  surface maps light the picture's own colour and keep its reflections (the *Surface maps* switch).
+  surface maps light the picture's own colour and keep its reflections (the *Surface maps* switch). Without Depth
+  Anything downloaded, a picture with surface maps takes its depth map from them, so the light brush and Relight need
+  no second download.
 - **Wrap onto Surface** (Layer menu): a logo, a pattern or a word laid round a curved surface such as a cup or a
   bottle, under the picture's light, in perspective; drag the flat picture with the Transform tool and the wrap follows.
   The layer list's sparkle button holds the Deep paint layer, the light brush and Wrap.

@@ -460,7 +460,7 @@ The steps below follow the pack's README as it was on 2026-10-04 (pack version 1
 <!-- slug: relight -->
 _Cast directional light, shadows and colour onto any picture using 3D depth._
 
-A Relight layer illuminates your picture with up to four interactive light sources in 3D space, calculated in real time from the scene's 16-bit depth map. Add one from the Layer menu (*New Relight Layer*) or the Add Filter list. If the document has no depth map yet, Scumble calculates one automatically using Depth Anything V2 Small.
+A Relight layer illuminates your picture with up to four interactive light sources in 3D space, calculated in real time from the scene's 16-bit depth map. Add one from the Layer menu (*New Relight Layer*) or the Add Filter list. If the document has no depth map yet, Scumble calculates one automatically using Depth Anything V2 Small; when that model is not downloaded and the picture has surface maps (*Image › Surface Maps*), the depth map comes from those.
 
 **The Lights tool.** Select the Lights tool (L) or click *Edit lights* in the layer row to interact with light sources directly in the viewport:
 - **Move**: Drag a light handle across the picture to move its source in 2D coordinates. While dragging, a fast quarter-resolution preview updates interactively.
@@ -541,7 +541,8 @@ and picks the brush. On it:
 
 **The light brush.** *Layer › New Light Brush Layer* adds a Relight layer with one warm light from the upper left whose
 mask hides all of it, and picks the brush: paint where the light should fall, and the eraser takes it away. The light
-follows the surfaces' facing from the depth map, so a wall that turns away gets less of it. Move it with the Lights
+follows the surfaces' facing, so a wall that turns away gets less of it. Without Depth Anything V2 Small downloaded, a
+picture with surface maps takes its depth map from the surface maps themselves, so no second download is needed. Move it with the Lights
 tool (L); its colour, strength and type are in the layer's row, as on any Relight layer (see *Relight* above).
 
 **Wrap.** Place a picture, paint or text layer flat where it should go (a logo, a pattern, a word), then

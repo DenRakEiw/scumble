@@ -7,7 +7,8 @@ import { editorPool } from "./inpaint_jobs.js";
 import { uploadCanvas } from "./inpaint_upload.js";
 import { GUIDE, STALE_DIFF, WORK_MAX, modelSize, workSize } from "./inpaint_depth.js";
 import { deriveMap, editMap, fingerprint, fingerprintDiff, makeMap, packMap, selectionOnMap } from "./inpaint_maps.js";
-import { linToSrgb255, packNormals, packPoints, surfaceModelSize } from "./inpaint_surface.js";
+import { disparityFromPoints, linToSrgb255, packNormals, packPoints, surfaceModelSize } from "./inpaint_surface.js";
+import { xfInv } from "./inpaint_resample.js";
 import { SNAP_DEFAULT } from "./inpaint_edges.js";
 import { failKind } from "./inpaint_status.js";
 import { makeCanvas } from "./inpaint_consts.js";
@@ -49,6 +50,8 @@ export class DepthPart {
         if (!this.base) throw new Error("No image loaded in document");
         if (this.depthPending) return this.depthPending;
         const model = host.depthModel();
+        // without Depth Anything, a picture with the surface maps takes its depth from MoGe-2's points (no second download)
+        if (!model && this.maps && this.maps.points && this.maps.points.data) return this.depthFromPoints({ recompute, edges });
         if (!model) {
             this.setStatus("Depth estimation needs Depth Anything V2 Small: download it in Settings › Helpers.", "warn");
             throw new Error("No depth model is downloaded (Settings › Helpers)");
@@ -177,6 +180,77 @@ export class DepthPart {
             } catch (err) {
                 console.error("Depth estimation failed:", err);
                 this.setStatus("Depth estimation failed: " + (err.message || err), failKind(err));
+                throw err;
+            } finally {
+                this.depthPending = null;
+                this.renderDepthRow();
+            }
+        };
+        const p = run();
+        this.depthPending = p;
+        return p;
+    }
+
+    /**
+     * The depth map from the surface maps' MoGe-2 points (`disparityFromPoints`: 1 / z, the sky far), refined by the same
+     * guided filter as Depth Anything's, for a document whose depth model is not downloaded: relight, the light brush and
+     * the depth filters then work after Compute Surface Maps alone. One undo step as any depth map; kept while the
+     * picture's fingerprint is the same. `meta.source` "points". -> the map, or null (the status line says why)
+     */
+    async depthFromPoints({ recompute = false, edges = null } = {}) {
+        if (!this.base) throw new Error("No image loaded in document");
+        if (this.depthPending) return this.depthPending;
+        const pm = this.maps && this.maps.points;
+        if (!pm || !pm.data) { this.setStatus("No surface maps with points: Image › Surface Maps › Compute Surface Maps.", "warn"); return null; }
+        const run = async () => {
+            this.depthPending = true;
+            this.renderDepthRow();
+            try {
+                const token = this.geometryToken();
+                const W = this.width, H = this.height;
+                const fpInp = await host.pictureInput(this, 64, 64, { skipFilters: true, background: "#808080" });
+                const fp = fingerprint(fpInp.image, 64, 64);
+                const existing = this.maps && this.maps.depth;
+                if (!recompute && existing && existing.meta && existing.meta.source === "points" && existing.meta.fp === fp) {
+                    if (edges !== null && edges !== undefined) {
+                        this.setMapMeta("depth", { snap: { ...(existing.meta.snap || {}), strength: Math.max(0, Math.min(100, Math.round(+edges))) } });
+                    }
+                    return existing;
+                }
+                const t0 = performance.now();
+                const rw = pm.w, rh = Math.max(1, Math.round(pm.w * H / W));
+                const nm = this.maps.normals;
+                const mask = nm && nm.data && nm.w === pm.w && nm.h === pm.h ? nm.data : null;
+                const got = disparityFromPoints(pm, mask, xfInv(pm.xf || [W, 0, 0, H, 0, 0]), W, H, rw, rh);
+                if (!got) { this.setStatus("The surface maps' points cover too little of the picture for a depth map.", "warn"); return null; }
+                const [gw, gh] = workSize(W, H, WORK_MAX);
+                const guide = await host.depthInput(this, gw, gh);
+                this.setStatus("Refining depth map with guided filter ...");
+                const poolRes = await editorPool().run("depth_guide", {
+                    raw: got.raw, rw, rh, gd: guide.image, gw, gh, r: GUIDE.r, eps: GUIDE.eps,
+                }, [guide.image.buffer], { priority: INTERACTIVE });
+                const u16 = new Uint16Array(poolRes.u16);
+                const gd = new Uint8ClampedArray(poolRes.gd);
+                const ms = Math.round(performance.now() - t0);
+                const snapStrength = edges != null ? Math.max(0, Math.min(100, Math.round(+edges))) : SNAP_DEFAULT;
+                const meta = {
+                    fp, source: "points", lo: poolRes.lo, hi: poolRes.hi, rawBounds: [got.lo, got.hi],
+                    provider: (pm.meta && pm.meta.provider) || "", model: (pm.meta && pm.meta.normalsModel) || "MoGe-2",
+                    ms: 0, totalMs: ms, raw: got.raw, rw, rh, snap: { strength: snapStrength },
+                };
+                const map = makeMap("depth", gw, gh, u16, [W, 0, 0, H, 0, 0], meta, gd);
+                const ok = await this.setMap("depth", map, { label: recompute ? "Recompute depth map" : "Depth map", token });
+                if (!ok) {
+                    this.setStatus("The depth map was dropped: the picture was turned or cropped meanwhile.");
+                    return null;
+                }
+                this._depthOverlayCanvas = null;
+                this._depthStale = false;
+                this.setStatus(`Depth map ${gw}x${gh} from the surface maps' points (MoGe-2) in ${(ms / 1000).toFixed(2)} s.`);
+                return map;
+            } catch (err) {
+                console.error("Depth from points failed:", err);
+                this.setStatus("Depth from the surface maps failed: " + (err.message || err), failKind(err));
                 throw err;
             } finally {
                 this.depthPending = null;
@@ -584,7 +658,7 @@ export class DepthPart {
         const depthMap = (this.maps && this.maps.depth) || this.depth;
         if (!depthMap) {
             const row = el("div", "ipc-sec");
-            const btn = iconButton("magic", "Compute 16-bit depth map with Depth Anything V2 Small", () => this.ensureDepthMap(), "Compute depth map");
+            const btn = iconButton("magic", "Compute 16-bit depth map with Depth Anything V2 Small (without it, from the surface maps' points)", () => this.ensureDepthMap(), "Compute depth map");
             btn.classList.add("ipc-small", "ipc-primary");
             row.appendChild(btn);
 

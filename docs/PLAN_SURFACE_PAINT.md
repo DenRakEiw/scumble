@@ -488,6 +488,18 @@ made by the relight layer as before, and without its model the status line names
   persp_triple.png`): f = 782 px at 768 wide, the maps 6.3 s; a word on the cobbles is squeezed as lying flat there and
   stops at the table's edge, where the normals' wrap ran on over the table.
 
+- **The depth map from MoGe-2's points** (the hand test's find: the light brush showed nothing without Depth Anything):
+  `computeDepthMap` without a depth model and with a `points` map goes to `depthFromPoints` (`inpaint_ed_depth.js`):
+  `disparityFromPoints` (`inpaint_surface.js`) reads 1 / z at the points map's size through its `xf`, nearest neighbour
+  (a bilinear sample across the mask's border would make a near halo round the sky), the pixels the normals' mask
+  drops at the farthest kept disparity; then the same `depth_guide` pool job as Depth Anything's, `meta.source`
+  "points", kept while the picture's fingerprint is the same, one undo step. With Depth Anything downloaded nothing
+  changes. Tests: `surface_test.js` (1 / z, the sky, without a mask the all-zero point, a mirrored `xf`, too few
+  kept), the `deeppaint` gate's last block (`host.depthModel` stubbed to none: the light brush makes the depth map from
+  the points, the near wall nearer, the sky farthest, the mask filled brings the light in, a second ask keeps it, no
+  points names the download); red with the route taken out. Gates `deeppaint relight lint types` on tiles,
+  `deeppaint relight` on canvas.
+
 ## 7. Code anchors (read 2026-11-13 at `e0ff04cd`)
 
 - Helpers: `electron/main/onnx/models.js` `MODELS` :73 (`da2_small` :122), `fromSetCatalogue` :44, `Downloader` :411;
