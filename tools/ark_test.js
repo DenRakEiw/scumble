@@ -721,7 +721,7 @@ async function main() {
             const ids = r.providerIds;
             if (w.only) {
                 // since 2026-11-11 also on five other hosts (tools/seedream55_test.js), ModelArk right after ToAPIs, still the default
-                if (!eq(ids, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ModelArk after ToAPIs and the four others`);
+                if (!eq(ids, ["toapis", "ark", "wavespeed", "comfycloud", "openrouter", "comfyrouter", "oxen"])) bad.push(`${r.id}: providers ${ids.join(",")}, not ModelArk after ToAPIs and the five others`);
                 if (r.default !== "ark" || raw.default !== "ark") bad.push(`${r.id}: the default is ${r.default} (file ${raw.default}), not ark`);
                 if (o.background !== true || o.early_access !== true) bad.push(`${r.id}: options.background ${o.background}, early_access ${o.early_access}`);
                 const bg = (v.settings || []).find((st) => st.key === "background");

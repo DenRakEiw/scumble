@@ -134,7 +134,7 @@ async function main() {
 
     await section("the recipe", async () => {
         check("the hosts that list it: ModelArk, WaveSpeedAI, Comfy Cloud, ToAPIs, Comfy Router, Oxen.ai, OpenRouter (listed 2026-11-12); ModelArk stays the default",
-            eq(R.providerIds, ["toapis", "ark", "wavespeed", "comfycloud", "comfyrouter", "oxen", "openrouter"]) && R.default === "ark", short([R.providerIds, R.default]));
+            eq(R.providerIds, ["toapis", "ark", "wavespeed", "comfycloud", "openrouter", "comfyrouter", "oxen"]) && R.default === "ark", short([R.providerIds, R.default]));
         check("the description names each host beside ModelArk", /Also on WaveSpeedAI\. Also on Comfy Cloud\. Also on ToAPIs\. Also on Comfy Router\. Also on Oxen\.ai\. Also on OpenRouter\./.test(R.description), R.description);
         check("every variant edits without a mask and says it has not run live", Object.values(R.providers).every((v) => v.input === "edit" && /not run against the live API yet|this model not yet/.test(v.note || "")), "");
         check("the model ids, each from its host's page", V("ark").model === "dola-seedream-5-5-261028" && V("wavespeed").model === "bytedance/seedream-v5.5/edit" && V("comfycloud").model === "seedream 5.5"
