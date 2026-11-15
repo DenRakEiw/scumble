@@ -64,6 +64,7 @@ import { RelightPart } from "./inpaint_ed_relight.js";
 import { ChromePart } from "./inpaint_ed_chrome.js";
 import { ViewPart } from "./inpaint_ed_view.js";
 import { RefsPart } from "./inpaint_ed_refs.js";
+import { ShadowPart } from "./inpaint_ed_shadow.js";
 
 // ---------------------------------------------------------------------------
 // the editor
@@ -1592,7 +1593,7 @@ class InpaintEditor {
         try { this.thumbObserver.disconnect(); } catch (_) { /* ignore */ }
     }
 }
-installParts(InpaintEditor, [PanelsPart, LayersPart, HistoryPanelPart, TextPart, TipsPart, HealPart, LiquifyPart, ShapePart, SelectPart, StackPart, SegmentPart, MasksPart, GeometryPart, PointerPart, DepthPart, FiltersPart, HistoryPart, PersistPart, ExportPart, OpenPart, StrokesPart, DisplayPart, CompositePart, MatchPart, DrawPart, RelightPart, ChromePart, ViewPart, RefsPart]);
+installParts(InpaintEditor, [PanelsPart, LayersPart, HistoryPanelPart, TextPart, TipsPart, HealPart, LiquifyPart, ShapePart, SelectPart, StackPart, SegmentPart, MasksPart, GeometryPart, PointerPart, DepthPart, FiltersPart, HistoryPart, PersistPart, ExportPart, OpenPart, StrokesPart, DisplayPart, CompositePart, MatchPart, DrawPart, RelightPart, ChromePart, ViewPart, RefsPart, ShadowPart]);
 bindDisplay(InpaintEditor);
 bindComposite(InpaintEditor);
 bindExport(InpaintEditor);

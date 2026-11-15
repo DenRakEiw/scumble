@@ -803,6 +803,9 @@ function buildMenu() {
                 // the active layer laid onto the surface by arc length, into a Deep paint layer (SP7)
                 { label: "Wrap onto Surface", click: () => send("menu", "wrap-layer") },
                 { type: "separator" },
+                // a soft shadow layer under the active layer, from its shape (item 61, renderer/editor/inpaint_ed_shadow.js)
+                { label: "Add Contact Shadow...", click: () => send("menu", "contact-shadow") },
+                { type: "separator" },
                 { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
                 { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },
             ],
