@@ -339,6 +339,8 @@ async function generateEachArea(ed, a) {
 /** A File from a mirror / server ref {filename, subfolder, type} or from a local path. */
 async function fileFrom(a, fallbackName) {
     if (a.path) {
+        // a video is never read whole into the window: its frame is picked in File › Open's picker (renderer/videoframe.js)
+        if (/\.(mp4|m4v|webm|mov)$/i.test(String(a.path))) throw new Error(`${String(a.path).split(/[\\/]/).pop()} is a video: commands take pictures only. Open it with File › Open (or drop it on the window) to pick a frame, then export or use that picture.`);
         const r = await window.scumble.file.read(String(a.path));
         const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : /\.svg$/i.test(r.name) ? "image/svg+xml" : /\.tiff?$/i.test(r.name) ? "image/tiff" : "image/png";
         return new File([r.data], a.name || r.name, { type });

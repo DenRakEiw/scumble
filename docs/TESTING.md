@@ -843,6 +843,25 @@ text (`skins`, `quit`, `comfyrouter`, `ark`, `genpresets`, `comfyprompt`) find i
 (`tools/srcfind.js`: `inpaint_canvas.js` -> `inpaint_*.js`, `shell.js` -> `shell_*.js`, `host.js` -> `host_*.js`,
 `recipes.js` -> `recipes_*.js`), so a move does not break them; a name found in two files of a family throws.
 
+`tools/videoframe_test.py` (gate `videoframe`, item 68, a frame from a video; normal tier, tiles; about 5 s) runs
+`node tools/videofiles_test.js` first (main's token route `electron/main/videofiles.js`: ranges as Chromium's player
+sends them, HEAD, 416, unknown, path-like and released tokens, the grant cap, a file gone since its grant), then in the
+window: a drop of `tools/fixtures/video/clip.webm` (64 x 48, VP8, 2 s at 30 fps, red then blue, made by ffmpeg) opens
+the picker with *Open as new picture* focused and *Add as layer* off in an empty tab; one frame step from the last red
+frame lands on the first blue one and back; *Open as new picture* gives a 64 x 48 blue picture; File › Open's route
+with `clip.mp4` (H.264) through `scumble://app/video/<token>` (a range answers 206) adds a red layer, and the token
+answers 404 once the picker closed; a Shift drop focuses and adds a reference; the dialog's cancel takes nothing;
+`steps25.webm` (25 frames at 25 fps, each one grey further), never played, takes ten steps forward that each show the
+next frame (0.04 s on; a 1/30 s step would stay in the frame) and three back, and learns 25 fps from them (it needs
+frame callbacks, so a shown window: the runner's `Page.bringToFront`); `live.webm` (the red / blue clip written by
+ffmpeg to a pipe, so its file names no length and the player says Infinity) gets its end found, and the slider, End and
+a seconds jump reach it (mutations checked 2026-11-15: the old 1/30 s single seek fails the 25 fps step at its first
+press, no end search fails the length step);
+`prores.mov` (ProRes) and `broken.mov` (text) are refused in the status line in red with no picker; `load_image`,
+`add_image_layer` and `open_document` refuse a video path. The File › Open step drives main through
+`file:testOpenVideo`, an IPC handler main registers only unpackaged and only for a file of that fixture folder, so with
+`--exe` it is skipped and says so; the native file dialog itself is not driven.
+
 ## Faster runs without less coverage
 
 Added 2026-11-07 (the user: "Tests auslassen: nein. Schneller machen: ja, deutlich"). Nothing here leaves a check out

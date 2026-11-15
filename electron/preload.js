@@ -93,6 +93,12 @@ contextBridge.exposeInMainWorld("scumble", {
         saveAbort: (args) => ipcRenderer.invoke("file:saveAbort", args),
         read: (file) => ipcRenderer.invoke("file:read", file),
         onOpened: (cb) => on("file:opened", cb),
+        // File › Open on a video (electron/main/videofiles.js): { name, path, token, url }, no bytes; the frame picker
+        // plays `url` and releases the token when it closes
+        onOpenedVideo: (cb) => on("file:openedVideo", cb),
+        releaseVideo: (token) => ipcRenderer.invoke("file:releaseVideo", token),
+        // the videoframe gate, dev builds only (main registers it unpackaged): File › Open's route for a fixture
+        testOpenVideo: (name) => ipcRenderer.invoke("file:testOpenVideo", name),
     },
     // .scumble documents (electron/main/documents.js): main writes and reads the file, streamed into the mirror
     documents: {

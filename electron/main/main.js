@@ -68,6 +68,7 @@ const { QuitGuard, CrashGuard, isCrash } = require("./quit");
 const { Documents, isDocumentPath, pathKey, documentArgs } = require("./documents");
 const docfile = require("./docfile");
 const { FileSaves } = require("./filesaves");
+const { VideoFiles, isVideoPath } = require("./videofiles");
 const registration = require("./mcp/registration");
 const { ComfyView } = require("./comfyview");
 const { openHttp, appPage } = require("./links");
@@ -161,6 +162,8 @@ const documents = new Documents({
 });
 // an export comes from the window in pieces (filesaves.js: one IPC message of about 512 MiB ends the renderer), into a
 // temporary file of the same temp list
+// File › Open's videos (videofiles.js): one token per file chosen, served to the frame picker with ranges
+const videoFiles = new VideoFiles();
 const fileSaves = new FileSaves({ registry: documents.registry, choose: (name, filters) => chooseSavePath(name, filters) });
 const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
 let flushSeq = 0;
@@ -232,6 +235,8 @@ async function serveScheme(request) {
     if (url.pathname === "/skin.css") {
         return new Response(skins.sheetFor(currentSkin(), Date.now()), { status: 200, headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-store" } });
     }
+    // a video the user chose in File › Open (videofiles.js): its token, never a path
+    if (url.pathname.startsWith("/video/")) return videoFiles.serve(url.pathname.slice("/video/".length), { method: request.method, range: request.headers.get("range") });
     if (url.pathname.startsWith("/comfy/")) {
         const rel = url.pathname.slice("/comfy".length);
         try {
@@ -888,7 +893,7 @@ function copyMcpRegistration(kind) {
 
 // ---- dialogs -------------------------------------------------------------------------
 
-const IMAGE_FILTERS = [{ name: "Images and documents", extensions: ["scumble", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Scumble documents", extensions: ["scumble"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "TIFF", extensions: ["tif", "tiff"] }, { name: "All files", extensions: ["*"] }];
+const IMAGE_FILTERS = [{ name: "Images, documents and videos", extensions: ["scumble", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora", "mp4", "m4v", "webm", "mov"] }, { name: "Scumble documents", extensions: ["scumble"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "TIFF", extensions: ["tif", "tiff"] }, { name: "Videos (pick a frame)", extensions: ["mp4", "m4v", "webm", "mov"] }, { name: "All files", extensions: ["*"] }];
 const DOCUMENT_FILTERS = [{ name: "Scumble document", extensions: ["scumble"] }];
 
 /** Is this file a .scumble document (by its name, or by its first bytes when it was renamed)? */
@@ -910,10 +915,22 @@ async function openImage() {
     const file = r.filePaths[0];
     // a document is not read here: the window opens it through documents:open, streamed into the mirror
     if (await isDocumentFile(file)) { send("documents:openRequest", [file]); return { document: file }; }
+    // a video is not read here either: the window's frame picker plays it from scumble://app/video/<token>
+    if (isVideoPath(file)) {
+        const payload = videoPayload(file);
+        send("file:openedVideo", payload);
+        return { video: file, name: payload.name };
+    }
     const data = await fsp.readFile(file);
     const payload = { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
     send("file:opened", payload);
     return payload;
+}
+
+/** A token for a video the user chose (videofiles.js) and what the window's frame picker needs to play it. */
+function videoPayload(file) {
+    const token = videoFiles.grant(file);
+    return { name: path.basename(file), path: file, token, url: `${SCHEME}://app/video/${token}` };
 }
 
 /** Read a file for the renderer (commands with a `path` argument: load_image, add_image_layer). */
@@ -1253,6 +1270,20 @@ function installIpc() {
     ipcMain.handle("file:saveFinish", (e, args) => fileSaves.finish(e.sender.id, args));
     ipcMain.handle("file:saveAbort", (e, args) => fileSaves.abort(e.sender.id, args));
     ipcMain.handle("file:read", (_e, file) => readFile(String(file)));
+    // the frame picker closed: its video's token is no longer served
+    ipcMain.handle("file:releaseVideo", (_e, token) => videoFiles.release(token));
+    // the videoframe gate, dev builds only: the File › Open route for a fixture of tools/fixtures/video (no other path)
+    if (!app.isPackaged) {
+        ipcMain.handle("file:testOpenVideo", async (_e, name) => {
+            const dir = path.join(ROOT, "tools", "fixtures", "video");
+            const file = path.join(dir, path.basename(String(name || "")));
+            if (!isVideoPath(file)) throw new Error("not a video fixture: " + name);
+            await fsp.access(file);
+            const payload = videoPayload(file);
+            send("file:openedVideo", payload);
+            return payload;
+        });
+    }
     ipcMain.handle("recipes:list", () => listRecipes());
     ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
     ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));

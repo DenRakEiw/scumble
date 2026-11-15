@@ -66,6 +66,7 @@ export const DocCommandsPart = {
         params: { path: P.str("absolute path of a .scumble file", { required: true }), activate: P.bool("make it the active tab (default true)", { default: true }) },
         async run(_, a) {
             const path = String(a.path || "").trim();
+            if (/\.(mp4|m4v|webm|mov)$/i.test(path)) throw new Error("the path is a video: open_document takes .scumble files; a video's frame is picked in File › Open's picker in the window");
             if (!/\.scumble$/i.test(path)) throw new Error("the path must end in .scumble");
             const before = host.editor;
             const r = await host.openDocument(path);

@@ -82,7 +82,7 @@ _Open a picture, select something, describe what should be there instead, genera
 
 The loop is always the same, whatever the model behind it: select an area, write what should be in it, press Generate. What comes back is a layer sitting over the selection, not a new picture — which is the point of the whole app. If you do not like it, you delete the layer and the original is untouched underneath.
 
-Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG, WebP and TIFF, and since 0.1.25 also PSD and ORA files with their layers intact; a .scumble document you saved earlier opens the same way. Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
+Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG, WebP and TIFF, and since 0.1.25 also PSD and ORA files with their layers intact; a .scumble document you saved earlier opens the same way, and a video opens a player to pick one of its frames (the next chapter). Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
 
 The prompt goes into the Generate tab on the right. Describe what should be in the selected area, not what is there now: "a red leather handbag" and not "change the bag to red leather". Then Generate, or Ctrl+Enter. A run on a local ComfyUI takes as long as your card needs; an API run is usually ten to thirty seconds. While it runs you can keep working, even in another tab.
 
@@ -105,6 +105,29 @@ Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the wh
 - **Several separate areas** in one selection (three people selected by text, say) go to the model as one box around all of them, scaled down to the model's size, so each area comes back soft; the status line says so when that box goes out at less than half its size. **Each area**, beside Generate, is shown while the selection holds two or more separate areas and runs each one as its own crop and run instead: the same prompt and the same recipe, one after another, each result its own layer. Your selection stays as it is while they run, so you can go on working; only what would change the picture the areas were cut from (a turn, a crop or resize, a new picture, Generate new) and a second Generate on the same tab wait until they are done. It takes up to 8 areas; areas whose boxes would overlap count as one, and specks (anything smaller than a 20,000th of the picture, and on a small picture anything under 256 pixels) are left out unless they lie inside an area's box. On an API model every area is a run of its own and is charged as one, so Scumble asks first (the in-app models are free and do not ask). On your own ComfyUI the next area is queued only once the one before has landed. While the areas run, the button reads *Stop*: it stops the run going (an API run as Cancel does; one on your ComfyUI finishes there) and the areas not yet sent never go.
 - Every document is a tab: Ctrl+T new, Ctrl+W close, Ctrl+Shift+T reopen the last one closed, Ctrl+Tab next. A run keeps going while another tab is in front.
 - Ctrl+Z is a real undo stack, not a single step, and it covers the assistant's work too. The **Undo history** section of the Image tab lists every step by name, oldest first; a click on a row jumps there, and the rows below the highlighted one are what redo brings back. **Snapshot** keeps the whole document under a name (up to eight per tab, not saved with the file), and Restore puts it back as one undo step. How many steps are kept is set under Settings › Rendering (30 steps, 384 MB by default).
+
+## A frame from a video
+
+<!-- slug: video-frame -->
+_Open or drop a video, step to the frame you want, and take it as a picture, a layer or a reference._
+
+Ctrl+O opens .mp4, .m4v, .webm and .mov files too, and a video dropped anywhere on the window does the same: a small player opens with the video, a slider through it, *Play*, and a button for one frame back and one frame forward. Find the frame, then pick what it becomes: *Open as new picture* puts it in a tab of its own (the empty tab you are in, else a new one), *Add as layer* lays it over the picture of the document you are in, fitted to it, and *Add as reference* adds it as a reference layer for the models that take pictures beside the one they edit. The frame is taken at the video's own size, never scaled, and named after the video and its time (clip 12.480s).
+
+Scumble plays videos with the player built into its window, so nothing needs to be installed and nothing is converted. MP4 with H.264, WebM (VP8, VP9, AV1) and .mov files in those codecs open; a file the player cannot decode (ProRes, which many .mov files from cameras and editing programs are, and some HEVC files) is refused in the status line before the player opens: convert it to MP4 or WebM first.
+
+### Steps
+
+1. **Open.** Ctrl+O and pick the video, or drop it on the window.
+2. **Find the frame.** Drag the slider, or *Play* and pause. The arrow keys step one frame (Shift+arrow one second), Home and End jump to the start and the end, Space plays and pauses.
+3. **Take it.** *Open as new picture*, *Add as layer* or *Add as reference*. Enter takes the highlighted one, Escape closes the player without taking anything.
+
+### Notes
+
+- A frame step always lands on the next frame (or the one before), whatever the video's frame rate: until the rate is known the first step feels its way to the next frame and learns the rate from it, as does playing the video for a moment; the line under the slider shows the rate once it is known.
+- A recording whose file names no length (some screen and browser recordings) is opened as well: the player finds its end first, so the slider and End reach all of it.
+- Dropped into a document that has a picture, the video's player highlights *Add as layer*, with Shift held *Add as reference*; opened with Ctrl+O, or into an empty tab, *Open as new picture*. *Add as layer* is off while the document has no picture yet.
+- The video is read straight from your disk while you scrub, never copied into the document, so a long clip opens as quickly as a short one. Only the picked frame stays, as an ordinary picture.
+- Commands and agents take pictures only: `load_image` and `add_image_layer` refuse a video file and say so.
 
 ## Selecting: brush, shapes, wand, objects, words
 
