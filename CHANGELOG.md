@@ -4,7 +4,7 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
-## 0.1.56 - 2026-11-14
+## 0.1.56 - 2026-11-15
 
 - **Deep paint**: paint on the picture's surfaces. *Image › Surface Maps* splits the picture once into its light, its
   reflections and its surface shapes, on your own computer (two models in Settings › Helpers: Marigold IID Lighting
