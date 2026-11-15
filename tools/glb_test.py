@@ -353,6 +353,30 @@ try {
     if (JSON.stringify((await params(id)).params.joints) !== j0) throw new Error("the undo left the joints at " + JSON.stringify((await params(id)).params.joints) + ", not " + j0);
     await c("redo", { doc: docId });
     if ((await params(id)).params.joints.shoulder_l.out !== 90 || !bytes(depthId).every((v, i) => v === d1[i])) throw new Error("the redo did not bring the raised arm back");
+    // (3b) the step holds this plugin's data only: another plugin's data written after it without a step of its own
+    // (documents.data(doc).set without undo) stays through the undo and the redo; the step counts its copy's bytes
+    await c("glb.edit", { layer: id, joints: { knee_l: { bend: 30 } }, doc: docId });
+    const step = ed.undo[ed.undo.length - 1];
+    if (step.kind !== "layers" || step.dataKey !== "glb" || !step.dataValue || !(step.bytes > 0)) throw new Error("the edit's step: " + JSON.stringify({ kind: step.kind, key: step.dataKey, bytes: step.bytes }));
+    ed.pluginData.probe = { written: "after the glb step" };
+    await c("undo", { doc: docId });
+    if (((await params(id)).params.joints.knee_l || {}).bend || JSON.stringify(ed.pluginData.probe) !== '{"written":"after the glb step"}') throw new Error("the undo: knee " + JSON.stringify((await params(id)).params.joints.knee_l) + ", the other plugin's data " + JSON.stringify(ed.pluginData.probe));
+    await c("redo", { doc: docId });
+    if ((await params(id)).params.joints.knee_l.bend !== 30 || !ed.pluginData.probe) throw new Error("the redo lost the knee or the other plugin's data");
+    await c("undo", { doc: docId });
+    delete ed.pluginData.probe;
+    // (3c) a control layer switched off goes in the same one step: its undo brings the layer and the entry's id back
+    await c("glb.edit", { layer: id, pose_layer: false, doc: docId });
+    if (L(poseId) || (await params(id)).poseLayer) throw new Error("pose_layer false left the bones layer");
+    await c("undo", { doc: docId });
+    const backPose = await params(id);
+    if (!L(poseId) || backPose.poseLayer !== poseId || !backPose.params.poseLayer) throw new Error("the undo of pose_layer false: " + JSON.stringify(backPose));
+    // (3d) a locked control layer is not switched off: refused before any change
+    await c("set_layer", { layer: depthId, locked: true, doc: docId });
+    let lockMsg = "";
+    try { await c("glb.edit", { layer: id, depth_layer: false, doc: docId }); } catch (e) { lockMsg = e.message; }
+    if (!/locked/.test(lockMsg) || !L(depthId) || !(await params(id)).params.depthLayer || (await params(id)).params.joints.shoulder_l.out !== 90) throw new Error("a locked depth layer: " + lockMsg);
+    await c("set_layer", { layer: depthId, locked: false, doc: docId });
     // (4) the file: save, close, open; the pose is there and a re-render gives the same depth layer
     await c("save_document", { path: window.__glbDocPath, doc: docId });
     await c("close_document", { doc: docId, force: true });
@@ -369,7 +393,13 @@ try {
     let refused = 0;
     try { await c("glb.edit", { layer: id, joints: { knee_x: { bend: 3 } }, doc: docId }); } catch (e) { if (/knee_x/.test(e.message)) refused++; }
     try { await c("glb.edit", { layer: id, pose: "dancing", doc: docId }); } catch (e) { if (/unknown pose/.test(e.message)) refused++; }
-    if (refused !== 2) throw new Error("unknown joints or poses were not refused");
+    try { await c("glb.edit", { layer: id, pose: "constructor", doc: docId }); } catch (e) { if (/unknown pose/.test(e.message)) refused++; }
+    try { await c("glb.edit", { layer: id, joints: { elbow_l: { bend: "abc" } }, doc: docId }); } catch (e) { if (/elbow_l\\.bend \\(a number\\)/.test(e.message)) refused++; }
+    try { await c("glb.edit", { layer: id, joints: { elbow_l: 90 }, doc: docId }); } catch (e) { if (/elbow_l \\(an object/.test(e.message)) refused++; }
+    // pose arguments on a file object
+    try { await c("glb.edit", { layer: window.__gLayer, pose: "walking", doc: window.__gDoc }); } catch (e) { if (/for the mannequin/.test(e.message)) refused++; }
+    if (refused !== 6) throw new Error("unknown joints, bad values or poses were not refused: " + refused + " of 6");
+    if ((await params(id)).params.joints.shoulder_l.out !== 90) throw new Error("a refused edit changed the joints");
     out.file = "kept";
 } finally {
     try { await c("close_document", { doc: docId, force: true }); } catch (_) { /* gone */ }

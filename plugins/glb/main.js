@@ -15,7 +15,7 @@
 import { api } from "/editor/host.js";
 import { GlbRenderer, DEFAULTS, normalise, alphaBounds, crop, eventMatrix, frameOf, mulMatrix, framePlan, planCanvas, drawRender } from "./render.js";
 import { openDialog } from "./dialog.js";
-import { buildMannequin, POSES, POSE_NAMES, poseJoints, mergeJoints, unknownJoints, jointInfo } from "./mannequin.js";
+import { buildMannequin, POSES, POSE_NAMES, isPose, poseJoints, mergeJoints, unknownJoints, jointInfo } from "./mannequin.js";
 
 const LAYER_NAME = "3D object";
 const MANNEQUIN_NAME = "Mannequin";
@@ -168,16 +168,26 @@ export function activate(scumble) {
         if (existing && existing.locked) throw new Error(`${existing.name} is locked`);   // before the step: none stays empty
         const ed = doc.editor;
         const gone = CONTROLS.map((c, i) => (!r[c.key] && prevCtl[i] ? prevCtl[i].id : null)).filter(Boolean);
+        // a control layer the user locked is not taken away: refused before any change, as remove_layer refuses it
+        const lockedCtl = gone.map((id) => doc.rawLayer(id)).find((l) => l && ed.isLocked(l));
+        if (lockedCtl) throw new Error(`${lockedCtl.name} is locked: unlock it to switch that layer off`);
         const topStep = () => (ed.undo && ed.undo.length ? ed.undo[ed.undo.length - 1] : null);
         let stepTaken = false;
         if (gone.length) {
-            const data = ed.pluginDataCopy();
-            const before = topStep();
-            ed.removeLayers(gone);   // one step (a locked one stays, and is named)
+            const slice = ed.pluginDataSlice(scumble.id);
+            const before = topStep(), layerSel = new Set(ed.layerSel || []);
+            ed.removeLayers(gone);   // one step
+            ed.layerSel = new Set([...layerSel].filter((id) => !gone.includes(id)));   // the user's multi-selection stays
             const top = topStep();
-            if (top && top !== before && top.kind === "layers") { top.pluginData = data; stepTaken = true; }
+            if (top && top !== before && top.kind === "layers") {
+                // this plugin's data as it was rides on that step (only this plugin's: `data` of a layers step)
+                Object.assign(top, { dataKey: slice.dataKey, dataValue: slice.dataValue });
+                top.bytes = (top.bytes || 0) + slice.bytes;
+                ed.undoBytes = (ed.undoBytes || 0) + slice.bytes;
+                stepTaken = true;
+            }
         }
-        if (!stepTaken) ed.pushUndo({ kind: "layers", label: existing ? (isMannequin(ref) ? "Edit mannequin" : "Edit 3D object") : (isMannequin(ref) ? MANNEQUIN_NAME : "3D object"), data: true });
+        if (!stepTaken) ed.pushUndo({ kind: "layers", label: existing ? (isMannequin(ref) ? "Edit mannequin" : "Edit 3D object") : (isMannequin(ref) ? MANNEQUIN_NAME : "3D object"), data: scumble.id });
         const replacePixels = (id, data) => {
             const px = doc.rawLayer(id).px;
             // setPixels writes a picture of the same size into the layer's pixels; one of another size first makes new ones
@@ -325,14 +335,14 @@ export function activate(scumble) {
         }
         const out = { ...base };
         if (a.pose != null) {
-            if (!POSES[a.pose]) throw new Error(`unknown pose ${JSON.stringify(a.pose)}: one of ${POSE_NAMES.join(", ")}`);
+            if (!isPose(a.pose)) throw new Error(`unknown pose ${JSON.stringify(a.pose)}: one of ${POSE_NAMES.join(", ")}`);
             out.pose = a.pose;
             out.joints = poseJoints(a.pose);
         }
         if (a.joints != null) {
             if (typeof a.joints !== "object" || Array.isArray(a.joints)) throw new Error("joints is an object: { elbow_l: { bend: 90 } }");
             const bad = unknownJoints(a.joints);
-            if (bad.length) throw new Error(`unknown joint or axis: ${bad.join(", ")} (glb.info lists them)`);
+            if (bad.length) throw new Error(`joints refused: ${bad.join(", ")} (glb.info lists the joints, their axes and ranges)`);
             out.joints = mergeJoints(out.joints || poseJoints(out.pose || "standing"), a.joints);
         }
         if (a.pose_layer != null) out.poseLayer = !!a.pose_layer;

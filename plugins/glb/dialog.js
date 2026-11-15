@@ -3,7 +3,7 @@
 // A native <dialog>, so Escape closes it (the editor lets keys inside an open dialog through).
 
 import { frameOf, framePlan } from "./render.js";
-import { POSES, POSE_NAMES, JOINTS, poseJoints } from "./mannequin.js";
+import { POSES, POSE_NAMES, JOINTS, poseJoints, isPose } from "./mannequin.js";
 
 const SLIDERS = [
     ["x", "X", -0.5, 1.5, 0.005, (v) => Math.round(v * 100) + " %"],
@@ -62,7 +62,7 @@ function buildPoseControls(side, p, changed) {
         return s;
     };
     side.appendChild(Object.assign(document.createElement("div"), { className: "glb-hint", textContent: "Mannequin: a base pose, then turn any joint" }));
-    const pose = select(POSE_NAMES.map((n) => [n, POSES[n].label]), POSES[p.pose] ? p.pose : "standing", "glb-pose");
+    const pose = select(POSE_NAMES.map((n) => [n, POSES[n].label]), isPose(p.pose) ? p.pose : "standing", "glb-pose");
     row("Pose", pose);
     const joint = select(JOINTS.map((j) => [j.id, j.label]), "shoulder_l", "glb-joint");
     row("Joint", joint);

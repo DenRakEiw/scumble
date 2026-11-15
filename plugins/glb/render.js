@@ -10,7 +10,7 @@
 import * as THREE from "./vendor/three.module.js";
 import { GLTFLoader } from "./vendor/jsm/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "./vendor/jsm/environments/RoomEnvironment.js";
-import { POSES, cleanJoints, drawBones } from "./mannequin.js";
+import { isPose, cleanJoints, drawBones } from "./mannequin.js";
 
 export const DEFAULTS = {
     x: 0.5, y: 0.55, depth: 3, rotX: 0, rotY: 30, rotZ: 0, scale: 1, fov: 40,
@@ -32,7 +32,7 @@ export function normalise(p) {
     if (p.depthLayer != null) n.depthLayer = !!p.depthLayer;
     if (p.depth_layer != null) n.depthLayer = !!p.depth_layer;
     // the mannequin's (mannequin.js): the base pose's name, every joint's angles, and the OpenPose bones layer
-    if (typeof p.pose === "string" && POSES[p.pose]) n.pose = p.pose;
+    if (isPose(p.pose)) n.pose = p.pose;
     if (p.joints && typeof p.joints === "object") n.joints = cleanJoints(p.joints);
     if (p.poseLayer != null) n.poseLayer = !!p.poseLayer;
     if (p.pose_layer != null) n.poseLayer = !!p.pose_layer;

@@ -98,6 +98,8 @@ export const POSES = {
     t_pose: { label: "T-pose", joints: { ...both({ shoulder: { out: 90 } }) } },
 };
 export const POSE_NAMES = Object.keys(POSES);
+/** A base pose's name (an own key of POSES: "constructor" or "__proto__" is none). */
+export const isPose = (name) => typeof name === "string" && Object.hasOwn(POSES, name);
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 
@@ -118,21 +120,28 @@ export function cleanJoints(j) {
     return out;
 }
 
-/** The names params.joints may not use (a joint or an axis that does not exist), for a command to refuse. */
+/**
+ * What params.joints may not hold, for a command to refuse by name: a joint or an axis that does not exist, a joint
+ * that is not an object of axes, a value that is neither a number nor null (null puts the axis back to 0).
+ */
 export function unknownJoints(j) {
     const bad = [];
     if (!j || typeof j !== "object") return bad;
     for (const [id, axes] of Object.entries(j)) {
         const def = BY_ID.get(id);
         if (!def) { bad.push(id); continue; }
-        if (axes && typeof axes === "object") for (const k of Object.keys(axes)) if (!def.axes.some((a) => a.key === k)) bad.push(`${id}.${k}`);
+        if (!axes || typeof axes !== "object" || Array.isArray(axes)) { bad.push(`${id} (an object of axes, e.g. { ${def.axes[0].key}: 10 })`); continue; }
+        for (const [k, v] of Object.entries(axes)) {
+            if (!def.axes.some((a) => a.key === k)) bad.push(`${id}.${k}`);
+            else if (v !== null && !finite(v)) bad.push(`${id}.${k} (a number)`);
+        }
     }
     return bad;
 }
 
 /** A pose's joints, a fresh copy. */
 export function poseJoints(name) {
-    const p = POSES[name] || POSES.standing;
+    const p = isPose(name) ? POSES[name] : POSES.standing;
     return cleanJoints(JSON.parse(JSON.stringify(p.joints)));
 }
 
@@ -141,7 +150,7 @@ export function mergeJoints(base, over) {
     const out = JSON.parse(JSON.stringify(base || {}));
     if (over && typeof over === "object") {
         for (const [id, axes] of Object.entries(over)) {
-            if (!axes || typeof axes !== "object") continue;
+            if (!BY_ID.has(id) || !axes || typeof axes !== "object") continue;
             out[id] = { ...(out[id] || {}) };
             for (const [k, v] of Object.entries(axes)) { if (v == null) delete out[id][k]; else out[id][k] = v; }
         }
