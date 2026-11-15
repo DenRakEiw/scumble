@@ -504,6 +504,23 @@ async def main():
                 raise RuntimeError("contact_shadow: " + json.dumps(cs)[:300] + " " + json.dumps(ids))
             report["contact_shadow"] = f"{cs.get('name')} under {txt['id']}, {cs.get('ms')} ms"
 
+            # item 67: the posable mannequin through glb_place / glb_edit, its pose in glb_info
+            gp = next((t for t in tools if t.name == "glb_place"), None)
+            if gp is None or "mannequin" not in gp.inputSchema["properties"] or "walking" not in ((gp.inputSchema["properties"].get("pose") or {}).get("enum") or []):
+                raise RuntimeError("glb_place schema: " + json.dumps(gp.inputSchema if gp else None)[:300])
+            mq = data_of(await call(session, "glb_place", {"mannequin": True, "pose": "walking", "pose_layer": True, "doc": doc}))
+            if mq["layer"]["name"] != "Mannequin" or not mq.get("poseLayer") or mq["params"].get("pose") != "walking":
+                raise RuntimeError("glb_place mannequin: " + json.dumps(mq)[:300])
+            me = data_of(await call(session, "glb_edit", {"layer": mq["layer"]["id"], "joints": {"elbow_l": {"bend": 120}}, "doc": doc}))
+            gi = data_of(await call(session, "glb_info", {"doc": doc}))
+            fig = next((o for o in gi["objects"] if o["layer"] == mq["layer"]["id"]), None)
+            if me["layer"]["id"] != mq["layer"]["id"] or not fig or not fig.get("mannequin") or fig["params"]["joints"].get("elbow_l", {}).get("bend") != 120 or fig["params"]["joints"].get("hip_l", {}).get("forward") != 24:
+                raise RuntimeError("glb_edit joints: " + json.dumps(fig)[:300])
+            bad = await call(session, "glb_edit", {"layer": mq["layer"]["id"], "joints": {"elbow_x": {"bend": 1}}, "doc": doc}, expect_error=True)
+            if "elbow_x" not in text_of(bad):
+                raise RuntimeError("unknown joint: " + text_of(bad)[:200])
+            report["mannequin"] = f"walking, elbow_l bend 120, {len(gi['mannequin']['joints'])} joints"
+
             await call(session, "close_document", {"doc": doc})
             docs = data_of(await call(session, "list_documents"))
             if any(d["id"] == doc for d in docs["documents"]):

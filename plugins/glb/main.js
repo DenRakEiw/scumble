@@ -15,13 +15,19 @@
 import { api } from "/editor/host.js";
 import { GlbRenderer, DEFAULTS, normalise, alphaBounds, crop, eventMatrix, frameOf, mulMatrix, framePlan, planCanvas, drawRender } from "./render.js";
 import { openDialog } from "./dialog.js";
+import { buildMannequin, POSES, POSE_NAMES, poseJoints, mergeJoints, unknownJoints, jointInfo } from "./mannequin.js";
 
 const LAYER_NAME = "3D object";
+const MANNEQUIN_NAME = "Mannequin";
+// the mannequin's entry names no file: { mannequin: 1 } is its ref (one figure for the plugin, posed for each render)
+const MANNEQUIN_REF = { mannequin: 1 };
+const isMannequin = (ref) => !!(ref && ref.mannequin);
 const HELP = "Place a .glb or .gltf model in the picture: the dialog shows the picture behind the object, drag turns it, the wheel scales it, the sliders set position, distance, focal length and light. The render becomes an ordinary layer (T moves it, Delete removes it) and stays editable here. Matching the picture's light is the generation model's job: select the object, Generate with a denoise below 1.";
 const SUBFOLDER = "inpaint_canvas";
 
 let renderer = null;             // one WebGL context for the plugin, made on first use
 const models = new Map();        // file key -> parsed model
+let mannequin = null;            // the posable figure (mannequin.js), built on first use
 
 export function activate(scumble) {
     const { ui } = scumble;
@@ -58,7 +64,8 @@ export function activate(scumble) {
         all[layerId] = entry;
         scumble.documents.data(doc).set({ objects: all });
         // a frame (or 0.1.31's orientation) belongs to one object in one document: a new object starts in its picture
-        if (last) { const { orient: _orient, frame: _frame, ...rest } = entry.params || {}; scumble.storage.set({ last: rest }); }
+        // (and a pose belongs to the mannequin it was given: the next object starts from the base pose)
+        if (last) { const { orient: _orient, frame: _frame, pose: _pose, joints: _joints, poseLayer: _poseLayer, ...rest } = entry.params || {}; scumble.storage.set({ last: rest }); }
         const legacy = legacyObjects();
         if (legacy[layerId]) { delete legacy[layerId]; scumble.storage.set({ objects: legacy }); }
     }
@@ -85,6 +92,7 @@ export function activate(scumble) {
         return { filename: j.name, subfolder: j.subfolder || SUBFOLDER, type: j.type || "input" };
     }
     async function fetchModel(ref) {
+        if (isMannequin(ref)) return mannequin || (mannequin = buildMannequin());
         const key = `${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}`;
         if (models.has(key)) return models.get(key);
         const r = await fetch(api.apiURL("/view?" + new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" })));
@@ -109,16 +117,19 @@ export function activate(scumble) {
         const b = alphaBounds(colour);
         if (!b) throw new Error("the object is outside the picture (or too small to see): change position, distance or scale");
         const out = { canvas: crop(colour, b), x: plan.origin[0] + b.x / k, y: plan.origin[1] + b.y / k, w: b.w / k, h: b.h / k, render: fit };
-        if (p.depthLayer) {
-            const dep = R().depth(model, p, fit.w, fit.h, plan.aspect);
-            // the picture at the render's density (at most the renderer's size for the whole picture)
+        // a control frame: the picture over black with a pass drawn in, at the render's density (at most the renderer's
+        // size for the whole picture)
+        const controlFrame = (pass) => {
             const kd = Math.min(k, R().fit(doc.width, doc.height).k);
             const frame = scumble.makeCanvas(Math.max(1, Math.round(doc.width * kd)), Math.max(1, Math.round(doc.height * kd)));
             const ctx = frame.getContext("2d");
             ctx.fillStyle = "#000"; ctx.fillRect(0, 0, frame.width, frame.height);
-            drawRender(ctx, dep, plan, kd);
-            out.depth = frame;
-        }
+            drawRender(ctx, pass, plan, kd);
+            return frame;
+        };
+        if (p.depthLayer) out.depth = controlFrame(R().depth(model, p, fit.w, fit.h, plan.aspect));
+        // the mannequin's OpenPose bones, projected with the same camera
+        if (p.poseLayer && typeof model.keypoints === "function") out.pose = controlFrame(R().bones(model, p, fit.w, fit.h, plan.aspect));
         return out;
     }
     const imageDataOf = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height);
@@ -130,6 +141,11 @@ export function activate(scumble) {
     async function place(doc, { ref, name, params, layerId = null }) {
         if (!doc.loaded) throw new Error("Load an image first.");
         const p = normalise(params || {});
+        if (isMannequin(ref)) {
+            // the mannequin keeps its whole pose with it: the base pose's angles when none are given
+            if (!p.pose) p.pose = "standing";
+            if (!p.joints) p.joints = poseJoints(p.pose);
+        } else { delete p.pose; delete p.joints; delete p.poseLayer; }
         const model = await fetchModel(ref);
         const existing = layerId && doc.layers().find((l) => l.id === layerId);
         // the frame it is rendered in, kept with it from now on: its own for an object that exists (0.1.31's `orient`
@@ -138,16 +154,30 @@ export function activate(scumble) {
         p.frame = frameOf(p, doc.width, doc.height);
         delete p.orient;
         const r = renderFor(doc, model, p);
-        const layerName = name || (ref.filename || LAYER_NAME).replace(/\.(glb|gltf)$/i, "").replace(/(?:~[0-9a-f]{8,64}| \(\d+\))$/i, "") || LAYER_NAME;   // the store's hash or "(1)" suffix is not a name
+        const layerName = name || (isMannequin(ref) ? MANNEQUIN_NAME : (ref.filename || LAYER_NAME).replace(/\.(glb|gltf)$/i, "").replace(/(?:~[0-9a-f]{8,64}| \(\d+\))$/i, "")) || LAYER_NAME;   // the store's hash or "(1)" suffix is not a name
         const prev = existing ? entryOf(doc, layerId) : null;
-        const prevDepth = prev && prev.depthId && doc.layers().find((l) => l.id === prev.depthId);
+        // the control layers that follow the object: the depth layer, and the mannequin's bones (OpenPose) layer
+        const CONTROLS = [{ key: "depth", id: "depthId", suffix: "depth" }, { key: "pose", id: "poseId", suffix: "pose" }];
+        const prevCtl = CONTROLS.map((c) => (prev && prev[c.id] && doc.layers().find((l) => l.id === prev[c.id])) || null);
         // One undo step for the whole placement or edit (review of 2026-11-12): a "layers" step, taken before the first
-        // change, holds the layer list with each layer's placement and pixel objects. Nothing below pushes a step of its
-        // own, and no write goes into pixels the step holds: `replacePixels` gives a layer new ones. A depth layer that
-        // goes takes remove_layer's own "layers" step, taken first, as that one step.
+        // change, holds the layer list with each layer's placement and pixel objects, and (`data`) the plugin's own data
+        // with the object's parameters, so an undo brings the old pose, position and light back with the pixels. Nothing
+        // below pushes a step of its own, and no write goes into pixels the step holds: `replacePixels` gives a layer new
+        // ones. Control layers that go take removeLayers' own "layers" step, taken first, as that one step (the data as it
+        // was put on it).
         if (existing && existing.locked) throw new Error(`${existing.name} is locked`);   // before the step: none stays empty
-        if (!r.depth && prevDepth) await doc.run("remove_layer", { layer: prevDepth.id });
-        else doc.editor.pushUndo({ kind: "layers", label: existing ? "Edit 3D object" : "3D object" });
+        const ed = doc.editor;
+        const gone = CONTROLS.map((c, i) => (!r[c.key] && prevCtl[i] ? prevCtl[i].id : null)).filter(Boolean);
+        const topStep = () => (ed.undo && ed.undo.length ? ed.undo[ed.undo.length - 1] : null);
+        let stepTaken = false;
+        if (gone.length) {
+            const data = ed.pluginDataCopy();
+            const before = topStep();
+            ed.removeLayers(gone);   // one step (a locked one stays, and is named)
+            const top = topStep();
+            if (top && top !== before && top.kind === "layers") { top.pluginData = data; stepTaken = true; }
+        }
+        if (!stepTaken) ed.pushUndo({ kind: "layers", label: existing ? (isMannequin(ref) ? "Edit mannequin" : "Edit 3D object") : (isMannequin(ref) ? MANNEQUIN_NAME : "3D object"), data: true });
         const replacePixels = (id, data) => {
             const px = doc.rawLayer(id).px;
             // setPixels writes a picture of the same size into the layer's pixels; one of another size first makes new ones
@@ -166,23 +196,30 @@ export function activate(scumble) {
         } else {
             layer = doc.addLayer(r.canvas, { name: layerName, x: r.x, y: r.y, w: r.w, h: r.h });
         }
-        let depthLayer = null;
-        if (r.depth) {
-            if (prevDepth) {
-                replacePixels(prevDepth.id, imageDataOf(r.depth));
-                placeAt(prevDepth.id, 0, 0, doc.width, doc.height);
-                depthLayer = doc.layer(prevDepth.id);
+        const ctl = {};
+        CONTROLS.forEach((c, i) => {
+            const frame = r[c.key];
+            if (!frame) return;
+            const was = prevCtl[i] && doc.layers().find((l) => l.id === prevCtl[i].id);
+            if (was) {
+                replacePixels(was.id, imageDataOf(frame));
+                placeAt(was.id, 0, 0, doc.width, doc.height);
+                ctl[c.key] = doc.layer(was.id);
             } else {
-                depthLayer = doc.addLayer(r.depth, { name: `${layerName} depth`, x: 0, y: 0, w: doc.width, h: doc.height, activate: false });
+                const made = doc.addLayer(frame, { name: `${layerName} ${c.suffix}`, x: 0, y: 0, w: doc.width, h: doc.height, activate: false });
                 // a control layer, hidden: on the raw layer (set_layer's role pushes a "layers" step of its own)
-                Object.assign(doc.rawLayer(depthLayer.id), { role: "control", visible: false });
-                doc.refresh(depthLayer.id);
-                depthLayer = doc.layer(depthLayer.id);
+                Object.assign(doc.rawLayer(made.id), { role: "control", visible: false });
+                doc.refresh(made.id);
+                ctl[c.key] = doc.layer(made.id);
             }
-        }
-        remember(doc, layer.id, { ref, name: layerName, params: p, depthId: depthLayer ? depthLayer.id : null });
-        doc.status(`${layerName}: ${Math.round(r.w)} × ${Math.round(r.h)} at ${Math.round(r.x)}, ${Math.round(r.y)}${r.depth ? ", depth layer updated" : ""}. Edit it again under 3D object; T moves and scales it.`);
-        return { layer: doc.layer(layer.id), depthLayer: depthLayer ? doc.layer(depthLayer.id) : null, params: p, ref, render: r.render };
+        });
+        const depthLayer = ctl.depth || null, poseLayer = ctl.pose || null;
+        const entry = { ref, name: layerName, params: p, depthId: depthLayer ? depthLayer.id : null };
+        if (poseLayer) entry.poseId = poseLayer.id;
+        remember(doc, layer.id, entry);
+        const upd = [r.depth ? "depth layer" : "", r.pose ? "pose layer" : ""].filter(Boolean).join(" and ");
+        doc.status(`${layerName}: ${Math.round(r.w)} × ${Math.round(r.h)} at ${Math.round(r.x)}, ${Math.round(r.y)}${upd ? `, ${upd} updated` : ""}. Edit it again under 3D object; T moves and scales it.`);
+        return { layer: doc.layer(layer.id), depthLayer: depthLayer ? doc.layer(depthLayer.id) : null, ...(poseLayer ? { poseLayer: doc.layer(poseLayer.id) } : {}), params: p, ref, render: r.render };
     }
 
     /** The 3D layers of a document: those the storage knows, in layer order. */
@@ -205,13 +242,17 @@ export function activate(scumble) {
     }
 
     /** The dialog for a new object (file picked here) or an existing layer, then place. */
-    async function placeInteractive(doc, layerId = null) {
+    async function placeInteractive(doc, layerId = null, { figure = false } = {}) {
         if (!doc.loaded) { doc.status("Load an image first."); return null; }
         let ref, params, name;
         if (layerId) {
             const e = entryOf(doc, layerId);
             if (!e) { doc.status("This layer was not made by the 3D object plugin (or its settings are gone)."); return null; }
             ref = e.ref; params = e.params; name = e.name;
+        } else if (figure) {
+            ref = { ...MANNEQUIN_REF };
+            params = { ...DEFAULTS, ...(store().last || {}), orient: undefined, frame: undefined, pose: "standing", joints: poseJoints("standing") };
+            name = MANNEQUIN_NAME;
         } else {
             const file = await pickFile();
             if (!file) return null;
@@ -236,6 +277,7 @@ export function activate(scumble) {
             box.appendChild(ui.el("div", "shell-help", HELP));
             const row = ui.el("div", "scumble-plugin-row");
             row.appendChild(ui.button("Place 3D object...", "Pick a .glb / .gltf file and place it in the picture", () => placeInteractive(doc).catch((err) => doc.status(String(err.message || err), "error"))));
+            row.appendChild(ui.button("Place mannequin...", "A posable human figure (1.75 m): pick a base pose, turn its joints, place it like a 3D object; its depth and its OpenPose bones can go to control layers", () => placeInteractive(doc, null, { figure: true }).catch((err) => doc.status(String(err.message || err), "error"))));
             box.appendChild(row);
             const list = ui.el("div", "glb-list");
             box.appendChild(list);
@@ -256,6 +298,7 @@ export function activate(scumble) {
 
     // ---- Plugins menu ----------------------------------------------------------------------------------
     scumble.actions.register({ id: "place", label: "Place 3D object (.glb)...", run: (doc) => placeInteractive(doc) });
+    scumble.actions.register({ id: "mannequin", label: "Place mannequin...", run: (doc) => placeInteractive(doc, null, { figure: true }) });
     scumble.actions.register({ id: "edit", label: "Edit 3D object", run: (doc) => { const a = doc.activeLayer(); return placeInteractive(doc, a ? a.id : null); } });
     scumble.events.on("removed", () => { /* documents go, the storage keeps the entries for the restored session */ });
 
@@ -270,15 +313,44 @@ export function activate(scumble) {
         shadow: { type: "boolean", description: "a soft contact shadow on an invisible ground under the object (default true)" },
         depth_layer: { type: "boolean", description: "also write a depth layer (near = white, role control) for a depth ControlNet (default false)" },
         name: { type: "string", description: "layer name (default the file name)" },
+        pose: { type: "string", enum: POSE_NAMES, description: `the mannequin only: a base pose; on glb.edit it replaces every joint's angles before \`joints\`` },
+        joints: { type: "object", description: "the mannequin only: joint angles in degrees, { elbow_l: { bend: 90 }, shoulder_r: { forward: 40, out: 10 } }; merged onto the pose (an axis given as null goes back to 0). glb.info lists the joints, their axes and ranges (_l / _r are the figure's left / right; the pelvis's `lower` is in metres)" },
+        pose_layer: { type: "boolean", description: "the mannequin only: also write an OpenPose bones layer (18 body keypoints in the standard colours on black, role control, hidden) for a pose ControlNet (default false)" },
+    };
+    /** The mannequin's pose arguments on top of its parameters `base`: refused for another object, unknown names named. */
+    const poseArgs = (base, a, figure) => {
+        if (!figure) {
+            if (a.pose != null || a.joints != null || a.pose_layer != null) throw new Error("pose, joints and pose_layer are for the mannequin (glb.place with mannequin: true)");
+            return base;
+        }
+        const out = { ...base };
+        if (a.pose != null) {
+            if (!POSES[a.pose]) throw new Error(`unknown pose ${JSON.stringify(a.pose)}: one of ${POSE_NAMES.join(", ")}`);
+            out.pose = a.pose;
+            out.joints = poseJoints(a.pose);
+        }
+        if (a.joints != null) {
+            if (typeof a.joints !== "object" || Array.isArray(a.joints)) throw new Error("joints is an object: { elbow_l: { bend: 90 } }");
+            const bad = unknownJoints(a.joints);
+            if (bad.length) throw new Error(`unknown joint or axis: ${bad.join(", ")} (glb.info lists them)`);
+            out.joints = mergeJoints(out.joints || poseJoints(out.pose || "standing"), a.joints);
+        }
+        if (a.pose_layer != null) out.poseLayer = !!a.pose_layer;
+        return out;
     };
     scumble.commands.register("place", {
-        description: "Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit.",
-        params: { path: { type: "string", description: "absolute path of a .glb / .gltf file" }, filename: { type: "string", description: "instead of path: a file already in the local store (from an earlier glb.place)" }, ...PARAMS },
+        description: "Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit. With mannequin: true it places the built-in posable human figure (1.75 m tall) instead of a file, posed by pose and joints.",
+        params: { path: { type: "string", description: "absolute path of a .glb / .gltf file" }, filename: { type: "string", description: "instead of path: a file already in the local store (from an earlier glb.place)" }, mannequin: { type: "boolean", description: "instead of a file: the built-in posable mannequin (default false)" }, ...PARAMS },
         needsImage: true,
         scope: "doc",
         async run(doc, a) {
             let ref;
             let name = a.name;
+            if (a.mannequin) {
+                if (a.path || a.filename) throw new Error("pass mannequin: true or a file (path / filename), not both");
+                return place(doc, { ref: { ...MANNEQUIN_REF }, name: name || MANNEQUIN_NAME, params: poseArgs({ ...a, pose: undefined, joints: undefined, pose_layer: undefined }, a, true) });
+            }
+            poseArgs(a, a, false);
             if (a.path) { const r = await window.scumble.file.read(String(a.path)); ref = await storeFile(r.data, r.name); name = name || String(r.name).replace(/\.(glb|gltf)$/i, ""); }
             else if (a.filename) ref = { filename: String(a.filename), subfolder: SUBFOLDER, type: "input" };
             else throw new Error("pass path (a .glb / .gltf file) or filename (a file in the local store)");
@@ -299,16 +371,21 @@ export function activate(scumble) {
             if (a.position) { if (a.position.x != null) merged.x = a.position.x; if (a.position.y != null) merged.y = a.position.y; }
             if (a.rotation) { if (a.rotation.x != null) merged.rotX = a.rotation.x; if (a.rotation.y != null) merged.rotY = a.rotation.y; if (a.rotation.z != null) merged.rotZ = a.rotation.z; }
             if (a.light) { if (a.light.azimuth != null) merged.lightAz = a.light.azimuth; if (a.light.elevation != null) merged.lightEl = a.light.elevation; if (a.light.intensity != null) merged.lightInt = a.light.intensity; if (a.light.ambient != null) merged.ambient = a.light.ambient; }
-            return place(doc, { ref: e.ref, name: a.name || e.name, params: merged, layerId: l.id });
+            return place(doc, { ref: e.ref, name: a.name || e.name, params: poseArgs(merged, a, isMannequin(e.ref)), layerId: l.id });
         },
     });
     scumble.commands.register("info", {
-        description: "The 3D object layers of this document with their parameters, and the parameter defaults.",
+        description: "The 3D object layers of this document with their parameters, the parameter defaults, and the mannequin's base poses and joints (each joint's axes with their ranges).",
         params: {},
         scope: "doc",
         readOnly: true,
         run(doc) {
-            return { defaults: DEFAULTS, objects: doc.loaded ? objectsOf(doc).map(({ layer, entry }) => ({ layer: layer.id, name: layer.name, file: entry.ref.filename, params: entry.params, depthLayer: entry.depthId || null })) : [], renderer: renderer ? { maxSide: renderer.maxSide } : null };
+            return {
+                defaults: DEFAULTS,
+                objects: doc.loaded ? objectsOf(doc).map(({ layer, entry }) => ({ layer: layer.id, name: layer.name, ...(isMannequin(entry.ref) ? { mannequin: true } : { file: entry.ref.filename }), params: entry.params, depthLayer: entry.depthId || null, ...(isMannequin(entry.ref) ? { poseLayer: entry.poseId || null } : {}) })) : [],
+                mannequin: { poses: POSE_NAMES.map((id) => ({ id, label: POSES[id].label })), joints: jointInfo() },
+                renderer: renderer ? { maxSide: renderer.maxSide } : null,
+            };
         },
     });
 
@@ -317,5 +394,6 @@ export function activate(scumble) {
 
 export function deactivate() {
     models.clear();
+    mannequin = null;
     if (renderer) { renderer.dispose(); renderer = null; }
 }

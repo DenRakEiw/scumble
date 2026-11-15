@@ -10,6 +10,7 @@
 import * as THREE from "./vendor/three.module.js";
 import { GLTFLoader } from "./vendor/jsm/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "./vendor/jsm/environments/RoomEnvironment.js";
+import { POSES, cleanJoints, drawBones } from "./mannequin.js";
 
 export const DEFAULTS = {
     x: 0.5, y: 0.55, depth: 3, rotX: 0, rotY: 30, rotZ: 0, scale: 1, fov: 40,
@@ -30,6 +31,11 @@ export function normalise(p) {
     if (p.shadow != null) n.shadow = !!p.shadow;
     if (p.depthLayer != null) n.depthLayer = !!p.depthLayer;
     if (p.depth_layer != null) n.depthLayer = !!p.depth_layer;
+    // the mannequin's (mannequin.js): the base pose's name, every joint's angles, and the OpenPose bones layer
+    if (typeof p.pose === "string" && POSES[p.pose]) n.pose = p.pose;
+    if (p.joints && typeof p.joints === "object") n.joints = cleanJoints(p.joints);
+    if (p.poseLayer != null) n.poseLayer = !!p.poseLayer;
+    if (p.pose_layer != null) n.poseLayer = !!p.pose_layer;
     // the frame the object is rendered in and where it lies in the picture now (PLAN_0_1_31 §7, `frameOf`). An object
     // of 0.1.31 has an `orient` instead (the whole picture turned or mirrored since it was placed: `turn` quarter turns
     // clockwise after an optional horizontal mirror), turned into a frame at the next placement or geometry event
@@ -238,6 +244,7 @@ export class GlbRenderer {
 
     /** The scene for one render: camera at the origin, the object placed by the parameters, light, optional ground shadow. */
     scene(model, p, aspect) {
+        if (typeof model.applyPose === "function") model.applyPose(p);   // the mannequin: its joints from the parameters
         const scene = new THREE.Scene();
         scene.environment = this.environment();
         scene.environmentIntensity = p.ambient;
@@ -330,6 +337,27 @@ export class GlbRenderer {
         out.width = w; out.height = h;
         out.getContext("2d").drawImage(this.canvas, 0, 0);
         scene.overrideMaterial.dispose();
+        group.remove(model.inner);
+        this.release(parts);
+        return out;
+    }
+
+    /**
+     * The OpenPose bones of a model that has keypoints (the mannequin): its 18 body points projected through the same
+     * camera as the colour pass, drawn into a fresh transparent canvas of w x h (the caller lays it on black).
+     */
+    bones(model, p, w, h, aspect = w / h) {
+        const parts = this.scene(model, { ...p, shadow: false }, aspect);
+        const { camera, group } = parts;
+        camera.updateMatrixWorld(true);
+        group.updateMatrixWorld(true);
+        const pts = model.keypoints().map((v) => {
+            const q = v.clone().project(camera);
+            return q.z > 1 || q.z < -1 ? null : [(q.x + 1) / 2 * w, (1 - q.y) / 2 * h];
+        });
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        drawBones(out.getContext("2d"), pts, w, h);
         group.remove(model.inner);
         this.release(parts);
         return out;

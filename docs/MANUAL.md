@@ -408,6 +408,14 @@ Brushes can be loaded from Photoshop .abr files, which means the brush set you a
 
 And there are 3D objects: drop a .glb file in, and it is placed into the picture as a layer you can rotate, scale and light. It is a niche feature with a clear use — a product, a prop or a reference shape put into a scene in the right perspective before you let a model paint over it.
 
+### The mannequin
+
+*Place mannequin...* in the 3D object section (and in the Plugins menu) places a posable human figure, about 1.75 m tall, built into Scumble: no file to find. It is placed, turned, scaled and lit like any 3D object, and the dialog adds a Pose list (standing, walking, running, sitting, arms crossed, hands on hips, T-pose) and a Joint list: pick a joint (pelvis, spine, chest, neck, head, and each side's shoulder, elbow, wrist, hip, knee and ankle) and its sliders bend, twist and turn it within a body's range. A base pose sets every joint; turn single joints after it.
+
+Besides the depth layer, the mannequin can write a *Bones layer (OpenPose)*: the figure's 18 body points and limbs in the standard pose colours on black, seen through the same camera, as a hidden control layer for a pose ControlNet. Both control layers follow every edit. The pose is kept with the layer, in the document and its .scumble file, so *Edit 3D object* opens it as you left it, and one Ctrl+Z takes an edit back, pose included.
+
+The `glb_place` command places it with `mannequin: true` and a `pose`; `glb_edit` takes `pose` (a base pose again) and `joints`, such as `{ "elbow_l": { "bend": 90 } }` (`_l` / `_r` are the figure's left and right); `glb_info` lists the joints with their ranges.
+
 ### Notes
 
 - Everything here is a normal layer: blend mode, opacity, mask, and a place in the stack.

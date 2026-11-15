@@ -379,7 +379,10 @@ export class HistoryPart {
             }
             return { kind: "maps", map: step.map, prev, bytes: snapBytes };
         }
-        if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
+        // `data`: the step holds the plugins' per-document data too (a plugin whose layers and data change together, the
+        // 3D object plugin's placement and its parameters); its other side (`pluginData` on the step) keeps it as well
+        if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId,
+            ...(step.data || step.pluginData !== undefined ? { pluginData: this.pluginDataCopy() } : {}) };
         if (step.kind === "transforms") {
             // the places of several layers moved or scaled together (a multi-selection): one step, no pixels
             const ids = step.ids || step.items.map((i) => i.id);
@@ -592,6 +595,7 @@ export class HistoryPart {
             // (a clean-up, a file removed by hand) is uploaded from its pixels
             this.recheckRestoredFiles({ layers: this.layers, outgoing });
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
+            if (snap.pluginData !== undefined) this.pluginData = snap.pluginData ? JSON.parse(JSON.stringify(snap.pluginData)) : {};
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
