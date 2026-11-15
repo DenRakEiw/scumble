@@ -383,6 +383,8 @@ The effects pack adds creative optical, dispersion and distortion filters:
 - **Chromatic shift**: simulates dispersion and colour fringe aberration across three styles: *Plates* (three colour plates out of register 120 degrees apart), *Lateral* (transverse aberration radiating outward from the picture's centre), and *Linear* (directional dispersion along an adjustable angle). An accelerated WebGL2 path and an exact CPU twin ensure consistent rendering across exports and platforms.
 - **Glass**: simulates architectural glass fluting, ripples and tiles across six styles: *Ribbed* (sine ridges), *Reeded* (fluted linear lens per rib), *Wavy* (2D orthogonal waves), *Blocks* (hash-based tile facets), *Frosted* (fine-grained fractal value noise), and *Pebbled* (organic Voronoi-like lens cells with jittered centres). Adjustable size, displacement amount, orientation angle, specular sheen, seed, and *Frost* blur (0..20 px pre-displacement light scattering) create textured, tactile optical distortions.
 
+**Scope and clipping warning.** To grade with these filters, open the **Scope** section in the Image tab: it shows the histogram of the visible picture, red, green and blue filled and the brightness as a line, shadows on the left and highlights on the right, and under it how much of the picture is pure black and pure white. It follows every change a moment later (it counts a copy of the picture of at most about a megapixel, so it stays quick on a 15,000 pixel document) and does nothing while the section is closed or out of sight (the Generate tab, another tab in front, a hidden window). **Alt+J** (or *View › Clipping Warning*, or the *Clipping* button in the section) marks on the screen every pixel that is pure black in blue and every one that is pure white in red, so you see where a curve or an exposure pushes detail out. The marks are a view only: they follow pan and zoom, and never reach an export, a generate run, the saved document or the autosave.
+
 ### Notes
 
 - A filter layer over an inpaint result is often the cheapest way to make the result belong: one grain layer over everything hides a lot of difference in texture.
@@ -878,6 +880,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | \\ (hold) | Peek at the base picture under every layer |
 | Ctrl+Shift+R  ·  Ctrl+Shift+G | Rulers · grid |
 | Tab | Canvas only: every bar and panel goes, the picture fills the screen; Tab or Escape brings them back |
+| Alt+J | Clipping warning: pure black shows blue, pure white red, on the screen only (J itself is the healing brush) |
 
 #### Selection
 

@@ -3546,6 +3546,196 @@ try {
 }
 return out;
 """),
+    ("scope_counts_the_visible_picture", """
+// item 65: the Scope section's histogram of the visible picture, from a sample of at most 1024 px on the long side
+// (here the whole 64 x 48 picture at 1:1): left half pure black, right half pure white, then a grey layer over the
+// right half, then that layer hidden. Nothing is counted while the section is closed.
+await run("new_canvas", { width: 64, height: 48, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+const bx = base.getContext("2d");
+bx.fillStyle = "#000"; bx.fillRect(0, 0, W / 2, H);
+bx.fillStyle = "#fff"; bx.fillRect(W / 2, 0, W / 2, H);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "scope.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const d = ed.scopeSection;
+if (!d || d.tagName !== "DETAILS") throw new Error("no Scope section");
+if (!Array.from(ed.panes.image.querySelectorAll(":scope > details > summary")).some((s) => s.textContent === "Scope")) throw new Error("the Scope section is not in the Image tab");
+const wasOpen = d.open;
+const prevPane = (Object.entries(ed.panes).find(([, p]) => !p.hidden) || ["image"])[0];
+const prevDisplay = ed.selectionDisplay;
+let stored = null;
+try { stored = localStorage.getItem("ipc.scopeOpen"); } catch (_) { /* no storage */ }
+const out = {};
+let L = null;
+try {
+    ed.showPane("image");
+    // closed: no count, no timer
+    d.open = false;
+    await wait(30);
+    ed._scope = null;
+    ed.scopeSoon(0);
+    if (ed._scopeTimer) throw new Error("a closed Scope section scheduled a count");
+    if (await ed.updateScope() !== null) throw new Error("a closed Scope section counted");
+    d.open = true;
+    await wait(30);
+    if (localStorage.getItem("ipc.scopeOpen") !== "1") throw new Error("the open state was not kept");
+    const half = W * H / 2;
+    const h1 = await ed.updateScope();
+    if (!h1 || h1.w !== W || h1.h !== H) throw new Error("the sample is " + (h1 && [h1.w, h1.h]) + ", not the picture at 1:1");
+    if (h1.total !== W * H || h1.black !== 0.5 || h1.white !== 0.5) throw new Error("black / white " + [h1.total, h1.black, h1.white]);
+    for (const ch of ["r", "g", "b", "luma"]) if (h1[ch][0] !== half || h1[ch][255] !== half) throw new Error(ch + " ends " + [h1[ch][0], h1[ch][255]]);
+    if (!/Black 50\\.0 %.*White 50\\.0 %/.test(ed.scopeInfo.textContent)) throw new Error("the line under the graph: " + ed.scopeInfo.textContent);
+    out.first = [h1.black, h1.white];
+    // a grey layer over the right half: the white is gone, grey 128 in every channel
+    L = await run("add_paint_layer", { doc: window.__t });
+    const lay = ed.layers.find((l) => l.id === L.id);
+    lay.px.drawInto(null, (g) => { g.fillStyle = "#808080"; g.fillRect(W / 2, 0, W / 2, H); });
+    lay.dirty = true; ed.touchSource(lay.px); ed.uploaded.baseHash = null; ed.draw();
+    // the draw scheduled the count by itself (a moment after the change)
+    if (!ed._scopeTimer && !ed._scopeBusy) throw new Error("a change of the picture scheduled no count");
+    const h2 = await ed.updateScope();
+    if (h2.white !== 0 || h2.black !== 0.5 || h2.luma[128] !== half || h2.r[128] !== half) throw new Error("with the grey layer " + [h2.black, h2.white, h2.luma[128], h2.r[128]]);
+    out.grey = [h2.black, h2.white, h2.luma[128]];
+    // hidden: the white is back (the scope reads what is visible)
+    await run("set_layer", { layer: L.id, visible: false, doc: window.__t });
+    const h3 = await ed.updateScope();
+    if (h3.white !== 0.5 || h3.black !== 0.5) throw new Error("with the layer hidden " + [h3.black, h3.white]);
+    out.hidden = [h3.black, h3.white];
+    // the count fires by itself a moment after a change, also while a selection's marching ants draw every 120 ms
+    // (a timer started again at every draw never fired then): no updateScope() here, only the wait
+    ed.selectionDisplay = "ants";
+    await run("select_rect", { x: 2, y: 2, w: 20, h: 20, doc: window.__t });
+    ed.draw();
+    if (!ed.antsTimer) throw new Error("the marching ants are not running");
+    await run("set_layer", { layer: L.id, visible: true, doc: window.__t });
+    ed.draw();
+    let t = 0;
+    while (t < 3000 && !(ed._scope && ed._scope.hist && ed._scope.hist.white === 0)) { await wait(100); t += 100; }
+    if (!ed.antsTimer) throw new Error("the marching ants stopped during the wait");
+    if (!(ed._scope && ed._scope.hist && ed._scope.hist.white === 0 && ed._scope.hist.black === 0.5)) throw new Error("the Scope did not count the change on its own within 3 s while the ants ran: " + JSON.stringify(ed._scope && ed._scope.hist && [ed._scope.hist.black, ed._scope.hist.white]));
+    out.onItsOwnMs = t;
+    // the Generate tab hides the section: nothing is counted there, and showing the Image tab again counts the change
+    ed.showPane("gen");
+    if (ed.scopeShown()) throw new Error("the Scope counts with the Generate tab in front");
+    await run("set_layer", { layer: L.id, visible: false, doc: window.__t });
+    ed.draw();
+    await wait(450);
+    if (ed._scopeTimer || ed._scopeBusy || ed._scope.hist.white !== 0) throw new Error("the hidden Scope counted");
+    ed.showPane("image");
+    t = 0;
+    while (t < 3000 && ed._scope.hist.white !== 0.5) { await wait(100); t += 100; }
+    if (ed._scope.hist.white !== 0.5) throw new Error("the Scope did not count the change made while it was hidden once it was shown again");
+    out.afterShownMs = t;
+    await run("select_none", { doc: window.__t });
+} finally {
+    if (L) { try { await run("remove_layer", { layer: L.id, doc: window.__t }); } catch (_) { /* gone */ } }
+    ed.showPane(prevPane);
+    ed.selectionDisplay = prevDisplay;
+    d.open = wasOpen;
+    try { if (stored == null) localStorage.removeItem("ipc.scopeOpen"); else localStorage.setItem("ipc.scopeOpen", stored); } catch (_) { /* no storage */ }
+}
+return out;
+"""),
+    ("clipping_warning_marks_the_screen_and_never_the_export", """
+// item 65: Alt+J marks pure black blue and pure white red over the screen's picture; a view only, so an export and the
+// document stay byte for byte what they were, and it follows the view (the marks move with a pan)
+await run("new_canvas", { width: 64, height: 48, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+const bx = base.getContext("2d");
+bx.fillStyle = "#000"; bx.fillRect(0, 0, W / 2, H);
+bx.fillStyle = "#fff"; bx.fillRect(W / 2, 0, W / 2, H);
+bx.fillStyle = "#808080"; bx.fillRect(0, 0, W, 8);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "clip.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const key = () => {
+    const e = new KeyboardEvent("keydown", { key: "j", code: "KeyJ", altKey: true, bubbles: true, cancelable: true });
+    ed.root.focus({ preventScroll: true });
+    ed.root.dispatchEvent(e);
+};
+// the screen as colour counts: [blue marks, red marks, plain black, plain white] and where the first blue one is
+const screen = () => {
+    ed.draw();
+    const c = ed.canvas, d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let blue = 0, red = 0, black = 0, white = 0, firstBlue = -1;
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+        if (a < 250) continue;
+        if (r < 8 && g > 70 && g < 110 && b > 245) { blue++; if (firstBlue < 0) firstBlue = i / 4; }
+        else if (r > 245 && g < 8 && b < 8) red++;
+        else if (r + g + b === 0) black++;
+        else if (r === 255 && g === 255 && b === 255) white++;
+    }
+    return { blue, red, black, white, firstBlue };
+};
+const path = window.__exportPath, pathB = path.replace(/\\.png$/, "_clip.png");
+const bytes = async (p) => new Uint8Array((await window.scumble.file.read(p)).data);
+const keepView = { ...ed.view };
+const out = {};
+try {
+    if (ed.clipWarning) ed.toggleClipWarning(false);
+    ed.fitView();
+    const off = screen();
+    if (off.blue || off.red || !off.black || !off.white) throw new Error("before: " + JSON.stringify(off));
+    const value0 = JSON.stringify(ed.getValue());
+    await run("export", { format: "png", path, doc: window.__t });
+    const a = await bytes(path);
+    key();
+    if (!ed.clipWarning) throw new Error("Alt+J did not turn the clipping warning on");
+    if (ed.scopeClipBtn && !ed.scopeClipBtn.classList.contains("ipc-toggle-on")) throw new Error("the Scope section's button does not show it on");
+    const on = screen();
+    // every black and white pixel of the screen is marked, the grey band is not
+    if (!on.blue || !on.red || on.black || on.white) throw new Error("on: " + JSON.stringify(on));
+    if (Math.abs(on.blue - off.black) > 2 || Math.abs(on.red - off.white) > 2) throw new Error("the marks do not cover the clipped pixels: " + JSON.stringify({ off, on }));
+    out.on = on;
+    // it follows the view: a pan moves the marks with the picture
+    ed.view.x += 5; ed.view.y += 3;
+    const moved = screen();
+    if (moved.blue !== on.blue && Math.abs(moved.blue - on.blue) > on.blue * 0.05) throw new Error("the marks changed size with a pan: " + [on.blue, moved.blue]);
+    if (moved.firstBlue === on.firstBlue) throw new Error("the marks did not move with the pan");
+    // the GPU pass ran; the CPU fallback (no WebGL2) marks exactly the same pixels
+    if (!ed._clipMarks || ed._clipMarks.gl !== true) throw new Error("the marks did not come from the GPU pass: " + JSON.stringify(ed._clipMarks && { gl: ed._clipMarks.gl }));
+    ed._clipForceCpu = true;
+    const cpu = screen();
+    if (!ed._clipMarks || ed._clipMarks.gl !== false) throw new Error("the CPU path did not run");
+    if (cpu.blue !== moved.blue || cpu.red !== moved.red || cpu.black || cpu.white || cpu.firstBlue !== moved.firstBlue) throw new Error("the CPU marks differ from the GPU's: " + JSON.stringify({ gpu: moved, cpu }));
+    ed._clipForceCpu = false;
+    const back = screen();
+    if (!ed._clipMarks.gl || back.blue !== moved.blue) throw new Error("the GPU pass did not come back: " + JSON.stringify(back));
+    out.cpu = cpu;
+    // the export and the document know nothing of it
+    await run("export", { format: "png", path: pathB, doc: window.__t });
+    const b = await bytes(pathB);
+    if (a.length !== b.length || a.some((v, i) => v !== b[i])) throw new Error("the export changed with the clipping warning on (" + a.length + " / " + b.length + " bytes)");
+    if (JSON.stringify(ed.getValue()) !== value0) throw new Error("the document's value changed with the clipping warning on");
+    out.exportBytes = a.length;
+    key();
+    if (ed.clipWarning) throw new Error("Alt+J did not turn the clipping warning off");
+    const after = screen();
+    if (after.blue || after.red) throw new Error("marks left after it was turned off: " + JSON.stringify(after));
+    if (ed._clipMarks) throw new Error("the marks were kept after the warning was turned off");
+    // typing in a field: Alt+J is the field's
+    const inp = document.createElement("input");
+    ed.root.appendChild(inp);
+    inp.focus();
+    inp.dispatchEvent(new KeyboardEvent("keydown", { key: "j", code: "KeyJ", altKey: true, bubbles: true, cancelable: true }));
+    inp.remove();
+    if (ed.clipWarning) throw new Error("Alt+J in a text field turned the warning on");
+} finally {
+    delete ed._clipForceCpu;
+    if (ed.clipWarning) ed.toggleClipWarning(false);
+    Object.assign(ed.view, keepView);
+    ed.draw();
+}
+return out;
+"""),
     ("a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows", """
 // C6 (b3): a sampled pass (the wand's and the bucket's fine boxes, a plugin's flatten with a box) matched the whole
 // colour-matched layer for a box of a few hundred pixels: a GPU pass and a readback of the layer's size per box. It
