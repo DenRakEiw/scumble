@@ -1529,6 +1529,22 @@ async function main() {
                 JSON.stringify({ paid: paid.reason, local: local.reason, free: free.reason, one: one.action, nine: nine.action, unknown: unknown.reason }));
         }
         check("a_busy_document_refuses_a_run", policy.decide({ name: "generate", args: {} }, facts({ busy: true })).action === "refuse");
+        {
+            // item 63: extend_canvas with generate renders, so a busy document refuses it; a plain extend still asks, and
+            // the render card is filled from the facts as generate's
+            const fb = facts({ busy: true, mode: "api", settings: [{ label: "Steps", value: 8 }] });
+            fb.tools.add("extend_canvas");
+            const gen = policy.decide({ name: "extend_canvas", args: { right: 64, generate: true } }, fb);
+            const plain = policy.decide({ name: "extend_canvas", args: { right: 64 } }, fb);
+            const idle = facts({ mode: "api", settings: [{ label: "Steps", value: 8 }] });
+            idle.tools.add("extend_canvas");
+            const asked = policy.decide({ name: "extend_canvas", args: { right: 64, generate: true } }, idle);
+            check("extend_canvas_with_generate_renders",
+                gen.action === "refuse" && /already rendering/.test(gen.reason) && plain.action === "ask"
+                && asked.action === "ask" && /renders the new border/.test(asked.reason) && asked.card && asked.card.mode === "api" && asked.card.settings.length === 1
+                && policy.renders({ name: "extend_canvas", args: { right: 64, generate: true } }) && !policy.renders({ name: "extend_canvas", args: { left: -64, generate: true } }),
+                JSON.stringify({ gen, plain, asked }));
+        }
         check("export_without_a_path_is_refused", policy.decide({ name: "export", args: {} }, facts()).action === "refuse");
         check("an_export_whose_extension_disagrees_is_refused",
             policy.decide({ name: "export", args: { path: "C:/a.jpg", format: "png" } }, facts({ file: { ext: ".jpg", exists: false } })).action === "refuse"

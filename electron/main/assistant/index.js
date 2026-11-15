@@ -921,14 +921,15 @@ class Assistant {
             busy: false,
             failedTwice: (chat.failures.get(keyOf(call)) || 0) >= 2,
         };
-        if (policy.RUNS.has(call.name)) {
+        if (policy.renders(call)) {
             try {
                 const answer = await this.read("list_documents");
                 const entry = ((answer && answer.documents) || []).find((d) => d.id === doc);
                 facts.busy = !!(entry && entry.busy);
             } catch (_) { /* the renderer checks again just before the command */ }
         }
-        if (call.name === "generate" || call.name === "generate_new" || call.name === "upscale") {
+        // item 63: an extend_canvas with generate renders as generate does
+        if (call.name === "generate" || call.name === "generate_new" || call.name === "upscale" || (call.name === "extend_canvas" && policy.renders(call))) {
             // the render card (shell/F9): the document's Settings rows from list_settings, marked where this chat set
             // them, and the generation fields it set. No recipe here: the panel names the live one (host.recipe).
             let listed = null;

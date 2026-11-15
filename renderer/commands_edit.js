@@ -268,7 +268,7 @@ export const EditCommandsPart = {
     compare: { description: "Toggle the before / after split view.", params: { enabled: P.bool("on or off; toggles when omitted") }, async run(ed, a) { const want = a.enabled == null ? !ed.compare : !!a.enabled; if (want !== !!ed.compare) ed.toggleCompare(); return { compare: !!ed.compare, status: ed.status }; } },
     extend_canvas: {
         destructive: true,
-        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set); the new border is selected after it. generate: then run generate with the selected recipe on that border (outpainting), as the Canvas tool's Generate the new border does: refused before anything changes when no recipe can return a result, a run is going or no side grows; the extend is its own undo step, the result an ordinary result layer; generated is generate's answer (layer, seed, prompt_sent, notes, ...). A generate that fails after the extend throws with that said (the extend stays, Ctrl+Z takes it back). timeout bounds the generate.",
+        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set); the new border is selected after it. generate: then run generate with the selected recipe on that border (outpainting), as the Canvas tool's Generate the new border does: refused before anything changes when no recipe can return a result, a run is going or no side grows; the result is an ordinary result layer, and it and the extend are an undo step each (the first undo takes the result back, the next the extend); no question is asked (generate asks none either); generated is generate's answer (layer, seed, prompt_sent, notes, ...). A generate that fails after the extend throws with that said (the extend stays, Ctrl+Z takes it back). timeout bounds the generate.",
         params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }), generate: P.bool("then generate the new border with the selected recipe", { default: false }), timeout: P.timeout(600) },
         async run(ed, a) {
             const v = { left: Math.round(+a.left || 0), top: Math.round(+a.top || 0), right: Math.round(+a.right || 0), bottom: Math.round(+a.bottom || 0) };
@@ -300,6 +300,9 @@ export const EditCommandsPart = {
             if (gen) {
                 const width = ed.width, height = ed.height;
                 let generated;
+                // a landing records no undo step of its own: this one holds the layers before the result, so the first
+                // Ctrl+Z takes the result back and the second the extend
+                ed.pushUndo({ kind: "layers", label: "Generate the new border" });
                 try { generated = await RunCommandsPart.generate.run(ed, { timeout: a.timeout }); }
                 catch (err) {
                     const e = new Error(`The canvas was extended to ${width} × ${height} (its own undo step); the generate of the new border failed: ${(err && err.message) || err}`);

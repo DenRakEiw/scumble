@@ -2056,16 +2056,24 @@ try {
     out.refused = [await refused({ left: -10, generate: true }, /no new border/, "a crop alone")];
     ed.providerPending = { fake: true };
     try { out.refused.push(await refused({ right: 64, generate: true }, /a run is still going/, "a run going")); } finally { ed.providerPending = null; }
-    // the command: one Extend canvas step, then the result layer over the new border
-    const u0 = ed.undo.length, h0 = ed.history.length;
+    // the command: an Extend canvas step and a step for the result over the new border; the first undo takes the
+    // result back (the canvas stays extended), the second the extend
+    const u0 = ed.undo.length, h0 = ed.history.length, n0 = ed.layers.length;
     const r = await c("extend_canvas", { doc: d.id, right: 64, bottom: 32, generate: true, timeout: 60 });
     if (r.width !== W + 64 || r.height !== H + 32 || ed.width !== W + 64) throw new Error("the extend: " + JSON.stringify(r));
     if (!r.generated || !r.generated.layer || ed.history.length !== h0 + 1) throw new Error("no result: " + JSON.stringify(r));
     const L = r.generated.layer;
     if (L.x + L.w <= W && L.y + L.h <= H) throw new Error("the result is not over the new border: " + JSON.stringify(L));
     const labels = ed.undo.slice(u0).map((s) => s.label);
-    if (labels[0] !== "Extend canvas" || labels.filter((x) => x === "Extend canvas").length !== 1) throw new Error("the steps: " + labels);
-    out.command = { size: [r.width, r.height], layer: [L.x, L.y, L.w, L.h], steps: labels };
+    if (labels.join() !== "Extend canvas,Generate the new border") throw new Error("the steps: " + labels);
+    const nR = ed.layers.length;
+    await c("undo", { doc: d.id });
+    const u1 = { size: [ed.width, ed.height], layers: ed.layers.length, result: ed.layers.some((l) => l.id === L.id) };
+    if (u1.size.join() !== [W + 64, H + 32].join() || u1.result || u1.layers !== nR - 1) throw new Error("the first undo: " + JSON.stringify(u1) + " (" + nR + " layers with the result)");
+    await c("undo", { doc: d.id });
+    const u2 = { size: [ed.width, ed.height], layers: ed.layers.length };
+    if (u2.size.join() !== [W, H].join() || u2.layers !== n0) throw new Error("the second undo: " + JSON.stringify(u2) + " (" + n0 + " before)");
+    out.command = { size: [r.width, r.height], layer: [L.x, L.y, L.w, L.h], steps: labels, undo1: u1, undo2: u2 };
     // without generate nothing runs
     const h1 = ed.history.length;
     const r2 = await c("extend_canvas", { doc: d.id, left: 16 });
@@ -2077,28 +2085,51 @@ try {
     if (boxes.length !== 2) throw new Error("the switch has " + boxes.length + " checkboxes, not the options bar's and the Canvas section's");
     boxes[0].checked = true; boxes[0].dispatchEvent(new Event("change"));
     if (localStorage.getItem("ipc.extendGenerate") !== "1" || !boxes.every((b) => b.checked) || !ed.extendGenerate) throw new Error("the switch was not stored or followed");
-    // on: the frame's apply extends and generates on the border
-    const W2 = ed.width, H2 = ed.height, h2 = ed.history.length;
-    ed.lastExtendGenerate = null;
-    ed.setFrame({ x: -40, y: 0, w: W2 + 40, h: H2 }, ed.frame());
-    const ok = await ed.applyFrame();
-    if (!ok || ed.width !== W2 + 40) throw new Error("the frame's extend: " + ok + " / " + ed.width + " / " + ed.status);
-    if (!ed.lastExtendGenerate) throw new Error("the apply started no Generate");
-    await ed.lastExtendGenerate;
-    for (let t0 = Date.now(); ed.history.length <= h2 && Date.now() - t0 < 30000;) await new Promise((res) => setTimeout(res, 100));
-    if (ed.history.length !== h2 + 1) throw new Error("the frame's Generate landed no result: " + ed.status);
-    const R = ed.layers.find((l) => l.id === ed.history[ed.history.length - 1].layerId);
-    if (!R || R.x >= 40) throw new Error("the frame's result is not over the new border: " + (R && [R.x, R.y, R.w, R.h]));
-    out.frame = { size: [ed.width, ed.height], layer: [R.x, R.y, R.w, R.h] };
-    // off: the apply only extends
-    boxes[1].checked = false; boxes[1].dispatchEvent(new Event("change"));
-    if (localStorage.getItem("ipc.extendGenerate") !== "0" || boxes.some((b) => b.checked)) throw new Error("the switch did not go off");
-    const h3 = ed.history.length;
-    ed.lastExtendGenerate = null;
-    ed.setFrame({ x: 0, y: -20, w: ed.width, h: ed.height + 20 }, ed.frame());
-    if (!(await ed.applyFrame())) throw new Error("the second frame's extend: " + ed.status);
-    await new Promise((res) => setTimeout(res, 1500));
-    if (ed.lastExtendGenerate || ed.history.length !== h3) throw new Error("the switch off still generated");
+    // on, with the loopback (an API recipe): the apply asks first; Cancel extends and generates nothing
+    const ask0 = ed.ask;
+    let asked = [];
+    try {
+        ed.ask = async (o) => { asked.push(o); return false; };
+        const Wa = ed.width, ha = ed.history.length;
+        ed.lastExtendGenerate = null;
+        ed.setFrame({ x: 0, y: 0, w: Wa + 24, h: ed.height }, ed.frame());
+        if (!(await ed.applyFrame()) || ed.width !== Wa + 24) throw new Error("the cancelled question's extend: " + ed.width + " / " + ed.status);
+        await new Promise((res) => setTimeout(res, 1000));
+        if (asked.length !== 1 || !/Loopback/.test(asked[0].message) || !/paid run/.test(asked[0].message)) throw new Error("the question: " + JSON.stringify(asked));
+        if (ed.lastExtendGenerate || ed.history.length !== ha || !/not generated/.test(ed.status)) throw new Error("a cancelled question still generated: " + ed.status);
+        out.cancelled = { asked: asked[0].title, status: ed.status };
+        // answered yes: the frame's apply extends and generates on the border, two undo steps
+        asked = [];
+        ed.ask = async (o) => { asked.push(o); return true; };
+        const W2 = ed.width, H2 = ed.height, h2 = ed.history.length, n2 = ed.layers.length, u2s = ed.undo.length;
+        ed.lastExtendGenerate = null;
+        ed.setFrame({ x: -40, y: 0, w: W2 + 40, h: H2 }, ed.frame());
+        const ok = await ed.applyFrame();
+        if (!ok || ed.width !== W2 + 40 || asked.length !== 1) throw new Error("the frame's extend: " + ok + " / " + ed.width + " / " + asked.length + " / " + ed.status);
+        if (!ed.lastExtendGenerate) throw new Error("the apply started no Generate");
+        await ed.lastExtendGenerate;
+        for (let t0 = Date.now(); ed.history.length <= h2 && Date.now() - t0 < 30000;) await new Promise((res) => setTimeout(res, 100));
+        if (ed.history.length !== h2 + 1) throw new Error("the frame's Generate landed no result: " + ed.status);
+        const R = ed.layers.find((l) => l.id === ed.history[ed.history.length - 1].layerId);
+        if (!R || R.x >= 40) throw new Error("the frame's result is not over the new border: " + (R && [R.x, R.y, R.w, R.h]));
+        const fl = ed.undo.slice(u2s).map((s) => s.label);
+        if (fl.join() !== "Extend canvas,Generate the new border") throw new Error("the frame's steps: " + fl);
+        await c("undo", { doc: d.id });
+        if (ed.width !== W2 + 40 || ed.layers.some((l) => l.id === R.id)) throw new Error("the frame's first undo: " + ed.width + " / " + ed.layers.length);
+        await c("undo", { doc: d.id });
+        if (ed.width !== W2 || ed.height !== H2 || ed.layers.length !== n2) throw new Error("the frame's second undo: " + [ed.width, ed.height, ed.layers.length]);
+        out.frame = { size: [W2 + 40, H2], layer: [R.x, R.y, R.w, R.h], steps: fl };
+        // off: the apply only extends, and asks nothing
+        asked = [];
+        boxes[1].checked = false; boxes[1].dispatchEvent(new Event("change"));
+        if (localStorage.getItem("ipc.extendGenerate") !== "0" || boxes.some((b) => b.checked)) throw new Error("the switch did not go off");
+        const h3 = ed.history.length;
+        ed.lastExtendGenerate = null;
+        ed.setFrame({ x: 0, y: -20, w: ed.width, h: ed.height + 20 }, ed.frame());
+        if (!(await ed.applyFrame())) throw new Error("the second frame's extend: " + ed.status);
+        await new Promise((res) => setTimeout(res, 1500));
+        if (ed.lastExtendGenerate || ed.history.length !== h3 || asked.length) throw new Error("the switch off still generated or asked");
+    } finally { ed.ask = ask0; }
     return out;
 } finally {
     host.setRecipe(prev);

@@ -693,7 +693,9 @@ export const HostPresetsPart = {
         if (!r) return { name: "result_local", wired: false, fallback: false };
         // `provider`: the run goes through runProvider / runUpscale and needs the document's run slot (`providerPending`);
         // the editor's generate() refuses it while the slot is held (the node's host never says so)
-        if (r.kind === "provider") return { name: "result", wired: true, fallback: editor.genSettings.mode === "local", provider: true };
+        // `charged`, `label`, `recipeName`: an API run that costs money (the in-app models are free), named for a question
+        // before it (item 63's Generate the new border)
+        if (r.kind === "provider") return { name: "result", wired: true, fallback: editor.genSettings.mode === "local", provider: true, charged: r.provider !== "inapp", label: r.providerLabel || r.provider || "", recipeName: r.name || r.id || "" };
         const want = editor.genSettings.mode === "local" ? "result_local" : "result";
         const has = r.mode === "api" ? "result" : "result_local";
         return { name: has, wired: !!r.result, fallback: want !== has };

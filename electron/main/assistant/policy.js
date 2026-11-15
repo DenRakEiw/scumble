@@ -22,6 +22,12 @@ const READS = new Set([
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
 const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight", "key_screen", "split_layers"]);
 
+/** A call that renders: one of RUNS, or an extend_canvas with generate (item 63). */
+function renders(call) {
+    const name = String(call && call.name);
+    return RUNS.has(name) || (name === "extend_canvas" && !!(call.args && call.args.generate) && positive(call.args));
+}
+
 /** The Realism Pass's name, verbatim wherever the feature is named (renderer/editor/realism.js LABEL). */
 const REALISM_LABEL = "Realism Pass (Windows only, RTX only)";
 /** The factors realism_pass takes: renderer/editor/realism.js MODES' dialog factors and the pack's own F (1.724). */
@@ -524,7 +530,7 @@ function decide(call, facts = {}) {
     if (facts.failedTwice) {
         return REFUSE("this exact call failed twice; change it or ask the user");
     }
-    if (RUNS.has(name) && facts.busy) {
+    if (renders(call) && facts.busy) {
         return REFUSE("that document is already rendering; wait for it to finish");
     }
     // a locked layer: no moving, no resizing, no text edit (the editor forbids it; the commands do not)
@@ -580,7 +586,7 @@ function addsLayer(facts) {
 }
 
 module.exports = {
-    EXCLUDED, READS, RUNS, POLICY, decide, clamp, clampInt, timeoutOf, undoStep,
+    EXCLUDED, READS, RUNS, POLICY, decide, renders, clamp, clampInt, timeoutOf, undoStep,
     SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS, REALISM_MAX_AREA,
     _layerOf: layerOf, _layerBelow: layerBelow, _owns: owns, _extMatches: extMatches,
 };

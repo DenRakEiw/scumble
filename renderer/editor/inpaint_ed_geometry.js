@@ -1237,6 +1237,24 @@ export class GeometryPart {
         // a job that would land in the old geometry: the frame stays for when it is in
         const blocked = this.turnBlocked();
         if (blocked) { this.setStatus(blocked); return false; }
+        // item 63: with Generate the new border on, a run that costs money is asked once per apply, before anything
+        // changes (the switch holds for every tab); No still extends, and generates nothing
+        let generateNo = false;
+        const grows = !f.angle && (f.y < 0 || f.x < 0 || f.x + f.w > this.width || f.y + f.h > this.height);
+        if (grows && this.extendGenerate) {
+            const s = this.resultInputState();
+            if (s.provider && s.charged) {
+                const yes = await this.ask({
+                    title: "Generate the new border",
+                    message: `After the extend, Generate runs on the new border with ${s.recipeName || "the selected recipe"} on ${s.label || "an API provider"}: a paid run, charged as any Generate. Cancel extends the canvas and generates nothing.`,
+                    ok: "Extend and generate",
+                });
+                if (this.frame() !== f || !this.framePending()) { this.setStatus("The frame changed while the question was open: apply it again."); return false; }
+                const again = this.turnBlocked();
+                if (again) { this.setStatus(again); return false; }
+                generateNo = !yes;
+            }
+        }
         // taken off at once (a second Enter during the run must not apply it again), put back when the apply was refused
         this.canvasFrame = null;
         this.frameStraighten = false;
@@ -1269,7 +1287,10 @@ export class GeometryPart {
             ok = this.base !== base0;
             // item 63: "Generate the new border" starts Generate on the border the extend selected (not awaited: a run
             // takes as long as it takes, the frame is applied)
-            if (extended && this.extendGenerate) this.generateAfterExtend();
+            if (extended && this.extendGenerate) {
+                if (generateNo) this.setStatus(`Canvas is ${this.width} × ${this.height}; the new border is selected and was not generated (the question was cancelled): press Generate to outpaint it.`);
+                else this.generateAfterExtend();
+            }
         }
         if (!ok && this.base === base0 && this.width === W && this.height === H && !this.canvasFrame) this.canvasFrame = f;
         this.syncFrameControls({ force: true });
@@ -1282,6 +1303,11 @@ export class GeometryPart {
      * run and its result layer are Generate's own; the extend stays its own undo step). Returns Generate's promise.
      */
     generateAfterExtend() {
+        // a landing records no undo step of its own: this one holds the layers before the result, so Ctrl+Z takes the
+        // result back first and the extend with the next one (not for a run Generate refuses at once, which lands nothing)
+        const s = this.resultInputState();
+        const refused = this._eachArea || !s.wired || (this.providerPending && (s.provider || this.providerPending.resizes));
+        if (!refused) this.pushUndo({ kind: "layers", label: "Generate the new border" });
         this.lastExtendGenerate = this.generate();
         return this.lastExtendGenerate;
     }
