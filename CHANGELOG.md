@@ -4,6 +4,21 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Outpainting in one step**: tick *Generate the new border* in the Canvas tool, and applying an extend starts
+  Generate with your selected recipe on the new border. A recipe on an API provider asks first, since it is a paid
+  run; the result and the extend are one Ctrl+Z each. Agents use `extend_canvas` with `generate: true`.
+- **Scope and clipping warning**: a *Scope* section in the Image tab shows the live histogram of the visible picture
+  and how much of it is pure black or pure white. Alt+J (*View › Clipping Warning*) marks pure black blue and pure
+  white red on the screen while you grade; exports and the document are never touched.
+- **A frame from a video**: File › Open and a drop on the window take .mp4, .m4v, .webm and .mov files and show a
+  small player with a slider and one-frame steps; the frame you stop on becomes a new picture, a layer or a
+  reference layer at the video's own size. Videos the built-in player cannot decode (ProRes, some HEVC) are refused
+  with a plain line.
+- **Contact shadow** (Layer menu and a layer's right-click menu): a cut-out, a keyed subject or a pasted picture gets
+  a soft shadow of its own shape under it, darkest where it meets the ground and fading away from it. Distance,
+  softness, opacity and direction show live in a small dialog, a depth map fades the shadow where the ground lies
+  farther away, and it lands as an ordinary multiply layer in one undo step (MCP `contact_shadow`; 123 tools).
+
 ## 0.1.56 - 2026-11-15
 
 - **Deep paint**: paint on the picture's surfaces. *Image › Surface Maps* splits the picture once into its light, its
