@@ -459,6 +459,25 @@ none of V1-V5 may change that:
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.
+- **Parameters (item 66, built 2026-11-15, the night build of `docs/PLAN_0_1_57.md`):** the bar's *Parameters* button
+  shows the graph's widget inputs by node (numbers, toggles, combos, strings), ticked where an input is a Settings row;
+  the bar grows over the top 55 % of the page meanwhile (`layout`, `paramsOpen`). A Settings row in the recipe format
+  *is* an input wired to a setting output of the Inpaint Canvas node (§2.3), so a tick links the input to the node's
+  lowest free `setting_<n>` output **in the page** (LiteGraph's `connect`, the node's own frontend then shows the next
+  free one) and an untick takes that link away; *Save to recipe* / *Save as new recipe* read the rows as before
+  (`fromGraph`, no second mapping). Main: `electron/main/comfyparams.js` (`listParams` over the read's API prompt and
+  UI graph, `canvasOutputNames` shared with `fromGraph`; `exposeScript`; `VALUES_JS` in the read), `comfyview.js`
+  `readParams` / `expose` / `showParams`, IPC `comfyview:params`, `comfyview:expose`, `comfyview:paramsShown` (from the
+  bar alone). New with it: the read also hands over what the page's widgets hold for the inputs wired to the canvas
+  node (`values`), and `fromPrompt` gives a **new** row that value instead of the spec's default (a row the held recipe
+  had keeps its own; before, a link drawn by hand got the default). Defaults taken: at most 8 rows, the node's
+  `SETTING_SLOTS` (not the 24 of the request: the node has 8 setting outputs; the list says so when all are in use);
+  the label `<title> · <input>` (as `fromPrompt` always wrote it); not offered: the canvas node's inputs, linked
+  inputs, nodes inside a subgraph (counted in a note), graphs without the node (a Comfy Cloud graph keeps its rows).
+  Tests: `tools/comfyparams_test.js` (plain Node, on `tools/fixtures/comfyview/minigraph.js`, a stand-in for
+  LiteGraph), the comfyview gate's step "item 66". **Not seen on a real ComfyUI page**: `connect` into a widget's
+  socket (frontend 1.16 and newer; an older frontend has none and the tick says so), the widget keeping its value while
+  linked, the node's frontend renumbering its outputs after the link.
 
 ## 4. Traps known before the first line
 

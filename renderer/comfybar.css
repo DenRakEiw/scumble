@@ -18,4 +18,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 #cb-why { color: var(--sc-warn, #f0c674); margin: 0 0 10px; word-break: break-word; }
 .cb-help { color: var(--sc-muted, #888); margin: 0 0 16px; }
 .cb-row { display: flex; gap: 8px; flex-wrap: wrap; }
+/* the Parameters list (item 66): below the strip, over the top of the page */
+button.cb-on { background: var(--sc-btn-hover, #3a3a3a); }
+#cb-params-panel { height: calc(100vh - 36px); overflow: auto; box-sizing: border-box; padding: 8px 12px 12px; border-bottom: 1px solid var(--sc-chrome-edge, #000); }
+.cb-params-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cb-params-help { margin: 0 0 6px; }
+#cb-params-note { margin: 0 0 6px; }
+.cb-pnode { margin: 0 0 8px; }
+.cb-pnode h2 { font-size: 13px; font-weight: 600; color: var(--sc-fg-strong, #fff); margin: 6px 0 2px; }
+.cb-prow { display: grid; grid-template-columns: 18px minmax(120px, 220px) 70px minmax(0, 1fr); gap: 6px; align-items: center; padding: 1px 0 1px 4px; cursor: pointer; }
+.cb-prow:hover { background: var(--sc-hover, rgba(255, 255, 255, 0.04)); }
+.cb-pname, .cb-pval { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

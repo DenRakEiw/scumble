@@ -43,6 +43,10 @@ layer, exactly like in the ComfyUI node.
 node's `setting_n` outputs), `node`/`input` where the value goes. The control's type
 comes from the server's `/object_info` when connected, else from `spec` (ComfyUI's
 input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a combo).
+The ComfyUI window's *Parameters* list makes rows without editing this file: a tick links
+the input to the canvas node's lowest free `setting_n` output in the page, and the save
+writes the row (`label` "<node title> · <input>", `spec` from `/object_info`, the value
+the page's widget held).
 
 `task` says what a ComfyUI recipe does with the selection: `edit` (the default) renders into it, `upscale` is an
 upscale model (see "Upscale recipes"), and `pass` is the Realism Pass (`realism_pass` below): the selection's box goes

@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld("comfybar", {
     save: (opts) => ipcRenderer.invoke("comfyview:save", opts || {}),
     // Settings › ComfyUI in the main window
     openSettings: () => ipcRenderer.invoke("comfyview:settings"),
+    // the Parameters list (item 66): shown or hidden, read ({ ok, nodes, used, cap, full, note } or { ok: false, message }),
+    // and a tick / untick of one input ({ node, input, on }), answered with the list read again
+    params: {
+        shown: (on) => ipcRenderer.invoke("comfyview:paramsShown", !!on),
+        read: () => ipcRenderer.invoke("comfyview:params"),
+        expose: (node, input, on) => ipcRenderer.invoke("comfyview:expose", { node: String(node), input: String(input), on: !!on }),
+    },
     // main's questions in this window (comfyview.js askInBar; renderer/dialogs.js listen): the page's camera / microphone
     dialog: {
         onAsk: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on("comfyview:ask", h); return () => ipcRenderer.removeListener("comfyview:ask", h); },

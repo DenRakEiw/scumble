@@ -22,7 +22,19 @@
   <span id="cb-name-row" hidden><input id="cb-name" type="text" spellcheck="false" maxlength="80" placeholder="Name of the new recipe"><button id="cb-name-ok" type="button">Save</button><button id="cb-name-cancel" type="button">Cancel</button></span>
   <button id="cb-save" type="button" disabled title="Overwrite the recipe this window holds with this graph">Save to recipe</button>
   <button id="cb-save-new" type="button" disabled title="Save this graph as a new recipe">Save as new recipe</button>
+  <button id="cb-params" type="button" disabled aria-expanded="false" title="The graph's inputs you can make rows of the recipe's Settings panel">Parameters</button>
   <button id="cb-reload" type="button" title="Load the page again, with the address and auth of Settings › ComfyUI">Reload</button>
+</div>
+<div id="cb-params-panel" hidden>
+  <div class="cb-params-head">
+    <span id="cb-params-count" class="cb-note"></span>
+    <span class="cb-spacer"></span>
+    <button id="cb-params-refresh" type="button" title="Read the page's graph again">Refresh</button>
+    <button id="cb-params-close" type="button" title="Hide the list (Escape)">Close</button>
+  </div>
+  <p class="cb-help cb-params-help">Tick an input to make it a row of the recipe's Settings panel: Scumble links it to a free setting output of the Inpaint Canvas node in the page, and <b>Save to recipe</b> (or <b>Save as new recipe</b>) keeps it. Untick to take the row away.</p>
+  <p id="cb-params-note" class="cb-warn" hidden></p>
+  <div id="cb-params-list"></div>
 </div>
 <div id="cb-start" hidden>
   <h1>No ComfyUI to show.</h1>

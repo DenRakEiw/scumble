@@ -269,7 +269,11 @@ V3: the bar's Save to recipe overwrites the held recipe with the fake page's `gr
 a user copy, its rows and labels kept, the UI graph stored) and the editor selects it, Save as new recipe takes the
 name in the bar, a graph without the node and an answer that is no prompt are refused; the recipes it saves are
 removed at the end, and it refuses a profile holding a user recipe it would overwrite; `tools/recipes_test.js`
-section 6 checks `recipes.fromGraph`; V4: `tools/comfyhosts_test.js` (the sign-in hosts, popups and navigation in plain
+section 6 checks `recipes.fromGraph`; item 66, Parameters: on a stand-in for LiteGraph in the stub page
+(`tools/fixtures/comfyview/minigraph.js`) the bar's list ticks the held recipe's rows, an untick and two ticks link
+the canvas node's lowest free setting outputs, Save as new recipe keeps the rows with the page's widget value, and the
+editor's Settings panel shows them and sends a value set there in the queued prompt (`tools/comfyparams_test.js` in
+plain Node: the list, the page script, the read's values, the round trip through `fromGraph`); V4: `tools/comfyhosts_test.js` (the sign-in hosts, popups and navigation in plain
 Node; since H1 also the session's permission list), `tools/links_test.js` (`electron/main/links.js`: only http(s) to
 the system browser, the main window only on the app's page) and `tools/comfyprobe_test.js` (Settings › ComfyUI's
 Test against a stub server: the requests after `/system_stats` together, the answer the serial probe's key for key,
@@ -1163,6 +1167,10 @@ Known flakes; **re-run before believing any of these**:
 - 2026-11-09 (the merge of K39, serial on tiles): `editor_test.py` `live_stroke_reaches_the_screen_before_the_release`
   took 344 s instead of its usual seconds, so the gate hit its 420 s limit (rc 124, no failed assertion; the same
   tree passed right after, that step 40 s). Other agents' instances were running; the cause was not looked into.
+- 2026-11-15 (item 66's branch, tiles, other agents' gate instances running beside it): `comfyview_test.py` "camera and
+  microphone ..." failed once with "mic denied: no question in the bar"; it passed in the run before and in the re-run
+  right after (29 of 29) on the same tree. The change under test does not touch the media path (the bar's size is the
+  same while the Parameters list is closed); the cause was not looked into.
 - 2026-11-10 (the merge of `fix-main` pack 3): `comfyview_test.py` "no target: the start page, nothing loaded, one window, bounds kept" failed once on tiles with CDP's "Cannot find default execution context" and passed 4 of 4 on a re-run on both backends (the known control-step flake failed once beside it on canvas).
 - 2026-11-09 (the merge of K15, tiles and canvas side by side): `editor_test.py`
   `selection_keeps_its_bounds_through_a_restore_above_1mp` ran into its 180 s step timeout on both backends with no

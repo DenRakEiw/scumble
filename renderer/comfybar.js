@@ -27,6 +27,8 @@
         $("cb-save-note").textContent = s.saveNote || "";
         $("cb-save-note").title = s.saveNote || "";
         if (!s.canSaveNew) naming(false);
+        $("cb-params").disabled = s.phase !== "page";
+        if (s.phase !== "page" && paramsShown) paramsView(false);   // main hides the list with the page
         $("cb-start").hidden = withPage;
         $("cb-why").textContent = (s.message || "") + (s.recipe && !withPage ? ` The recipe "${s.recipe}" opens here once a ComfyUI answers.` : "");
         document.body.classList.toggle("cb-full", !withPage);
@@ -53,6 +55,101 @@
         if (e.key === "Enter") { e.preventDefault(); saveNew(); }
         else if (e.key === "Escape") { e.preventDefault(); naming(false); }
     });
+    // the Parameters list (item 66): the graph's widget inputs by node, ticked where one is a Settings row (wired to a
+    // setting output of the Inpaint Canvas node); main grows the bar over the page while the list is shown
+    let paramsShown = false, busy = false;
+    function paramsView(on) {
+        paramsShown = on;
+        $("cb-params-panel").hidden = !on;
+        $("cb-params").setAttribute("aria-expanded", on ? "true" : "false");
+        $("cb-params").classList.toggle("cb-on", on);
+    }
+    function paramsNote(text) {
+        $("cb-params-note").hidden = !text;
+        $("cb-params-note").textContent = text || "";
+    }
+    function renderParams(r) {
+        const list = $("cb-params-list");
+        list.textContent = "";
+        if (!r || r.ok === false && !Array.isArray(r.nodes)) {
+            $("cb-params-count").textContent = "";
+            paramsNote((r && r.message) || "The page's graph could not be read.");
+            return;
+        }
+        $("cb-params-count").textContent = r.canvas ? `${r.used} of ${r.cap} setting outputs in use` : "";
+        paramsNote([r.ok === false ? r.message : "", r.note || ""].filter(Boolean).join(" "));
+        if (!r.nodes.length && r.canvas) {
+            const p = document.createElement("p");
+            p.className = "cb-note";
+            p.textContent = "The graph has no widget inputs Scumble can offer (the Inpaint Canvas node's own and linked inputs are left out).";
+            list.appendChild(p);
+        }
+        for (const n of r.nodes) {
+            const sec = document.createElement("section");
+            sec.className = "cb-pnode";
+            const h = document.createElement("h2");
+            h.textContent = n.title;
+            if (n.type && n.type !== n.title) {
+                const t = document.createElement("span");
+                t.className = "cb-note";
+                t.textContent = ` ${n.type} #${n.id}`;
+                h.appendChild(t);
+            } else {
+                const t = document.createElement("span");
+                t.className = "cb-note";
+                t.textContent = ` #${n.id}`;
+                h.appendChild(t);
+            }
+            sec.appendChild(h);
+            for (const inp of n.inputs) {
+                const row = document.createElement("label");
+                row.className = "cb-prow";
+                const box = document.createElement("input");
+                box.type = "checkbox";
+                box.checked = !!inp.exposed;
+                box.disabled = !inp.exposed && !!r.full;
+                box.dataset.node = n.id;
+                box.dataset.input = inp.name;
+                box.title = inp.exposed ? `A Settings row (setting ${inp.index}): "${inp.label}"` : `Make it a Settings row: "${inp.label}"`;
+                box.addEventListener("change", () => expose(n.id, inp.name, box.checked));
+                const name = document.createElement("span");
+                name.className = "cb-pname";
+                name.textContent = inp.name;
+                const kind = document.createElement("span");
+                kind.className = "cb-note cb-pkind";
+                kind.textContent = (inp.kind || "").toLowerCase();
+                const val = document.createElement("span");
+                val.className = "cb-note cb-pval";
+                val.textContent = inp.value;
+                val.title = inp.value;
+                row.append(box, name, kind, val);
+                sec.appendChild(row);
+            }
+            list.appendChild(sec);
+        }
+    }
+    const lockList = (on) => { busy = on; for (const b of $("cb-params-list").querySelectorAll("input")) if (on) b.disabled = true; };
+    async function readParams() {
+        if (busy) return;
+        lockList(true);
+        try { renderParams(await bar.params.read()); } catch (err) { renderParams({ ok: false, message: String((err && err.message) || err) }); }
+        finally { busy = false; }
+    }
+    async function expose(node, input, on) {
+        if (busy) return;
+        lockList(true);
+        try { renderParams(await bar.params.expose(node, input, on)); } catch (err) { renderParams({ ok: false, message: String((err && err.message) || err) }); }
+        finally { busy = false; }
+    }
+    async function toggleParams(on) {
+        paramsView(on);
+        try { await bar.params.shown(on); } catch (_) { /* the window went */ }
+        if (on) await readParams();
+    }
+    $("cb-params").addEventListener("click", () => toggleParams(!paramsShown));
+    $("cb-params-close").addEventListener("click", () => toggleParams(false));
+    $("cb-params-refresh").addEventListener("click", () => readParams());
+    $("cb-params-panel").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); toggleParams(false); } });
     $("cb-reload").addEventListener("click", () => bar.reload().then(show, () => {}));
     $("cb-retry").addEventListener("click", () => bar.reload().then(show, () => {}));
     $("cb-connect").addEventListener("click", () => bar.openSettings().catch(() => {}));

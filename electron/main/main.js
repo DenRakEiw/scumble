@@ -1129,7 +1129,7 @@ async function comfyRecipe(id) {
  * as a user recipe (a shipped recipe's id gets a user copy that stands in for it), its `needs` held against the node
  * list of the server the graph came from; the editor's window reloads the recipes and selects it.
  */
-async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
+async function saveComfyGraph({ output, workflow, objectInfo, heldId, name, values }) {
     const list = await listRecipes();
     const base = heldId ? list.find((r) => r.id === heldId) || null : null;
     // a new id stays clear of every file in the folder too (one that differs in case, holds another id, does not parse)
@@ -1153,7 +1153,7 @@ async function saveComfyGraph({ output, workflow, objectInfo, heldId, name }) {
         return { recipe: { id: made.id, name: made.name || made.id, cloud: true, prompt: v.options.graph, workflow: v.options.workflow || null }, message: msg };
     }
     if (!name && base && base.kind === "provider") throw new Error(`"${base.name || base.id}" is a Comfy Cloud recipe, and this graph holds the Inpaint Canvas node: save it as a new recipe instead.`);
-    const recipe = recipes.fromGraph({ output, workflow, objectInfo, base: base && base.kind !== "provider" ? base : null, name, ids, date });
+    const recipe = recipes.fromGraph({ output, workflow, objectInfo, base: base && base.kind !== "provider" ? base : null, name, ids, date, values });
     await recipes.save(recipe);
     const info = objectInfo && Object.keys(objectInfo).length ? objectInfo : null;
     const missing = info ? (recipe.needs || []).filter((c) => !info[c]) : [];

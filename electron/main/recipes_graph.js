@@ -39,11 +39,31 @@ function toPrompt(recipe) {
 }
 
 /**
+ * A value the page's widget held for a node input (`values` from the ComfyUI window's read, untrusted): a finite number,
+ * a boolean or a string of at most 10,000 characters; anything else is undefined.
+ * @param {Record<string, any> | null} values
+ * @param {string} id
+ * @param {string} name
+ */
+function pageValue(values, id, name) {
+    if (!values) return undefined;
+    const k = `${id}|${name}`;
+    if (!Object.prototype.hasOwnProperty.call(values, k)) return undefined;
+    const v = values[k];
+    if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") return v.length <= 10000 ? v : undefined;
+    return undefined;
+}
+
+/**
  * An API-format prompt (Export (API), the node's own saved prompt, or the graph of ComfyUI's page) -> recipe fields.
  * `base`, the recipe the graph was opened from (item 35), gives back what an API prompt cannot hold: each Settings
  * row's value, label and spec where the same node input is still wired to the same slot's output. `opts.outputNames`:
  * the canvas node's output names in the slot order the prompt uses (the page's graph shows the tail outputs right
- * after the connected settings); without them a slot is read in the backend's order (tailOutputs).
+ * after the connected settings); without them a slot is read in the backend's order (tailOutputs). `opts.values`
+ * ("<node>|<input>" -> value, the page's widgets, item 66): the value of a row `base` does not have, before the spec's
+ * default.
  */
 function fromPrompt(src, objectInfo, meta, base, opts = {}) {
     const prompt = JSON.parse(JSON.stringify(src));
@@ -66,6 +86,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
         return Array.isArray(v) ? undefined : v;
     };
     const names = opts && Array.isArray(opts.outputNames) ? opts.outputNames : null;
+    const pageValues = opts && opts.values && typeof opts.values === "object" ? opts.values : null;
     const tailNotes = tailOutputs(prompt, canvasId, (slot) => (names && typeof names[slot] === "string" && names[slot] ? names[slot] : backendOutputName(slot)));
     const settings = [];
     for (const [id, node] of Object.entries(prompt)) {
@@ -76,7 +97,7 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
             const info = objectInfo[node.class_type];
             const spec = info && info.input && ((info.input.required && info.input.required[name]) || (info.input.optional && info.input.optional[name])) || null;
             const was = baseRow(id, name, index);
-            const value = was ? baseValue(id, name) : undefined;
+            const value = was ? baseValue(id, name) : pageValue(pageValues, id, name);
             node.inputs[name] = value !== undefined ? value : specDefault(spec);
             const stored = was && was.spec !== undefined ? was.spec : storedSpec(spec, node.inputs[name]);
             settings.push({ index, node: id, input: name, label: was && was.label ? was.label : `${(node._meta && node._meta.title) || node.class_type} · ${name}`, ...(stored ? { spec: stored } : {}) });
@@ -90,6 +111,19 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
     return { kind: "comfy", mode, canvas: canvasId, result: resultLocal || resultApi, needs, settings, prompt, description: `Imported from ${meta.file} on ${meta.date}.` + (notes.length ? " " + notes.join("; ") + "." : ""), notes };
 }
 
+/**
+ * The canvas node's output names in the page's slot order, read from a UI graph (`workflow`: nodes / links), or null:
+ * the node's frontend shows the connected setting outputs and one free one, then the tail outputs, so a visible slot
+ * is not the backend's (fromGraph, comfyparams.js listParams).
+ * @param {any} workflow
+ * @returns {(string | null)[] | null}
+ */
+function canvasOutputNames(workflow) {
+    const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
+    const canvasUi = wf ? wf.nodes.find((n) => n && n.type === "InpaintCanvas" && Array.isArray(n.outputs)) : null;
+    return canvasUi ? canvasUi.outputs.map((/** @type {any} */ o) => (o && typeof o.name === "string" ? o.name : null)) : null;
+}
+
 // What a recipe file keeps of the recipe a graph was opened from: the fields its graph does not hold
 const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets", "factor", "limits", "boxes", "edit", "upsampler", "loras", "newImage", "promptRequired", "needsVersion"];
 
@@ -98,16 +132,16 @@ const GRAPH_KEEPS = ["description", "family", "task", "refs", "models", "presets
  * prompt and `workflow` the UI graph `app.graphToPrompt()` answered (untrusted: checked here); `base` the recipe the
  * window held. Without `name` the recipe is `base` overwritten (Save to recipe: its id, name and the fields a graph
  * does not hold stay); with `name` it is a new recipe under a fresh id among `ids` (Save as new recipe).
- * @param {{ output: any, workflow: any, objectInfo?: any, base?: Recipe | null, name?: string, ids?: string[], date: string }} a
+ * `values` ("<node>|<input>" -> value): what the page's widgets hold for the inputs wired to the canvas node's setting
+ * outputs, the value a new Settings row starts with (item 66; a row the held recipe had keeps its own value).
+ * @param {{ output: any, workflow: any, objectInfo?: any, base?: Recipe | null, name?: string, ids?: string[], date: string, values?: Record<string, any> | null }} a
  * @returns {Recipe}
  */
-function fromGraph({ output, workflow, objectInfo, base, name, ids, date }) {
+function fromGraph({ output, workflow, objectInfo, base, name, ids, date, values }) {
     if (!looksLikePrompt(output)) throw new Error("ComfyUI's page answered no graph Scumble can read.");
     const wf = workflow && typeof workflow === "object" && Array.isArray(workflow.nodes) && Array.isArray(workflow.links) ? workflow : null;
-    // the canvas node's output names in the page's slot order: the tail outputs sit right after the connected settings
-    const canvasUi = wf ? wf.nodes.find((n) => n && n.type === "InpaintCanvas" && Array.isArray(n.outputs)) : null;
-    const outputNames = canvasUi ? canvasUi.outputs.map((o) => (o && typeof o.name === "string" ? o.name : null)) : null;
-    const fields = fromPrompt(output, objectInfo || {}, { file: "ComfyUI", date }, base || undefined, { outputNames });
+    const outputNames = canvasOutputNames(wf);
+    const fields = fromPrompt(output, objectInfo || {}, { file: "ComfyUI", date }, base || undefined, { outputNames, values });
     const graph = { kind: "comfy", mode: fields.mode, canvas: fields.canvas, result: fields.result, needs: fields.needs, settings: fields.settings, prompt: fields.prompt, ...(wf ? { workflow: wf } : {}) };
     /** @type {Record<string, any>} */
     const kept = {};
@@ -697,4 +731,4 @@ function looksLikePrompt(obj) {
     return vals.length > 0 && vals.every((v) => v && typeof v === "object" && typeof v.class_type === "string");
 }
 
-module.exports = { cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, promotedOf, toPrompt };
+module.exports = { canvasOutputNames, cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, pageValue, promotedOf, toPrompt };

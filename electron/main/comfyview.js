@@ -17,6 +17,7 @@ const crypto = require("node:crypto");
 const { app, BaseWindow, WebContentsView, session, ipcMain, dialog } = require("electron");
 const { CLOUD_URL, popupAction, navigationAllowed, permissionAllowed, mediaKinds, mediaKey, mediaDecision, mediaCheckAllowed, mediaQuestion } = require("./comfyhosts");
 const { openHttp } = require("./links");
+const comfyparams = require("./comfyparams");
 
 const BAR_H = 36;
 const PARTITION = "persist:comfyui";
@@ -57,7 +58,8 @@ const READ_JS = `(async () => { try {
     const activeId = wf1 && wf1.activeState && typeof wf1.activeState.id === "string" && wf1.activeState.id ? wf1.activeState.id : null;
     const promptWfId = wfObj && typeof wfObj.id === "string" && wfObj.id ? wfObj.id : null;
     const tabChanged = wf0 !== wf1 || tab0 !== tab1 || !!(activeId && promptWfId && activeId !== promptWfId);
-    return { ok: true, tab: tab1, tabChanged: !!tabChanged, workflow: JSON.stringify(wfObj), output: JSON.stringify((p && p.output) || null) }; }
+    const values = ${comfyparams.VALUES_JS};
+    return { ok: true, tab: tab1, tabChanged: !!tabChanged, workflow: JSON.stringify(wfObj), output: JSON.stringify((p && p.output) || null), values }; }
     catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 
 /**
@@ -184,7 +186,7 @@ class ComfyView {
      * key store; url "" when none is set); `offline` a --no-comfy start, which shows no ComfyUI unless a test passes
      * a stub's URL to open(); `settings` the settings module (the window's bounds); `origin` scumble://app; `preload`
      * the bar's preload; `icon`, `background()` the window's look; `openSettings()` brings Settings › ComfyUI up in
-     * the main window; `saveRecipe({ output, workflow, objectInfo, heldId, name })` turns the page's graph into a
+     * the main window; `saveRecipe({ output, workflow, objectInfo, heldId, name, values })` turns the page's graph into a
      * recipe and saves it (main.js: recipes.fromGraph), answering { recipe: { id, name, prompt, workflow }, message }.
      */
     constructor({ target, offline, settings, origin, preload, icon, background, openSettings, saveRecipe }) {
@@ -226,6 +228,10 @@ class ComfyView {
         // the questions the bar shows (askInBar): id -> { shown, answer, gone }; the bar covers the window meanwhile
         this.asks = new Map();
         this.askSeq = 0;
+        // the Parameters list (item 66): shown in the bar, which then covers the top of the page; the server's node
+        // list read once per load (the widget kinds)
+        this.paramsOpen = false;
+        this.infoOnce = null;
         this.installIpc();
     }
 
@@ -240,6 +246,10 @@ class ComfyView {
         ipcMain.handle("comfyview:settings", (e) => { if (!fromBar(e)) refuse(); this.openSettings(); return true; });
         ipcMain.handle("comfyview:target", (e, kind) => { if (!fromBar(e)) refuse(); this.setTarget(kind); return this.state(); });
         ipcMain.handle("comfyview:save", (e, opts) => { if (!fromBar(e)) refuse(); const o = opts || {}; return this.save({ asNew: !!o.asNew, name: typeof o.name === "string" ? o.name.slice(0, 200) : "" }); });
+        // the Parameters list (item 66): shown or hidden (the bar grows over the page meanwhile), read, a tick or an untick
+        ipcMain.handle("comfyview:paramsShown", (e, on) => { if (!fromBar(e)) refuse(); this.showParams(!!on); return this.state(); });
+        ipcMain.handle("comfyview:params", (e) => { if (!fromBar(e)) refuse(); return this.readParams(); });
+        ipcMain.handle("comfyview:expose", (e, r) => { if (!fromBar(e)) refuse(); const o = r || {}; return this.expose(String(o.node || ""), String(o.input || ""), !!o.on); });
         // the bar's dialog (askInBar): it shows a question at once, answers it later; from the bar alone
         ipcMain.on("comfyview:asked", (e, id) => { const w = fromBar(e) && this.asks.get(id); if (w) w.shown(); });
         ipcMain.on("comfyview:answer", (e, r) => { const w = fromBar(e) && r && this.asks.get(r.id); if (w) w.answer(Math.max(0, Math.round(+r.index || 0))); });
@@ -528,6 +538,8 @@ class ComfyView {
             this.recipeNote = "";
             this.saveNote = "";
             this.pageReady = false;
+            this.paramsOpen = false;
+            this.infoOnce = null;
             this.readyGen++;
             this.phase = "closed";
             this.message = "";
@@ -569,6 +581,7 @@ class ComfyView {
         this.loaded = null;
         this.loadedTab = null;
         this.saveNote = "";
+        this.infoOnce = null;
         this.readyGen++;
         this.setPhase("loading", "");
         this.page.webContents.loadURL(t.url + "/").catch(() => { /* did-fail-load says why */ });
@@ -679,10 +692,12 @@ class ComfyView {
         if (r.output.length > MAX_GRAPH || r.workflow.length > MAX_GRAPH) return done(false, "The page's graph is larger than 20 MB.");
         let output, workflow;
         try { output = JSON.parse(r.output); workflow = JSON.parse(r.workflow); } catch (_) { return done(false, "The page's graph is not JSON."); }
+        // what the page's widgets hold for the inputs wired to the canvas node: a new Settings row's value (item 66)
+        const values = comfyparams.parseValues(r.values);
         const objectInfo = await this.objectInfo();
         if (!asNew && lostHeld()) return wrongTab();
         try {
-            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: held ? held.id : null, name: asNew ? name : "" });
+            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: held ? held.id : null, name: asNew ? name : "", values });
             let nextTab = curTab;
             if (asNew && this.isOpen && this.phase === "page" && gen === this.readyGen && this.recipe === held) {
                 const freshTok = crypto.randomUUID();
@@ -698,6 +713,53 @@ class ComfyView {
         } catch (err) {
             return done(false, String((err && err.message) || err));
         }
+    }
+
+    /** The Parameters list shown or hidden (item 66): the bar grows over the top of the page while it is shown. */
+    showParams(on) {
+        this.paramsOpen = !!on && this.isOpen && this.phase === "page";
+        this.layout();
+    }
+
+    /** The node list for the Parameters list: read once per load of the page (objectInfo), {} when it cannot be read. */
+    paramsInfo() {
+        if (!this.infoOnce) this.infoOnce = this.objectInfo();
+        return this.infoOnce;
+    }
+
+    /**
+     * The Parameters list (item 66, comfyparams.js listParams): the page's graph read as Save reads it, and every input
+     * a Settings row can take; ticked where the input is wired to a setting output of the Inpaint Canvas node.
+     */
+    async readParams() {
+        if (!this.isOpen || this.phase !== "page") return { ok: false, message: "There is no ComfyUI page to read." };
+        if (!this.pageReady && !(await this.checkReady())) return { ok: false, message: "ComfyUI is still setting this page up: try again in a moment." };
+        if (!this.can || !this.can.read) return { ok: false, message: `This ComfyUI page offers no way to read its graph (frontend ${this.frontend || "unknown"}).` };
+        let r = null;
+        try { r = await this.page.webContents.executeJavaScript(READ_JS, true); } catch (err) { r = { ok: false, error: (err && err.message) || String(err) }; }
+        if (!r || r.ok !== true || typeof r.output !== "string" || typeof r.workflow !== "string") return { ok: false, message: `The page did not hand over its graph: ${String((r && r.error) || "no answer").slice(0, 300)}` };
+        if (r.output.length > MAX_GRAPH || r.workflow.length > MAX_GRAPH) return { ok: false, message: "The page's graph is larger than 20 MB." };
+        let output, workflow;
+        try { output = JSON.parse(r.output); workflow = JSON.parse(r.workflow); } catch (_) { return { ok: false, message: "The page's graph is not JSON." }; }
+        if (!this.isOpen || this.phase !== "page") return { ok: false, message: "There is no ComfyUI page to read." };
+        const objectInfo = await this.paramsInfo();
+        return { ok: true, ...comfyparams.listParams({ output, workflow, objectInfo }) };
+    }
+
+    /**
+     * A tick (`on`) or an untick in the Parameters list: the input linked to the canvas node's lowest free setting
+     * output in the page, or that link taken away (comfyparams.js exposeScript); the list read again. The recipe keeps
+     * it once the graph is saved.
+     */
+    async expose(node, input, on) {
+        if (!this.isOpen || this.phase !== "page") return { ok: false, message: "There is no ComfyUI page to change." };
+        if (!comfyparams.validTarget(node, input)) return { ok: false, message: "That input cannot be linked from here." };
+        if (!this.pageReady && !(await this.checkReady())) return { ok: false, message: "ComfyUI is still setting this page up: try again in a moment." };
+        let r = null;
+        try { r = await this.page.webContents.executeJavaScript(comfyparams.exposeScript(node, input, on), true); } catch (err) { r = { ok: false, error: (err && err.message) || String(err) }; }
+        const list = await this.readParams();
+        if (!r || r.ok !== true) return { ...list, ok: false, message: `The page did not ${on ? "link" : "unlink"} ${input}: ${String((r && r.error) || "no answer").slice(0, 300)}` };
+        return list;
     }
 
     /** The node list of the server the page came from ({} when it cannot be read): never another server's (§2.5). */
@@ -732,6 +794,7 @@ class ComfyView {
     setPhase(phase, message) {
         this.phase = phase;
         this.message = message || "";
+        if (phase !== "page") this.paramsOpen = false;
         this.layout();
         this.sendState();
     }
@@ -744,7 +807,9 @@ class ComfyView {
         if (!this.isOpen || !this.bar) return;
         const { width, height } = this.win.getContentBounds();
         const withPage = this.phase === "page" || this.phase === "loading";
-        this.bar.setBounds({ x: 0, y: 0, width, height: withPage && !this.asks.size ? BAR_H : height });
+        // the Parameters list (item 66) covers the top part of the page, so the graph stays in sight under it
+        const strip = this.paramsOpen && withPage ? Math.min(height, Math.max(260, Math.round(height * 0.55))) : BAR_H;
+        this.bar.setBounds({ x: 0, y: 0, width, height: withPage && !this.asks.size ? strip : height });
         this.page.setBounds({ x: 0, y: BAR_H, width, height: Math.max(0, height - BAR_H) });
         this.page.setVisible(withPage);
     }
@@ -762,6 +827,7 @@ class ComfyView {
             // Save as new is on as soon as the page is there; Save to recipe only once the held recipe is in the page (MAIN-4)
             canSaveNew: this.phase === "page", canSave: this.phase === "page" && recipeLoaded,
             saveNote: this.saveNote,
+            paramsOpen: this.paramsOpen,
         };
     }
 
