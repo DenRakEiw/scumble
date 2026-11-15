@@ -18,6 +18,14 @@ export const SHADOW_DEFAULTS = Object.freeze({ distance: 30, softness: 8, opacit
 /** The working grid's long side for the dialog's preview and for the layer that is made. */
 export const SHADOW_WORK_PREVIEW = 768;
 export const SHADOW_WORK = 2048;
+/**
+ * The most cells the shadow's own grid may have (the preview's and the layer's): a long reach, a wide softness or a
+ * strong skew grow it far past the object's box (Softness 100 pads it by three times the object's height on every
+ * side), so the coverage is made coarser until it fits (`shadowExtent`, `coarserCoverage`). Such a shadow is soft
+ * anyway. Four float arrays and the blurs' scratch of 4 M cells are about 100 MB.
+ */
+export const SHADOW_MAX_CELLS = 4e6;
+export const SHADOW_MAX_CELLS_PREVIEW = 1e6;
 
 /** The coverage that counts as the object (the box and the foot). */
 const SOLID = 0.5;
@@ -77,32 +85,63 @@ function sample(alpha, w, h, x, y) {
     return top + (bot - top) * fy;
 }
 
-/**
- * The shadow of the coverage grid `alpha` (`w` x `h`, 0..1). `depthAt(x, y)`, optional, is the depth (0..1, near to
- * far) at a cell position of this grid (it may be asked outside it). Returns the shadow strength 0..1 on a grid of its
- * own, `{ data, w, h, x, y, box, foot, reach, trim }`: its cell (0, 0) is cell (x, y) of the coverage grid, `trim`
- * [x0, y0, x1, y1) the part above EPS in its own cells (null when nothing is). Null when the coverage has no opaque cell.
- */
-export function contactShadow({ alpha, w, h, params = {}, depthAt = null }) {
-    const box = alphaBox(alpha, w, h);
-    if (!box) return null;
-    const p = shadowParams(params);
+/** The shadow grid's place and size for an object `box` (alphaBox) and whole parameters `p`, in coverage cells. */
+function extentOf(box, p) {
     const foot = box.foot;
     const H = box.y1 - box.y0 + 1;
     const R = Math.max(1, (H * p.distance) / 100);
     const sigma = (H * p.softness) / 100;
     const sigmaCore = Math.max(0.5, sigma * 0.2);
     const k = p.skew / 100;
-    // the contact profile: per column the most opaque of the bottom rows (a foot, a table leg, a box's lower edge)
-    const cRows = Math.max(1, Math.round(0.03 * H));
-    const prof = new Float32Array(w);
-    for (let y = Math.max(0, foot - cRows + 1); y <= foot; y++) for (let x = 0; x < w; x++) prof[x] = Math.max(prof[x], alpha[y * w + x]);
     const up = Math.max(2, Math.ceil(2 * sigmaCore + 0.02 * H));
     const pad = Math.ceil(3 * Math.max(sigma, sigmaCore)) + 2;
     const shift = k * R;
     const gx0 = Math.floor(box.x0 - pad + Math.min(0, shift)), gx1 = Math.ceil(box.x1 + pad + Math.max(0, shift)) + 1;
     const gy0 = Math.floor(foot - up - pad), gy1 = Math.ceil(foot + R + pad) + 1;
-    const gw = gx1 - gx0, gh = gy1 - gy0;
+    return { foot, H, R, sigma, sigmaCore, k, up, gx0, gy0, gw: gx1 - gx0, gh: gy1 - gy0 };
+}
+
+/**
+ * How many cells the shadow grid of this coverage would have for `params`, with the object's box: `{ cells, box }`,
+ * null when the coverage has no opaque cell.
+ */
+export function shadowExtent(alpha, w, h, params = {}) {
+    const box = alphaBox(alpha, w, h);
+    if (!box) return null;
+    const e = extentOf(box, shadowParams(params));
+    return { cells: e.gw * e.gh, box };
+}
+
+/**
+ * A coverage source made `f` times coarser (whole f x f blocks averaged, the last ones partial): `{ alpha, w, h }` and
+ * the rest of `src` with its scales divided by `f`, so the image mapping (`x0 + (cell + 0.5) / sx`) still holds.
+ */
+export function coarserCoverage(src, f) {
+    const w = Math.max(1, Math.ceil(src.w / f)), h = Math.max(1, Math.ceil(src.h / f));
+    const sum = new Float32Array(w * h), n = new Float32Array(w * h);
+    for (let y = 0; y < src.h; y++) {
+        const row = ((y / f) | 0) * w, srow = y * src.w;
+        for (let x = 0; x < src.w; x++) { const i = row + ((x / f) | 0); sum[i] += src.alpha[srow + x]; n[i] += 1; }
+    }
+    for (let i = 0; i < sum.length; i++) sum[i] = n[i] ? sum[i] / n[i] : 0;
+    return { ...src, alpha: sum, w, h, sx: src.sx / f, sy: src.sy / f };
+}
+
+/**
+ * The shadow of the coverage grid `alpha` (`w` x `h`, 0..1). `depthAt(x, y)`, optional, is the depth (0..1, near to
+ * far) at a cell position of this grid (it may be asked outside it). Returns the shadow strength 0..1 on a grid of its
+ * own, `{ data, w, h, x, y, box, foot, reach, trim }`: its cell (0, 0) is cell (x, y) of the coverage grid, `trim`
+ * [x0, y0, x1, y1) the part above EPS in its own cells (null when nothing is). Null when the coverage has no opaque cell.
+ */
+export function contactShadow({ alpha, w, h, params = {}, depthAt = null, box = null }) {
+    box = box || alphaBox(alpha, w, h);
+    if (!box) return null;
+    const p = shadowParams(params);
+    const { foot, H, R, sigma, sigmaCore, k, up, gx0, gy0, gw, gh } = extentOf(box, p);
+    // the contact profile: per column the most opaque of the bottom rows (a foot, a table leg, a box's lower edge)
+    const cRows = Math.max(1, Math.round(0.03 * H));
+    const prof = new Float32Array(w);
+    for (let y = Math.max(0, foot - cRows + 1); y <= foot; y++) for (let x = 0; x < w; x++) prof[x] = Math.max(prof[x], alpha[y * w + x]);
     const src = new Float32Array(gw * gh);
     for (let gy = 0; gy < gh; gy++) {
         const d = gy0 + gy - foot;

@@ -14244,6 +14244,7 @@ try {
     const L0 = ed.addLayer({ name: "Box", kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 300, y: 150, w: 200, h: 100, dirty: true });
     // an undo puts copies of the layers back: the rectangle is looked up by its id each time
     const live = () => ed.layers.find((l) => l.id === L0.id);
+    const live2 = (l) => ed.layers.find((x) => x.id === l.id) || l;
     let L = L0;
     const own = () => Array.from(live().px.readRect(0, 0, 200, 100).data).join(",");
     const before = own(), place = [L.x, L.y, L.w, L.h].join(",");
@@ -14297,28 +14298,89 @@ try {
     const re = await commands.call("contact_shadow", { layer: E.id, doc });
     out.refused = [rf.ok ? "made" : rf.error, re.ok ? "made" : re.error];
     if (rf.ok || !/filter layer/.test(rf.error) || re.ok || !/no opaque part/.test(re.error)) throw new Error("refusals: " + JSON.stringify(out.refused));
-    // the dialog: a preview layer while it is open, nothing left and no step after Cancel; Apply makes one step
+    // the dialog: its preview is drawn over the screen only, never a layer: the document (getValue, the layer list) holds
+    // none while it is open, a step taken meanwhile (an agent's command) and its undo bring none back; Cancel leaves
+    // nothing, Apply makes one step
     const u1 = ed.undo.length, n1 = ed.layers.length;
     L = live();
     const button = (label) => Array.from(ed.askOpen.querySelectorAll("button")).find((x) => x.textContent === label);
     let p = ed.contactShadowDialog(L);
     await wait(150);
-    const pv = ed.layers.find((l) => l._shadowPreview), pvh = pv ? pv.h : 0;
-    if (!ed.askOpen || !pv || ed.layers.indexOf(pv) !== ed.layers.indexOf(L) - 1 || ed.undo.length !== u1) throw new Error("the dialog shows no preview under the layer: " + JSON.stringify({ ask: !!ed.askOpen, preview: !!pv, layers: ed.layers.map((l) => l.name), steps: ed.undo.length - u1, status: ed.status }));
+    const ov = ed._shadowOverlay, ovh = ov ? ov.h : 0;
+    const docNow = JSON.stringify(ed.getValue());
+    if (!ed.askOpen || !ov || ed.layers.length !== n1 || ed.undo.length !== u1 || /shadow/i.test(docNow)) throw new Error("the dialog's preview is not a screen overlay alone: " + JSON.stringify({ ask: !!ed.askOpen, overlay: !!ov, layers: ed.layers.map((l) => l.name), steps: ed.undo.length - u1, inDoc: /shadow/i.test(docNow), status: ed.status }));
     const slider = ed.askOpen.querySelector("input[type=range]");
     slider.value = "60"; slider.dispatchEvent(new Event("input"));
     await wait(200);
-    const pv2 = ed.layers.find((l) => l._shadowPreview);
-    if (!pv2 || !(pv2.h > pvh + 20)) throw new Error("the preview did not follow the distance: " + JSON.stringify([pvh, pv2 && pv2.h]));
+    if (!ed._shadowOverlay || !(ed._shadowOverlay.h > ovh + 20)) throw new Error("the preview did not follow the distance: " + JSON.stringify([ovh, ed._shadowOverlay && ed._shadowOverlay.h]));
+    await run("select_rect", { x: 10, y: 10, w: 50, h: 50, doc });
     button("Cancel").click();
-    if ((await p) !== null || ed.layers.length !== n1 || ed.layers.some((l) => l._shadowPreview) || ed.undo.length !== u1) throw new Error("Cancel left something: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    if ((await p) !== null || ed._shadowOverlay || ed.layers.length !== n1) throw new Error("Cancel left something: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    await run("undo", { doc });
+    if (ed.layers.length !== n1 || ed.layers.some((l) => /shadow/i.test(l.name)) || ed.undo.length !== u1) throw new Error("the undo of a step taken during the dialog brought something back: " + JSON.stringify(ed.layers.map((l) => l.name)));
     p = ed.contactShadowDialog(L);
     await wait(150);
     button("Apply").click();
     const made = await p;
     out.dialog = { made: made && made.name, layers: ed.layers.length - n1, steps: ed.undo.length - u1, label: ed.undo[ed.undo.length - 1].label };
-    if (!made || ed.layers.length !== n1 + 1 || ed.undo.length !== u1 + 1 || out.dialog.label !== "Contact shadow" || ed.layers.some((l) => l._shadowPreview)) throw new Error("Apply: " + JSON.stringify(out.dialog));
-    if (ed.layers.indexOf(made) !== ed.layers.indexOf(L) - 1) throw new Error("the dialog's shadow is not under the layer");
+    if (!made || ed.layers.length !== n1 + 1 || ed.undo.length !== u1 + 1 || out.dialog.label !== "Contact shadow" || ed._shadowOverlay) throw new Error("Apply: " + JSON.stringify(out.dialog));
+    if (ed.layers.indexOf(made) !== ed.layers.indexOf(live()) - 1) throw new Error("the dialog's shadow is not under the layer");
+    await run("undo", { doc });
+    // the review's must: the widest parameters on a tall layer stay within the grid's cap and land in seconds (they
+    // asked for a grid of about 13,000 x 14,000 cells before); the preview at the same values too
+    await run("remove_layer", { layer: E.id, doc });
+    await run("remove_layer", { layer: f.id, doc });
+    const tall = document.createElement("canvas"); tall.width = 120; tall.height = 380;
+    tall.getContext("2d").fillRect(0, 0, 120, 380);
+    const T = ed.addLayer({ name: "Tall", kind: "paint", px: ed.pixels.Layer.fromCanvas(tall), x: 60, y: 10, w: 120, h: 380, dirty: true });
+    const big = { distance: 300, softness: 100, skew: 100 };
+    const t0 = performance.now();
+    const rt = await commands.call("contact_shadow", { layer: T.id, ...big, doc });
+    const tBig = Math.round(performance.now() - t0);
+    const srcT = ed.shadowSource(live2(T), 2048), gT = ed.shadowGrid(srcT, big);
+    out.wide = { ok: rt.ok, ms: tBig, cells: gT.grid.w * gT.grid.h, error: rt.ok ? null : rt.error };
+    if (!rt.ok || tBig > 8000 || gT.grid.w * gT.grid.h > 4e6) throw new Error("the widest parameters: " + JSON.stringify(out.wide));
+    p = ed.contactShadowDialog(live2(T));
+    await wait(150);
+    for (const [i, v] of [[0, 300], [1, 100], [3, 100]]) { const s = ed.askOpen.querySelectorAll("input[type=range]")[i]; s.value = String(v); s.dispatchEvent(new Event("input")); }
+    await wait(1500);
+    out.wide.preview = !!ed._shadowOverlay;
+    if (!ed._shadowOverlay || ed.statusKind === "error") throw new Error("the preview at the widest parameters: " + ed.status);
+    button("Cancel").click();
+    await p;
+    await run("undo", { doc });
+    // tiles: the coverage is read from the region canvases, no display mirror of the whole layer is made
+    if (ed.tileMode) {
+        const Lp = live().px;
+        const had = !!Lp._mirror;
+        const rm = await run("contact_shadow", { layer: L.id, doc });
+        out.mirror = { before: had, after: !!live().px._mirror };
+        if (!had && live().px._mirror) throw new Error("the shadow made a display mirror of the whole layer");
+        await run("undo", { doc });
+        void rm;
+    }
+    // a clipped layer: its shadow never becomes the base it clips to. Clipped over a filter layer (a clip without
+    // effect): the shadow goes under the filter, which stays the target; clipped with nothing under it in its group: the
+    // shadow is clipped too and the clip stays without effect
+    const g = await run("add_filter", { type: "grain", doc });
+    const G = ed.layers.find((l) => l.id === g.id);
+    ed.layers.splice(ed.layers.indexOf(G), 1); ed.layers.splice(ed.layers.indexOf(live()), 0, G);
+    live().clip = true; ed.layersRestacked();
+    if (ed.clipTargetOf(live()) !== G || ed.clipBaseOf(live()) !== null) throw new Error("the clip over a filter is not set up");
+    const rc = await run("contact_shadow", { layer: L.id, doc });
+    const SC = ed.layers.find((l) => l.id === rc.id);
+    out.clip = { stack: ed.layers.map((l) => l.name), target: ed.clipTargetOf(live()) && ed.clipTargetOf(live()).name, base: ed.clipBaseOf(live()) && ed.clipBaseOf(live()).name };
+    if (ed.clipTargetOf(live()) !== ed.layers.find((l) => l.id === G.id) || ed.clipBaseOf(live()) !== null || ed.layers.indexOf(SC) >= ed.layers.indexOf(ed.layers.find((l) => l.id === G.id))) throw new Error("the shadow became the clipped layer's base: " + JSON.stringify(out.clip));
+    await run("undo", { doc });
+    await run("remove_layer", { layer: G.id, doc });
+    // with the filter gone the clipped box is the bottom layer: nothing to clip to
+    const B = live();
+    ed.layers.splice(ed.layers.indexOf(B), 1); ed.layers.unshift(B); ed.layersRestacked();
+    const rb = await run("contact_shadow", { layer: L.id, doc });
+    const SB = ed.layers.find((l) => l.id === rb.id);
+    out.clip.bottom = { stack: ed.layers.map((l) => l.name + (l.clip ? " (clip)" : "")), base: ed.clipBaseOf(live()) && ed.clipBaseOf(live()).name };
+    if (ed.clipBaseOf(live()) !== null || !SB.clip || ed.layers.indexOf(SB) !== ed.layers.indexOf(live()) - 1) throw new Error("the clip with nothing under it: " + JSON.stringify(out.clip.bottom));
+    await run("undo", { doc });
 } finally {
     if (ed.askOpen) { const c = Array.from(ed.askOpen.querySelectorAll("button")).find((x) => x.textContent === "Cancel"); if (c) c.click(); }
     if (ed.maps) ed.maps.depth = keepDepth;
