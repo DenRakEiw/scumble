@@ -43,11 +43,13 @@ function preview(value) {
  * The inputs of a graph a Settings row can take. `output` is the page's API prompt, `workflow` its UI graph (for the
  * canvas node's output names; the page's visible slots), `objectInfo` the server's node list (for the widget kinds;
  * without it a kind is read from the value). Answers
- *   { canvas, nodes: [{ id, title, type, inputs: [{ name, kind, value, exposed, index, label }] }], used, cap, full,
- *     note }
- * where an `exposed` input is wired to setting output `index`. Not listed: the Inpaint Canvas node's own inputs,
- * inputs wired from other nodes, values that are no widget (an object, a list), and nodes inside a subgraph (their
- * ids hold ":"; the page scripts reach the root graph only).
+ *   { canvas, nodes: [{ id, title, type, inputs: [{ name, kind, value, exposed, index, label, locked }] }], used, cap,
+ *     full, note }
+ * where an `exposed` input is wired to setting output `index`, and `used` counts the setting outputs in use (one
+ * output may feed several inputs). Not listed: the Inpaint Canvas node's own inputs, inputs wired from other nodes,
+ * values that are no widget (an object, a list), and the free inputs of nodes inside a subgraph (their ids hold ":";
+ * the page scripts reach the root graph only); a row already wired there is listed `locked` (no tick, no untick). A
+ * canvas node inside a subgraph gives no list. At most MAX_LISTED inputs, the wired ones first.
  * @param {{ output: any, workflow?: any, objectInfo?: any, cap?: number }} a
  */
 function listParams({ output, workflow, objectInfo, cap }) {
@@ -58,11 +60,13 @@ function listParams({ output, workflow, objectInfo, cap }) {
     if (!ids.length) return empty("Parameters become Settings rows through the Inpaint Canvas node, and this graph has none.");
     if (ids.length > 1) return empty("This graph has more than one Inpaint Canvas node; a recipe needs exactly one.");
     const canvas = ids[0];
+    if (!NODE_ID.test(canvas)) return empty("The Inpaint Canvas node sits inside a subgraph: this list reaches the top level of the graph only. Link its setting outputs by hand.");
     const names = canvasOutputNames(workflow);
     const nameOf = (slot) => (names && typeof names[slot] === "string" && names[slot] ? names[slot] : backendOutputName(slot));
     const info = objectInfo && typeof objectInfo === "object" ? objectInfo : {};
-    const nodes = [];
-    let used = 0, listed = 0, more = 0, inSubgraphs = 0;
+    const all = [];
+    const inUse = new Set();
+    let inSubgraphs = 0;
     const order = (a, b) => { const x = Number(a), y = Number(b); return Number.isFinite(x) && Number.isFinite(y) ? x - y : String(a).localeCompare(String(b)); };
     for (const id of Object.keys(output).sort(order)) {
         const node = output[id];
@@ -74,35 +78,39 @@ function listParams({ output, workflow, objectInfo, cap }) {
             const inp = n && n.input;
             return (inp && ((inp.required && inp.required[name]) || (inp.optional && inp.optional[name]))) || null;
         };
+        const reachable = NODE_ID.test(String(id));
         const rows = [];
         for (const [name, v] of Object.entries(inputs)) {
             if (Array.isArray(v)) {
                 if (String(v[0]) !== canvas || !(+v[1] >= FIXED_OUTPUTS)) continue;   // wired from another node
                 const m = /^setting_(\d+)$/.exec(nameOf(+v[1]) || "");
                 if (!m) continue;   // the canvas node's box_prompt or elements
-                used++;
-                rows.push({ name, kind: kindOf(spec(name), undefined) || "", value: `setting ${m[1]}`, exposed: true, index: +m[1], label: `${title} \u00b7 ${name}` });
+                inUse.add(+m[1]);
+                rows.push({ name, kind: kindOf(spec(name), undefined) || "", value: `setting ${m[1]}`, exposed: true, index: +m[1], label: `${title} \u00b7 ${name}`, locked: !reachable });
                 continue;
             }
             const kind = kindOf(spec(name), v);
             if (!kind || (v !== null && typeof v === "object")) continue;
-            rows.push({ name, kind, value: preview(v), exposed: false, index: null, label: `${title} \u00b7 ${name}` });
+            // a node inside a subgraph: its free inputs are counted, not offered
+            if (!reachable) { inSubgraphs++; continue; }
+            rows.push({ name, kind, value: preview(v), exposed: false, index: null, label: `${title} \u00b7 ${name}`, locked: false });
         }
-        if (!rows.length) continue;
-        if (!NODE_ID.test(String(id))) {
-            // a node inside a subgraph: counted, not offered (a row already wired there stays as the graph has it)
-            inSubgraphs += rows.filter((r) => !r.exposed).length;
-            const wired = rows.filter((r) => r.exposed);
-            if (!wired.length) continue;
-            rows.length = 0;
-            rows.push(...wired);
-        }
-        const room = MAX_LISTED - listed;
-        if (room <= 0) { more += rows.length; continue; }
-        if (rows.length > room) { more += rows.length - room; rows.length = room; }
-        listed += rows.length;
-        nodes.push({ id: String(id), title, type: String(node.class_type).slice(0, 120), inputs: rows });
+        if (rows.length) all.push({ id: String(id), title, type: String(node.class_type).slice(0, 120), inputs: rows });
     }
+    // the cap keeps every wired row (at most a few per setting output) and fills the rest with free inputs in order
+    const wired = all.reduce((n, x) => n + x.inputs.filter((r) => r.exposed).length, 0);
+    let room = Math.max(0, MAX_LISTED - wired), more = 0;
+    const nodes = [];
+    for (const n of all) {
+        const keep = n.inputs.filter((r) => {
+            if (r.exposed) return true;
+            if (room > 0) { room--; return true; }
+            more++;
+            return false;
+        });
+        if (keep.length) nodes.push({ ...n, inputs: keep });
+    }
+    const used = inUse.size;
     const notes = [];
     if (used >= max) notes.push(`All ${max} setting outputs of the Inpaint Canvas node are in use: untick one first.`);
     if (inSubgraphs) notes.push(`${inSubgraphs} input${inSubgraphs === 1 ? "" : "s"} inside subgraphs ${inSubgraphs === 1 ? "is" : "are"} not listed.`);
@@ -139,7 +147,10 @@ function exposeScript(node, input, on) {
     const slots = node.inputs || [];
     const slot = slots.findIndex((i) => i && (i.name === ${name} || (i.widget && i.widget.name === ${name})));
     const settingOf = (o) => { const m = o && /^setting_(\\d+)$/.exec(String(o.name || "")); return m ? Number(m[1]) : 0; };
-    const fromCanvas = (inp) => { const l = inp && inp.link != null ? linkOf(inp.link) : null; return l && String(l.origin_id) === String(canvas.id) ? l : null; };
+    // a Settings row: a link from one of the canvas node's setting_<n> outputs (not box_prompt, elements or a fixed one)
+    const fromCanvas = (inp) => { const l = inp && inp.link != null ? linkOf(inp.link) : null; return l && String(l.origin_id) === String(canvas.id) && settingOf((canvas.outputs || [])[l.origin_slot]) > 0 ? l : null; };
+    // ComfyUI's change tracking (its undo and the tab's unsaved mark): asked to look at the graph again, where it exists
+    const tracked = () => { try { const wm = (window.app.extensionManager && window.app.extensionManager.workflow) || window.app.workflowManager; const ct = wm && wm.activeWorkflow && wm.activeWorkflow.changeTracker; if (ct && typeof ct.checkState === "function") ct.checkState(); } catch (_) { /* none */ } };
     if (${on ? "true" : "false"}) {
         if (slot < 0) return { ok: false, error: "the node has no socket for " + ${name} + " (an older ComfyUI frontend: link it to a setting output by hand)" };
         const was = fromCanvas(slots[slot]);
@@ -149,13 +160,18 @@ function exposeScript(node, input, on) {
         (canvas.outputs || []).forEach((o, i) => { const n = settingOf(o); if (n && !(o.links && o.links.length) && (best < 0 || n < bestN)) { best = i; bestN = n; } });
         if (best < 0) return { ok: false, error: "every setting output of the Inpaint Canvas node is in use" };
         const link = canvas.connect(best, node, slot);
-        if (!link) return { ok: false, error: "the page did not take the link" };
+        // the link must be there afterwards, from a setting output, on the input asked for: anything else is a failure
+        const now = fromCanvas((node.inputs || [])[slot]);
+        if (!link || !now) return { ok: false, error: "the page did not take the link" };
         if (typeof g.setDirtyCanvas === "function") g.setDirtyCanvas(true, true);
-        return { ok: true, index: bestN };
+        tracked();
+        return { ok: true, index: settingOf(canvas.outputs[now.origin_slot]) || bestN };
     }
     if (slot < 0 || !fromCanvas(slots[slot])) return { ok: true, index: 0 };
     node.disconnectInput(slot);
+    if (((node.inputs || [])[slot] || {}).link != null) return { ok: false, error: "the page kept the link" };
     if (typeof g.setDirtyCanvas === "function") g.setDirtyCanvas(true, true);
+    tracked();
     return { ok: true, index: 0 };
     } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 }

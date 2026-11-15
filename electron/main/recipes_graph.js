@@ -79,7 +79,13 @@ function fromPrompt(src, objectInfo, meta, base, opts = {}) {
     const kept = {};
     for (const k of CANVAS_PARAMS) if (typeof canvas.inputs[k] === "number") kept[k] = canvas.inputs[k];
     canvas.inputs = kept;
-    const baseRow = (id, name, index) => (base && Array.isArray(base.settings) ? base.settings.find((s) => s && String(s.node) === String(id) && s.input === name && s.index === index) : null);
+    // the held recipe's row of this input: the same slot first, else the same node input on another slot (unticked and
+    // ticked again in the ComfyUI window's Parameters list, item 66), which keeps its value, label and spec
+    const baseRow = (id, name, index) => {
+        if (!base || !Array.isArray(base.settings)) return null;
+        const same = (s) => s && String(s.node) === String(id) && s.input === name;
+        return base.settings.find((s) => same(s) && s.index === index) || base.settings.find(same) || null;
+    };
     const baseValue = (id, name) => {
         const n = base && base.prompt && base.prompt[id];
         const v = n && n.inputs ? n.inputs[name] : undefined;

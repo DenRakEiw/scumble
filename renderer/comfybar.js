@@ -107,10 +107,11 @@
                 const box = document.createElement("input");
                 box.type = "checkbox";
                 box.checked = !!inp.exposed;
-                box.disabled = !inp.exposed && !!r.full;
+                box.disabled = !!inp.locked || (!inp.exposed && !!r.full);
                 box.dataset.node = n.id;
                 box.dataset.input = inp.name;
-                box.title = inp.exposed ? `A Settings row (setting ${inp.index}): "${inp.label}"` : `Make it a Settings row: "${inp.label}"`;
+                box.title = inp.locked ? `A Settings row (setting ${inp.index}) inside a subgraph: this list reaches the top level only, unlink it by hand`
+                    : inp.exposed ? `A Settings row (setting ${inp.index}): "${inp.label}"` : `Make it a Settings row: "${inp.label}"`;
                 box.addEventListener("change", () => expose(n.id, inp.name, box.checked));
                 const name = document.createElement("span");
                 name.className = "cb-pname";
@@ -128,7 +129,7 @@
             list.appendChild(sec);
         }
     }
-    const lockList = (on) => { busy = on; for (const b of $("cb-params-list").querySelectorAll("input")) if (on) b.disabled = true; };
+    const lockList = (on) => { busy = on; if (on) for (const b of $("cb-params-list").querySelectorAll("input")) b.disabled = true; };
     async function readParams() {
         if (busy) return;
         lockList(true);
