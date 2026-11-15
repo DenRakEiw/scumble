@@ -155,6 +155,44 @@ export async function confirm(message, { title = "", detail = "", ok = "OK", can
     return i === 0;
 }
 
+/**
+ * A dialog of the app's own with richer content than a question (the video frame picker, renderer/videoframe.js):
+ * a modal <dialog> with the same pinned box and the same sheet in a shadow root, counted by openCount() and closed by
+ * cancelAll() like a question. `onCancel` runs for Escape and cancelAll; the caller closes it with the returned
+ * close(). Returns { dialog, root, box, close }: `box` is the styled column to fill.
+ */
+export function panel({ label = "", extraCss = "", onCancel = null } = {}) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "sc-dialog";
+    dialog.setAttribute("style", BOX);
+    dialog.setAttribute("aria-label", label);
+    const host = document.createElement("div");
+    dialog.appendChild(host);
+    const root = host.attachShadow({ mode: "open" });
+    if (!sheet) { sheet = new CSSStyleSheet(); sheet.replaceSync(CSS); }
+    const sheets = [sheet];
+    if (extraCss) { const s = new CSSStyleSheet(); s.replaceSync(extraCss); sheets.push(s); }
+    root.adoptedStyleSheets = sheets;
+    const box = document.createElement("div");
+    box.className = "box";
+    box.setAttribute("role", "dialog");
+    root.appendChild(box);
+    let closed = false;
+    const entry = { dialog, finish: () => { if (onCancel) onCancel(); } };
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        open.delete(entry);
+        try { dialog.close(); } catch (_) { /* gone already */ }
+        dialog.remove();
+    };
+    dialog.addEventListener("cancel", (e) => { e.preventDefault(); entry.finish(); });
+    document.body.appendChild(dialog);
+    open.add(entry);
+    try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
+    return { dialog, root, box, close };
+}
+
 /** How many of the app's questions are open (tests, and main's check whether the window is asking). */
 export function openCount() {
     return open.size;

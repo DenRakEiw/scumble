@@ -12,6 +12,7 @@ import { initAssistant, toggleAssistant, assistantOpen, resetAssistant } from ".
 import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins } from "./skins.js";
 import * as dialogs from "./dialogs.js";
+import { isVideoFile, loadVideo, showPicker } from "./videoframe.js";
 import { remap, compare, checkNote, normalize as normalizeTokens } from "./editor/reftokens.js";
 import * as realism from "./editor/realism.js";
 import { failKind } from "./editor/inpaint_status.js";
@@ -1061,6 +1062,62 @@ window.scumble.file.onOpened(({ name, data }) => {
     const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : /\.tiff?$/i.test(name) ? "image/tiff" : "image/png";
     openInto(new File([data], name, { type }));
 });
+
+// ---- a frame from a video (CLAUDE.md item 68, renderer/videoframe.js) --------------------------------------------
+
+/**
+ * The frame picker for a video URL, then what was picked goes where an opened or dropped image goes: a new picture
+ * (openInto), a layer or a reference layer of the active document. `focus` is the action Enter takes. A video Chromium
+ * cannot decode is refused in the status line before any picker opens. Resolves with the picker's answer (null when
+ * cancelled or refused).
+ */
+async function openVideo({ url, name, focus = "new", note = "", onClose = null }) {
+    const ed = host.editor;
+    const say = (text, kind) => { if (host.editor) host.editor.setStatus(text, kind); };
+    say(`Reading ${name} ...${note}`);
+    let v;
+    try {
+        v = await loadVideo(url, name);
+    } catch (err) {
+        try { if (onClose) onClose(); } catch (_) { /* the URL's own */ }
+        say(String((err && err.message) || err), "error");
+        return null;
+    }
+    say(`Pick a frame from ${name}.`);
+    const r = await showPicker(v, { name, canLayer: !!(ed && ed.base), focus, onClose });
+    if (!r) { say(`No frame taken from ${name}.`, "info"); return null; }
+    const target = host.editor;
+    if (r.action === "new" || !target) await openInto(r.file);
+    else if (r.action === "layer" && target.base) await target.addImageLayers([r.file], "none", { place: "fit" });
+    else if (r.action === "reference") await target.addImageLayers([r.file], "reference", { blank: true });
+    else await openInto(r.file);
+    return r;
+}
+
+// File › Open on a video: main sends a URL it serves for that one file, never the bytes (electron/main/videofiles.js)
+window.scumble.file.onOpenedVideo(({ name, url, token }) => {
+    openVideo({ url, name, focus: "new", onClose: () => { window.scumble.file.releaseVideo(token).catch(() => { /* main is gone */ }); } });
+});
+
+// a video dropped anywhere on the window opens the frame picker; the capture phase runs before the editor's drop
+// handlers (which take pictures only). The dropped File plays from a blob: URL, its bytes never copied; Enter takes a
+// layer (Shift: a reference) into a document with a picture, else a new picture
+window.addEventListener("drop", (e) => {
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    const videos = files.filter(isVideoFile);
+    if (!videos.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const f = videos[0];
+    // a .mov is the box format of MP4: as video/quicktime Chromium's player would not try it (a slice copies nothing)
+    const blob = /\.mov$/i.test(f.name || "") ? f.slice(0, f.size, "video/mp4") : f;
+    const url = URL.createObjectURL(blob);
+    const ed = host.editor;
+    const focus = ed && ed.base ? (e.shiftKey ? "reference" : "layer") : "new";
+    const left = files.length - 1;
+    const note = left ? ` (${left} other file${left > 1 ? "s" : ""} left out: drop a video on its own)` : "";
+    openVideo({ url, name: f.name || "video", focus, note, onClose: () => URL.revokeObjectURL(url) });
+}, true);
 // ---- .scumble documents (docs/PLAN_DOCUMENTS.md): save, save as, open ------------------------------------------
 
 /** An error of a main-process call without Electron's "Error invoking remote method ..." prefix. */
