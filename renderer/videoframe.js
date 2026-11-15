@@ -50,7 +50,7 @@ export function loadVideo(url, name = "the video") {
             if (done) return;
             done = true;
             clearTimeout(timer);
-            if (!err) { resolve(v); return; }
+            if (!err) { findDuration(v).then(() => resolve(v)); return; }
             try { v.removeAttribute("src"); v.load(); } catch (_) { /* gone */ }
             reject(new Error(`${name} cannot be opened: ${err}. Convert it to MP4 (H.264) or WebM first (ProRes and some HEVC files do not play here).`));
         };
@@ -62,6 +62,51 @@ export function loadVideo(url, name = "the video") {
         v.addEventListener("error", () => end((v.error && MEDIA_ERRORS[v.error.code]) || "the player refused it"), { once: true });
         v.src = url;
     });
+}
+
+/** An event of the element, or the timeout: resolves true for the event, false for the timeout. */
+function once(v, type, ms) {
+    return new Promise((resolve) => {
+        const t = setTimeout(() => { v.removeEventListener(type, on); resolve(false); }, ms);
+        function on() { clearTimeout(t); resolve(true); }
+        v.addEventListener(type, on, { once: true });
+    });
+}
+
+/**
+ * A video whose file names no length (a recording written as it went, such as a WebM from a browser's recorder) says
+ * its duration is Infinity until the player has been to its end: one seek far past it makes the player find the end,
+ * then back to the start. Marks the element (data-duration-found) when it had to; a length it still cannot find is
+ * left to endOf().
+ */
+async function findDuration(v) {
+    if (Number.isFinite(v.duration)) return;
+    v.dataset.durationFound = "searched";
+    const changed = once(v, "durationchange", 5000);
+    v.currentTime = 1e101;
+    await Promise.race([changed, once(v, "seeked", 5000)]);
+    if (!Number.isFinite(v.duration)) await once(v, "durationchange", 1000);
+    if (Number.isFinite(v.duration)) v.dataset.durationFound = "found";
+    const back = once(v, "seeked", 5000);
+    v.currentTime = 0;
+    await back;
+}
+
+/** The video's end in seconds: its duration, else the end of what it can seek to, else null (not known). */
+export function endOf(v) {
+    if (Number.isFinite(v.duration) && v.duration > 0) return v.duration;
+    const s = v.seekable;
+    if (s && s.length) {
+        const e = s.end(s.length - 1);
+        if (Number.isFinite(e) && e > 0) return e;
+    }
+    return null;
+}
+
+/** A time clamped to the video: never below 0, and above only where the end is known. */
+function clampTime(v, t) {
+    const end = endOf(v);
+    return Math.max(0, end != null ? Math.min(end, t) : t);
 }
 
 /** Resolves once the element shows the frame at its currentTime (no seek pending, a frame decoded), or after 10 s. */
@@ -118,6 +163,9 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
         let busy = false;
         let shown = null;           // the media time of the frame on screen, from requestVideoFrameCallback
         let last = null;
+        let frames = 0;             // requestVideoFrameCallback calls so far (0: none here, a hidden window)
+        let learned = 0;            // one frame's length, found by a step that crossed exactly one frame
+        let stepping = null;        // the step under way (a promise): presses meanwhile are dropped
         const deltas = [];          // frame-to-frame media times while playing: the frame rate
         const p = panel({ label: `Pick a frame from ${name}`, extraCss: CSS, onCancel: () => finish(null) });
         const { dialog, box } = p;
@@ -143,7 +191,7 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
         const range = document.createElement("input");
         range.type = "range";
         range.min = "0";
-        range.max = String(Number.isFinite(v.duration) ? v.duration : 0);
+        range.max = String(endOf(v) || 0);
         range.step = "any";
         range.value = "0";
         range.setAttribute("aria-label", "Position in the video");
@@ -173,18 +221,27 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
         const def = btn[focus] && !btn[focus].disabled ? focus : "new";
         btn[def].className = "primary";
 
-        const frameStep = () => {
-            if (deltas.length < 3) return DEFAULT_STEP;
-            const s = [...deltas].sort((a, b) => a - b);
-            return s[s.length >> 1];
+        // the frame length: measured while it played, else found by a step, else not known (0)
+        const frameLength = () => {
+            if (deltas.length >= 3) {
+                const s = [...deltas].sort((a, b) => a - b);
+                return s[s.length >> 1];
+            }
+            return learned;
         };
+        const frameStep = () => frameLength() || DEFAULT_STEP;
+        // the media time of the frame on screen: the frame callback's while it belongs to the element's time now
+        const frameTime = () => (shown && Math.abs(shown.at - v.currentTime) < 1e-6 ? shown.media : v.currentTime);
         function update() {
-            const d = Number.isFinite(v.duration) ? v.duration : 0;
+            const end = endOf(v);
+            // an end not known yet (a recording without a length): the slider reaches as far as the video has been
+            const d = end != null ? end : Math.max(+range.max || 0, v.currentTime);
             if (+range.max !== d) range.max = String(d);
             if (p.root.activeElement !== range || !v.paused) range.value = String(v.currentTime);
-            time.textContent = `${timeText(v.currentTime)} / ${timeText(d)}`;
+            time.textContent = `${timeText(v.currentTime)} / ${end != null ? timeText(end) : "?"}`;
             play.textContent = v.paused ? "Play" : "Pause";
-            const fs = deltas.length >= 3 ? `${Math.round(1 / frameStep())} fps` : "frame step 1/30 s until the frame rate is measured (play a moment)";
+            const len = frameLength();
+            const fs = len ? `${Math.round(1 / len)} fps` : frames ? "frame rate not known yet: a step looks for the next frame" : "frame step 1/30 s";
             info.textContent = `${v.videoWidth} × ${v.videoHeight} px · ${fs}`;
         }
         // the frame on screen: where its steps start, and the frame rate while it plays (not in a hidden window: there
@@ -192,6 +249,7 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
         const onFrame = (_now, md) => {
             if (closed) return;
             shown = { media: md.mediaTime, at: v.currentTime };
+            frames++;
             if (!v.paused && last && md.presentedFrames - last.presentedFrames === 1) {
                 const d = md.mediaTime - last.mediaTime;
                 if (d > 0.001 && d < 1) { deltas.push(d); if (deltas.length > 15) deltas.shift(); }
@@ -207,19 +265,75 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
         v.addEventListener("pause", onTime);
         v.addEventListener("play", onTime);
 
+        /** Resolves true once a frame callback comes after the count `f0`, false after `ms`. */
+        async function frameAfter(f0, ms) {
+            for (const until = Date.now() + ms; Date.now() < until;) {
+                if (frames > f0) return true;
+                await new Promise((r) => setTimeout(r, 10));
+            }
+            return frames > f0;
+        }
+        /**
+         * n frames on (back with n < 0) from the frame on screen; resolves when the frame is shown. Each seek lands a
+         * little past where the frame should start (a float sum just under it must not land on the frame before). With
+         * frame callbacks (a shown window) a step checks that the frame changed and seeks on until it did, at most 12
+         * times: with the length not known it creeps in 1/60 s, so the first change is the next frame, and that change
+         * is the frame length from then on; with a known length a step that stays (a rate that varies) goes on by half a
+         * frame. A seek that brings no frame callback counts as the same frame (a frame shown again may bring none);
+         * with no frame callback at all (a hidden window) it seeks once, by the known length or 1/30 s.
+         */
         function step(n) {
-            if (busy) return;
-            v.pause();
-            const dur = frameStep();
-            const base = shown && Math.abs(shown.at - v.currentTime) < 1e-6 ? shown.media : v.currentTime;
-            // a little past the frame's start, so a float sum just under it does not land on the frame before
-            const t = base + n * dur + Math.min(0.002, dur * 0.1);
-            v.currentTime = Math.max(0, Math.min(Number.isFinite(v.duration) ? v.duration : t, t));
-            update();
+            if (busy || stepping || !n) return stepping || Promise.resolve();
+            stepping = (async () => {
+                v.pause();
+                await settled(v);
+                const start = frameTime();
+                const len = frameLength();
+                const dir = Math.sign(n);
+                const eps = 0.002;
+                // the time alone: one seek by the known length or 1/30 s (no frame callbacks in this window)
+                const blind = async () => {
+                    v.currentTime = clampTime(v, start + n * (len || DEFAULT_STEP) + eps);
+                    update();
+                    await settled(v);
+                };
+                if (typeof v.requestVideoFrameCallback !== "function") { await blind(); return; }
+                const inc = len || 1 / 60;
+                let t = start + (len ? n * len : dir * inc);
+                for (let i = 0; i < 12; i++) {
+                    const target = clampTime(v, t + eps);
+                    const f0 = frames;
+                    v.currentTime = target;
+                    update();
+                    await settled(v);
+                    const got = await frameAfter(f0, 300);
+                    // no callback ever, not even for this seek: a hidden window, where frames are not presented
+                    if (!got && !frames) { await blind(); return; }
+                    const now = got ? frameTime() : start;
+                    if (dir > 0 ? now > start + 1e-4 : now < start - 1e-4) {
+                        if (!len && Math.abs(n) === 1) {
+                            const d = Math.abs(now - start);
+                            if (d > 0.001 && d < 1) learned = d;
+                        }
+                        break;
+                    }
+                    const end = endOf(v);
+                    if (dir < 0 ? target <= 0 : end != null && target >= end) break;   // the first or the last frame
+                    t += dir * (len ? len / 2 : inc);
+                }
+            })().finally(() => { stepping = null; if (!closed) update(); });
+            return stepping;
         }
         function seconds(n) {
             v.pause();
-            v.currentTime = Math.max(0, Math.min(Number.isFinite(v.duration) ? v.duration : 0, v.currentTime + n));
+            v.currentTime = clampTime(v, v.currentTime + n);
+            update();
+        }
+        /** The start (Home) or the end (End); an end not known is found by a seek far past it. */
+        function jump(toEnd) {
+            v.pause();
+            const end = endOf(v);
+            v.currentTime = !toEnd ? 0 : end != null ? end : 1e101;
             update();
         }
         function toggle() {
@@ -270,13 +384,13 @@ export function showPicker(v, { name = "video", canLayer = true, focus = "new", 
                 if (e.shiftKey) seconds(dir); else step(dir);
                 return;
             }
-            if (k === "Home" || k === "End") { e.preventDefault(); v.pause(); v.currentTime = k === "Home" ? 0 : (Number.isFinite(v.duration) ? v.duration : 0); update(); return; }
+            if (k === "Home" || k === "End") { e.preventDefault(); jump(k === "End"); return; }
             if (k === "Enter" && !onButton) { e.preventDefault(); take(def); }
         }, true);
         const handle = { cancel: () => finish(null) };
         current = handle;
         // what the gate drives (tools/videoframe_test.py)
-        dialog.__videoFrame = { video: v, step, seek: (t) => { v.pause(); v.currentTime = t; update(); }, take, cancel: () => finish(null), frameStep, buttons: btn, settled: () => settled(v) };
+        dialog.__videoFrame = { video: v, step, seconds, jump, seek: (t) => { v.pause(); v.currentTime = t; update(); }, take, cancel: () => finish(null), frameStep, frameLength, frameTime, frames: () => frames, range, info, buttons: btn, settled: () => settled(v) };
         update();
         btn[def].focus();
     });

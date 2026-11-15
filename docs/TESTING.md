@@ -851,6 +851,12 @@ the picker with *Open as new picture* focused and *Add as layer* off in an empty
 frame lands on the first blue one and back; *Open as new picture* gives a 64 x 48 blue picture; File › Open's route
 with `clip.mp4` (H.264) through `scumble://app/video/<token>` (a range answers 206) adds a red layer, and the token
 answers 404 once the picker closed; a Shift drop focuses and adds a reference; the dialog's cancel takes nothing;
+`steps25.webm` (25 frames at 25 fps, each one grey further), never played, takes ten steps forward that each show the
+next frame (0.04 s on; a 1/30 s step would stay in the frame) and three back, and learns 25 fps from them (it needs
+frame callbacks, so a shown window: the runner's `Page.bringToFront`); `live.webm` (the red / blue clip written by
+ffmpeg to a pipe, so its file names no length and the player says Infinity) gets its end found, and the slider, End and
+a seconds jump reach it (mutations checked 2026-11-15: the old 1/30 s single seek fails the 25 fps step at its first
+press, no end search fails the length step);
 `prores.mov` (ProRes) and `broken.mov` (text) are refused in the status line in red with no picker; `load_image`,
 `add_image_layer` and `open_document` refuse a video path. The File › Open step drives main through
 `file:testOpenVideo`, an IPC handler main registers only unpackaged and only for a file of that fixture folder, so with

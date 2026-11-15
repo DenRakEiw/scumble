@@ -123,7 +123,8 @@ Scumble plays videos with the player built into its window, so nothing needs to 
 
 ### Notes
 
-- The frame step is 1/30 s until the player has measured the video's own frame rate, which it does while the video plays for a moment; the line under the slider says which it uses.
+- A frame step always lands on the next frame (or the one before), whatever the video's frame rate: until the rate is known the first step feels its way to the next frame and learns the rate from it, as does playing the video for a moment; the line under the slider shows the rate once it is known.
+- A recording whose file names no length (some screen and browser recordings) is opened as well: the player finds its end first, so the slider and End reach all of it.
 - Dropped into a document that has a picture, the video's player highlights *Add as layer*, with Shift held *Add as reference*; opened with Ctrl+O, or into an empty tab, *Open as new picture*. *Add as layer* is off while the document has no picture yet.
 - The video is read straight from your disk while you scrub, never copied into the document, so a long clip opens as quickly as a short one. Only the picked frame stays, as an ordinary picture.
 - Commands and agents take pictures only: `load_image` and `add_image_layer` refuse a video file and say so.

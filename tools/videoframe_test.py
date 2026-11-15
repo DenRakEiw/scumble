@@ -4,7 +4,8 @@ reference layer; what Chromium cannot decode is refused in the status line; comm
 
 No ComfyUI, no key. The fixtures in tools/fixtures/video are 64 x 48, made by ffmpeg: clip.webm (VP8) and clip.mp4
 (H.264), 2 s at 30 fps, the first second red, the second blue; prores.mov (ProRes, which Chromium does not decode) and
-broken.mov (text). Steps:
+broken.mov (text); steps25.webm (25 frames at 25 fps, each a grey 8 luma levels above the one before) and
+live.webm (the red / blue clip written to a pipe, so its file names no length). Steps:
 
 - node tools/videofiles_test.js: main's token route (ranges, HEAD, unknown and released tokens, the grant cap);
 - a drop of clip.webm on an empty tab opens the picker (Open as new picture has the focus, Add as layer is off),
@@ -15,6 +16,9 @@ broken.mov (text). Steps:
   Add as layer at 0.5 s: a 64 x 48 layer, the picture red; the token answers 404 once the picker closed;
 - a Shift drop puts the focus on Add as reference; it adds a reference layer;
 - Escape (the dialog's cancel) takes nothing;
+- at 25 fps, never played (the frame rate not known), ten steps forward each show the next frame (0.04 s on, one grey
+  further) and the frame length is learnt from them; three steps back each show the frame before;
+- a video whose file names no length: its end is found (the slider, End and a seconds jump reach past 0);
 - prores.mov and broken.mov are refused in the status line (red), no picker opens;
 - load_image, add_image_layer and open_document refuse a video path in plain words.
 
@@ -123,17 +127,15 @@ class Gate:
             const a = await frameColor(v);
             if (!isRed(a.rgb)) throw new Error('frame 29 is not red: ' + a.rgb);
             const t0 = v.currentTime;
-            vf.step(1);
-            await vf.settled();
+            await vf.step(1);
             const b = await frameColor(v);
             const dt = v.currentTime - t0;
             if (!isBlue(b.rgb)) throw new Error('one step on is not blue: ' + b.rgb + ' at ' + v.currentTime);
             if (Math.abs(dt - 1 / 30) > 0.01) throw new Error('the step moved ' + dt + ' s');
-            vf.step(-1);
-            await vf.settled();
+            await vf.step(-1);
             const c = await frameColor(v);
             if (!isRed(c.rgb)) throw new Error('one step back is not red: ' + c.rgb + ' at ' + v.currentTime);
-            return { red: a.rgb, blue: b.rgb, back: c.rgb, moved: dt, size: b.size };
+            return { red: a.rgb, blue: b.rgb, back: c.rgb, moved: dt, size: b.size, learned: vf.frameLength(), callbacks: vf.frames() };
         """)
 
     async def open_as_new_picture(self):
@@ -211,6 +213,70 @@ class Gate:
             return { status: host.editor.status };
         """)
 
+    async def steps_at_25_fps_land_on_each_frame(self):
+        # steps25.webm: 25 frames at 25 fps, frame N grey 16 + 8 N in luma (about 9 levels apart in RGB), never played:
+        # each step forward must show the next frame (a 1/30 s step stays inside a 0.04 s frame)
+        return await self.js("""
+            await drop('steps25.webm', 'video/webm');
+            const d = await until(picker, 15000, 'the picker');
+            const vf = d.__videoFrame, v = vf.video;
+            vf.seek(0.005);
+            await vf.settled();
+            await until(() => vf.frames() > 0, 3000, 'a frame callback (the window must be shown)');
+            if (vf.frameLength()) throw new Error('the frame length is known before any step: ' + vf.frameLength());
+            const grey = async () => (await frameColor(v)).rgb[0];
+            const seen = [{ t: vf.frameTime(), g: await grey() }];
+            for (let i = 0; i < 10; i++) {
+                await vf.step(1);
+                const s = { t: vf.frameTime(), g: await grey() };
+                const prev = seen[seen.length - 1];
+                seen.push(s);
+                if (!(s.g - prev.g >= 4 && s.g - prev.g <= 15)) throw new Error('step ' + (i + 1) + ' went from grey ' + prev.g + ' to ' + s.g + ': ' + JSON.stringify(seen));
+                if (Math.abs(s.t - prev.t - 0.04) > 0.005) throw new Error('step ' + (i + 1) + ' moved ' + (s.t - prev.t) + ' s');
+            }
+            if (Math.abs(vf.frameLength() - 0.04) > 0.002) throw new Error('frame length ' + vf.frameLength());
+            for (let i = 0; i < 3; i++) {
+                const prev = seen[seen.length - 1];
+                await vf.step(-1);
+                const s = { t: vf.frameTime(), g: await grey() };
+                seen.push(s);
+                if (!(prev.g - s.g >= 4 && prev.g - s.g <= 15)) throw new Error('back step ' + (i + 1) + ' went from grey ' + prev.g + ' to ' + s.g);
+            }
+            const info = vf.info.textContent;
+            vf.cancel();
+            await until(() => !picker(), 5000, 'the picker to close');
+            return { greys: seen.map((s) => s.g), times: seen.map((s) => +s.t.toFixed(3)), info };
+        """)
+
+    async def a_video_without_a_duration(self):
+        # live.webm: the 30 fps red / blue clip written by ffmpeg to a pipe, so its file names no length (a recording's
+        # shape): the player says Infinity until it has been to the end
+        return await self.js("""
+            await drop('live.webm', 'video/webm');
+            const d = await until(picker, 15000, 'the picker');
+            const vf = d.__videoFrame, v = vf.video;
+            const found = v.dataset.durationFound || null;
+            if (!found) throw new Error('the fixture had a duration (' + v.duration + '): it no longer tests this');
+            const end = VF.endOf(v);
+            if (!(end > 1.9 && end < 2.2)) throw new Error('end ' + end + ' (duration ' + v.duration + ')');
+            if (!(+vf.range.max > 1.9)) throw new Error('slider max ' + vf.range.max);
+            vf.jump(true);
+            await vf.settled();
+            const atEnd = v.currentTime;
+            if (!(atEnd > 1.9)) throw new Error('End went to ' + atEnd);
+            const blue = await frameColor(v);
+            if (!isBlue(blue.rgb)) throw new Error('the end is not blue: ' + blue.rgb);
+            vf.jump(false);
+            await vf.settled();
+            const dur = v.duration;
+            vf.seconds(1.4);
+            await vf.settled();
+            if (Math.abs(v.currentTime - 1.4) > 0.01) throw new Error('Shift+Right went to ' + v.currentTime);
+            vf.cancel();
+            await until(() => !picker(), 5000, 'the picker to close');
+            return { found, duration: dur, end, max: +vf.range.max, at_end: atEnd, after_seconds: 1.4 };
+        """)
+
     async def undecodable_videos_are_refused(self):
         return await self.js("""
             const out = {};
@@ -264,6 +330,8 @@ STEPS = [
     "file_open_route_adds_a_layer",
     "shift_drop_adds_a_reference",
     "escape_takes_nothing",
+    "steps_at_25_fps_land_on_each_frame",
+    "a_video_without_a_duration",
     "undecodable_videos_are_refused",
     "commands_refuse_a_video_path",
 ]
