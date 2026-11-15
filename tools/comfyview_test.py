@@ -26,6 +26,11 @@ opener passes a stub's URL):
   new recipe takes its name in the bar and makes a new recipe; a graph without the Inpaint Canvas node and an answer
   that is no prompt are refused and save nothing. The recipes it saves are removed at the end; it refuses a profile
   that holds a user recipe of the shipped id it overwrites;
+- item 66, Parameters: on a stand-in for LiteGraph (tools/fixtures/comfyview/minigraph.js) the bar's list shows the
+  held recipe's rows ticked and grows over the page; an untick and two ticks link the lowest free setting outputs in
+  the page; Save as new recipe keeps the rows (labels "<title> · <input>", the page's widget value), the editor's
+  Settings panel shows them and a value set there reaches the queued prompt (tools/comfyparams_test.js runs in the
+  V4 step's plain-Node list);
 - V4, Comfy Cloud: tools/comfyhosts_test.js first (the sign-in hosts, popups, navigation); then, with the stub standing
   in for the cloud, the window titled Comfy Cloud refuses a recipe with the Inpaint Canvas node and offers no save,
   the bar's select switches to My ComfyUI and the held recipe loads there, the target is kept (the saves are offered
@@ -642,6 +647,103 @@ class Gate:
         await self.close()
         return {"throws": i["recipeNote"], "noApp": i2["recipeNote"], "noTarget": b["why"][-90:]}
 
+    async def bar_eval(self, body, ms=10000):
+        """`body` (a JS expression) in the bar, polled until it is truthy or `ms` passed; its last value."""
+        return await on_target("comfybar.html", lambda c: c.eval("""(async () => { const $ = (id) => document.getElementById(id);
+            const box = (n, i) => document.querySelector('#cb-params-list input[data-node="' + n + '"][data-input="' + i + '"]');
+            let v = null; const t0 = Date.now(); for (;;) { try { v = (%s); } catch (_) { v = null; } if (v || Date.now() - t0 > %d) return v; await new Promise((r) => setTimeout(r, 100)); } })()""" % (body, ms)))
+
+    async def params(self):
+        # item 66: the Parameters list. The stub page's graph is a stand-in for LiteGraph (tools/fixtures/comfyview/minigraph.js)
+        await self.close()
+        self.stub.mode = "none"
+        self.stub.app = "ok"
+        await self.set_auth({"type": "none"}, "")
+        r = await self.js("return (await window.scumble.recipes.list()).find((x) => x.id === 'flux2_klein_local')")
+        await self.js("await window.scumble.comfyView.open(%s); return 1" % json.dumps({"url": self.stub.url, "recipe": r["id"]}))
+        i = await self.wait_info("i.recipeLoaded || i.recipeNote", 15000)
+        if not i.get("recipeLoaded"):
+            raise Exception("the recipe did not load: " + json.dumps(i))
+        rows = {f"{s['node']}|{s['input']}": r["prompt"][s["node"]]["inputs"][s["input"]] for s in r["settings"]}
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "comfyview", "minigraph.js"), encoding="utf-8") as f:
+            mini = f.read()
+        await on_target(self.stub.url, lambda c: c.eval(mini + """;(() => { const m = window.__miniGraph(window.__loaded.prompt, () => window.app.extensionManager.workflow.activeWorkflow.activeState.id, %s);
+            window.__mini = m; window.app.graph = m.graph; window.app.graphToPrompt = m.graphToPrompt; window.__out = undefined; window.__wf = undefined; return 1; })()""" % json.dumps(rows)))
+        # the list: the recipe's six rows ticked, the bar grown over the page
+        await self.bar_click("document.getElementById('cb-params').click()")
+        got = await self.bar_eval("document.querySelectorAll('#cb-params-list input').length && $('cb-params-count').textContent")
+        if got != "6 of 8 setting outputs in use":
+            raise Exception("the list: " + json.dumps(got))
+        ticked = await self.bar_eval("(%s).every(([n, i]) => box(n, i) && box(n, i).checked)" % json.dumps([[s["node"], s["input"]] for s in r["settings"]]), 2000)
+        tall = (await self.js("return (await window.scumble.comfyView.info()).bar.height"))
+        if not ticked or not tall > 200:
+            raise Exception(f"the recipe's rows ticked: {ticked}, the bar's height {tall}")
+        # the page's widget holds 0.75 before the tick: the new row starts with it
+        await on_target(self.stub.url, lambda c: c.eval("window.__mini.graph.getNodeById('scale1').widgets.find((w) => w.name === 'megapixels').value = 0.75"))
+        # an untick, then two ticks (the lowest free setting output each: 6, then 7)
+        for n, inp, on, count in (("scale0", "megapixels", False, "5 of 8"), ("sampler", "sampler_name", True, "6 of 8"), ("scale1", "megapixels", True, "7 of 8")):
+            await self.bar_click("document.querySelector('#cb-params-list input[data-node=\"%s\"][data-input=\"%s\"]').click()" % (n, inp))
+            ok = await self.bar_eval("$('cb-params-count').textContent.startsWith(%s) && box(%s, %s) && box(%s, %s).checked === %s && !box(%s, %s).disabled" % (
+                json.dumps(count), json.dumps(n), json.dumps(inp), json.dumps(n), json.dumps(inp), "true" if on else "false", json.dumps(n), json.dumps(inp)))
+            if not ok:
+                note = await self.bar_eval("[$('cb-params-count').textContent, $('cb-params-note').textContent]", 100)
+                raise Exception(f"{'tick' if on else 'untick'} {n}.{inp}: {note}")
+        links = await on_target(self.stub.url, lambda c: c.eval("""(async () => { const p = (await window.app.graphToPrompt()).output;
+            return { sampler: p.sampler.inputs.sampler_name, scale1: p.scale1.inputs.megapixels, scale0: p.scale0.inputs.megapixels }; })()"""))
+        if links["scale0"] != 1 or links["sampler"][0] != "canvas" or links["scale1"][0] != "canvas":
+            raise Exception("the page's links: " + json.dumps(links))
+        await self.bar_click("document.getElementById('cb-params-close').click()")
+        short = await self.js("for (let k = 0; k < 30; k++) { const h = (await window.scumble.comfyView.info()).bar.height; if (h < 60) return h; await wait(100); } return -1")
+        if short < 0:
+            raise Exception("the bar did not shrink back")
+        # Save as new recipe keeps the rows
+        await self.bar_click("document.getElementById('cb-save-new').click()")
+        await self.bar_click("document.getElementById('cb-name').value = 'Gate params'; document.getElementById('cb-name-ok').click()")
+        i2 = await self.wait_info("i.saveNote && i.recipeId === 'gate_params'", 10000)
+        new = await self.js("return (await window.scumble.recipes.list()).find((x) => x.id === 'gate_params') || null")
+        if not new:
+            raise Exception("not saved: " + json.dumps(i2))
+        by = {(s["node"], s["input"]): s for s in new["settings"]}
+        want = {("sampler", "sampler_name"): (6, "KSamplerSelect \u00b7 sampler_name"), ("scale1", "megapixels"): (7, "ImageScaleToTotalPixels \u00b7 megapixels")}
+        bad = [k for k, (ix, lab) in want.items() if k not in by or by[k]["index"] != ix or by[k]["label"] != lab]
+        if bad or ("scale0", "megapixels") in by or len(new["settings"]) != 7:
+            raise Exception("the saved rows: " + json.dumps(new["settings"]))
+        if new["prompt"]["scale1"]["inputs"].get("megapixels") != 0.75 or new["prompt"]["scale0"]["inputs"].get("megapixels") != 1 or new["prompt"]["sampler"]["inputs"].get("sampler_name") != "euler":
+            raise Exception("the saved values: " + json.dumps({k: new["prompt"][k]["inputs"] for k in ("scale0", "scale1", "sampler")}))
+        # the editor selects it: the Settings panel shows the two rows, and a value set there goes into the queued prompt
+        res = await self.js("""for (let k = 0; k < 40 && document.getElementById('shell-recipe').value !== 'gate_params'; k++) await wait(100);
+            const cmds = await import('./commands.js'); const { host, api } = await import('./editor/host.js');
+            const run = (n, a) => cmds.commands.run(n, a || {});
+            const ed = window.editor;
+            const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, helper: ed.helperUsed };
+            let sent = null;
+            try {
+                if (!host.recipe || host.recipe.id !== 'gate_params') return { error: 'not selected: ' + (host.recipe && host.recipe.id) };
+                await run('new_canvas', { width: 512, height: 384 });
+                await run('select_rect', { x: 64, y: 64, w: 200, h: 150 });
+                await run('set_prompt', { text: 'a gate' });
+                const ls = await run('list_settings', {});
+                const row = (inp) => ls.settings.find((s) => s.input === inp) || null;
+                const panel = ed.settingsList ? ed.settingsList.textContent : '';
+                await run('set_settings', { values: { '7': 0.5, '6': 'dpmpp_2m' } });
+                const oi = {}; for (const n of host.recipe.needs || []) oi[n] = { input: { required: {} } };
+                host.objectInfo = oi; host.connected = true; host.ensureOnServer = async () => null; ed.helperUsed = false;
+                api.queuePrompt = async (n, body) => { sent = body; return { prompt_id: 'gate-params' }; };
+                await host.queueGenerate(ed);
+                const P_ = sent && sent.output;
+                return { mp: row('megapixels') && row('megapixels').index, sn: row('sampler_name') && row('sampler_name').index, rows: ls.settings.length,
+                    panelMp: panel.includes('ImageScaleToTotalPixels \u00b7 megapixels'), panelSn: panel.includes('KSamplerSelect \u00b7 sampler_name'),
+                    queued: P_ ? { scale1: P_.scale1.inputs.megapixels, sampler: P_.sampler.inputs.sampler_name, scale0: P_.scale0.inputs.megapixels } : null };
+            } finally {
+                host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; ed.helperUsed = saved.helper;
+            }""")
+        if not res or res.get("error") or res["mp"] != 7 or res["sn"] != 6 or res["rows"] != 7 or not res["panelMp"] or not res["panelSn"]:
+            raise Exception("the editor's Settings: " + json.dumps(res))
+        if res["queued"] != {"scale1": 0.5, "sampler": "dpmpp_2m", "scale0": 1}:
+            raise Exception("the queued prompt: " + json.dumps(res["queued"]))
+        await self.close()
+        return {"rows": len(new["settings"]), "queued": res["queued"], "bar": tall}
+
     async def bar_click(self, js):
         # the bar of a window just opened may still be loading: its buttons first
         await on_target("comfybar.html", lambda c: c.eval("""(async () => { for (let k = 0; k < 60 && !(document.readyState === 'complete' && document.getElementById('cb-save')); k++) await new Promise((r) => setTimeout(r, 100));
@@ -709,14 +811,14 @@ class Gate:
         return out
 
     async def cleanup_recipes(self):
-        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || r.id === 'realism_pass' || /^gate_(graph|bad|cloud|late)/.test(r.id))) await window.scumble.recipes.remove(r.id);
+        await self.js("""for (const r of await window.scumble.recipes.list()) if (r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || r.id === 'realism_pass' || /^gate_(graph|bad|cloud|late|params)/.test(r.id))) await window.scumble.recipes.remove(r.id);
             const S = await import('./shell.js'); await S.loadRecipes(); S.selectRecipe('flux2_klein_local'); return 1""")
 
     async def hosts(self):
         # plain Node: the sign-in hosts (V4) and a detached recipe run through the Comfy Cloud adapter (V5b)
         root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
         out = {}
-        for name in ("comfyhosts_test.js", "cloudgraph_test.js", "links_test.js", "comfyprobe_test.js"):
+        for name in ("comfyhosts_test.js", "cloudgraph_test.js", "links_test.js", "comfyprobe_test.js", "comfyparams_test.js"):
             r = subprocess.run(["node", os.path.join(root, "tools", name)], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120)
             tail = r.stdout.strip()
             if r.returncode != 0 or not tail.endswith("PASS"):
@@ -1123,7 +1225,7 @@ async def main():
             raise SystemExit("refused: the profile holds a ComfyUI secret")
         saved = (await c.eval("window.scumble.settings.get()")).get("comfy")
         target0 = ((await c.eval("window.scumble.settings.get()")).get("comfyView") or {}).get("target")
-        mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud|late)/.test(r.id))).map((r) => r.id))()")
+        mine = await c.eval("(async () => (await window.scumble.recipes.list()).filter((r) => r.source === 'user' && (r.id === 'flux2_klein_local' || r.id === 'flux2_klein_local_cloud' || /^gate_(graph|bad|cloud|late|params)/.test(r.id))).map((r) => r.id))()")
         if mine:
             raise SystemExit(f"refused: the profile holds user recipes this test would overwrite or remove: {mine}")
         g = Gate(c, stub, out)
@@ -1141,6 +1243,7 @@ async def main():
             await g.step("V2: a recipe arrives as its graph, the bar names it, a second one replaces it", g.recipe_graph)
             await g.step("V2: a provider recipe is refused", g.recipe_refused)
             await g.step("V2: a load that throws, a page without window.app, no target", g.recipe_troubles)
+            await g.step("item 66: Parameters: ticked inputs become Settings rows on save, their values reach the queued prompt", g.params)
             await g.step("V3: Save to recipe overwrites the held recipe (a shipped one as a user copy), the editor selects it", g.save_over)
             await g.step("V3: Save as new recipe, the name in the bar", g.save_new)
             await g.step("V3: a graph without the node and an answer that is no prompt are refused", g.save_refused)

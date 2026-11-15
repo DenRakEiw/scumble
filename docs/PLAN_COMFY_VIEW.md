@@ -459,6 +459,45 @@ none of V1-V5 may change that:
 - **V5, cloud recipes:** `detach`, the run path on `comfycloud.js`'s calls, the `/object_info` check, the marking of
   `LoadImage` nodes. Tests: plain-Node `detach` on every shipped ComfyUI recipe (which detach, which refuse and why); a
   loopback run; one live run on Comfy Cloud with the user's key (credits). Possibly two sessions.
+- **Parameters (item 66, built 2026-11-15, the night build of `docs/PLAN_0_1_57.md`):** the bar's *Parameters* button
+  shows the graph's widget inputs by node (numbers, toggles, combos, strings), ticked where an input is a Settings row;
+  the bar grows over the top 55 % of the page meanwhile (`layout`, `paramsOpen`). A Settings row in the recipe format
+  *is* an input wired to a setting output of the Inpaint Canvas node (§2.3), so a tick links the input to the node's
+  lowest free `setting_<n>` output **in the page** (LiteGraph's `connect`, the node's own frontend then shows the next
+  free one) and an untick takes that link away; *Save to recipe* / *Save as new recipe* read the rows as before
+  (`fromGraph`, no second mapping). Main: `electron/main/comfyparams.js` (`listParams` over the read's API prompt and
+  UI graph, `canvasOutputNames` shared with `fromGraph`; `exposeScript`; `VALUES_JS` in the read), `comfyview.js`
+  `readParams` / `expose` / `showParams`, IPC `comfyview:params`, `comfyview:expose`, `comfyview:paramsShown` (from the
+  bar alone). New with it: the read also hands over what the page's widgets hold for the inputs wired to the canvas
+  node (`values`), and `fromPrompt` gives a **new** row that value instead of the spec's default (a row the held recipe
+  had keeps its own; before, a link drawn by hand got the default). Defaults taken: at most 8 rows, the node's
+  `SETTING_SLOTS` (not the 24 of the request: the node has 8 setting outputs; the list says so when all are in use);
+  the label `<title> · <input>` (as `fromPrompt` always wrote it); not offered: the canvas node's inputs, linked
+  inputs, nodes inside a subgraph (counted in a note), graphs without the node (a Comfy Cloud graph keeps its rows).
+  Tests: `tools/comfyparams_test.js` (plain Node, on `tools/fixtures/comfyview/minigraph.js`, a stand-in for
+  LiteGraph), the comfyview gate's step "item 66". **Not seen on a real ComfyUI page** (checklist below).
+  - **The review's fixes (2026-11-15, a fresh reader of `775a920c`, all seven findings confirmed in the code):** `used`
+    counts setting outputs, not wired inputs (one output feeding two seeds counted twice and could disable every box);
+    a held recipe's row unticked and ticked again under another number keeps its value, label and spec (`fromPrompt`'s
+    `baseRow` falls back to the same node input on another slot); a row wired inside a subgraph is listed locked (no
+    box to tick or untick: the page script reaches the top level only); a canvas node inside a subgraph gives no list
+    and says so; only a link from a `setting_<n>` output counts as a row, in the list and in the page script (not
+    `box_prompt`, `elements` or a fixed output); the 400-input cap keeps every wired row. The page script now checks
+    after `connect` that the input really holds a link from a setting output (else "the page did not take the link"),
+    after `disconnectInput` that the link is gone, and asks the active workflow's `changeTracker.checkState()` where it
+    exists (unverified).
+  - **Checklist for a real page (ComfyUI frontend 1.16 or newer; a test ComfyUI, never the user's production one on
+    8188):** 1. with a subgraph open in the canvas, `app.rootGraph` is the top level and the tick links there (the
+    script prefers `rootGraph` over `app.graph`); 2. `g.links` is a `Map` in current frontends and `g.getLink` exists:
+    the script's `linkOf` reads either; 3. `canvas.connect(slot, node, inputSlot)` of the node's `"*"` setting output
+    onto a typed widget socket (FLOAT denoise, a combo) returns the link and the input's `link` is set; 4. the node's own
+    `onConnectionsChange` / `syncSettingOutputs` runs after the programmatic link: the next free `setting_<n>` appears
+    and the tail outputs' links follow (`origin_slot`); 5. the same after `disconnectInput`: the free output above goes
+    and the widget shows its value again; 6. a recipe loaded through `loadApiJson` (no stored UI graph) has a socket per
+    widget input the script finds by `i.widget.name` (or `i.name`); 7. ComfyUI's change tracking sees the programmatic
+    link: the tab shows unsaved, and Ctrl+Z in the page takes the link back (then the list's Refresh shows it unticked);
+    8. a switch to another workflow tab and back keeps the tick, and Save to recipe after it refuses the other tab's
+    graph as before (MAIN-4); 9. the widget keeps its value while linked, so the saved row starts with it.
 
 ## 4. Traps known before the first line
 

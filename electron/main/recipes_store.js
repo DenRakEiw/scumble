@@ -703,4 +703,4 @@ async function userFileStems() {
     }
 }
 
-module.exports = { FIXED_OUTPUTS, LIMITS_DEFAULT, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, list, localBoxes, lorasOf, normalize, remove, save, shippedPresets, slug, tailOutputs, userDir, userFileStems, withoutUpsampler };
+module.exports = { FIXED_OUTPUTS, LIMITS_DEFAULT, SETTING_SLOTS, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, list, localBoxes, lorasOf, normalize, remove, save, shippedPresets, slug, tailOutputs, userDir, userFileStems, withoutUpsampler };
