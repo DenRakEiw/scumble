@@ -2030,6 +2030,83 @@ try {
     await c("activate_document", { doc: window.__testDoc });
 }
 """),
+    # item 63: Generate the new border. extend_canvas generate refuses before anything changes, else extends (its own
+    # undo step) and generates on the border (an ordinary result layer over it); the Canvas tool's switch, remembered
+    # per machine, makes the frame's apply start Generate, and off it does not
+    ("extend_canvas_generates_the_new_border", """
+const { host } = await import("./editor/host.js");
+const d = await c("new_document");
+await c("load_image", { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", doc: d.id });
+const ed = host.editorById(d.id);
+const prev = host.recipe;
+let stored0 = null;
+try { stored0 = localStorage.getItem("ipc.extendGenerate"); } catch (_) { /* no storage */ }
+const out = {};
+try {
+    host.setRecipe(__LOOP_EDIT__);
+    await c("set_crop", { doc: d.id, fill: "none", withOriginal: false });
+    const W = ed.width, H = ed.height;
+    const refused = async (args, re, what) => {
+        const u0 = ed.undo.length, h0 = ed.history.length;
+        let m = "";
+        try { await c("extend_canvas", { doc: d.id, ...args }); } catch (e) { m = String(e.message || e); }
+        if (!re.test(m) || ed.width !== W || ed.height !== H || ed.undo.length !== u0 || ed.history.length !== h0) throw new Error(what + ": " + (m || "not refused") + " / " + ed.width + " x " + ed.height);
+        return m;
+    };
+    out.refused = [await refused({ left: -10, generate: true }, /no new border/, "a crop alone")];
+    ed.providerPending = { fake: true };
+    try { out.refused.push(await refused({ right: 64, generate: true }, /a run is still going/, "a run going")); } finally { ed.providerPending = null; }
+    // the command: one Extend canvas step, then the result layer over the new border
+    const u0 = ed.undo.length, h0 = ed.history.length;
+    const r = await c("extend_canvas", { doc: d.id, right: 64, bottom: 32, generate: true, timeout: 60 });
+    if (r.width !== W + 64 || r.height !== H + 32 || ed.width !== W + 64) throw new Error("the extend: " + JSON.stringify(r));
+    if (!r.generated || !r.generated.layer || ed.history.length !== h0 + 1) throw new Error("no result: " + JSON.stringify(r));
+    const L = r.generated.layer;
+    if (L.x + L.w <= W && L.y + L.h <= H) throw new Error("the result is not over the new border: " + JSON.stringify(L));
+    const labels = ed.undo.slice(u0).map((s) => s.label);
+    if (labels[0] !== "Extend canvas" || labels.filter((x) => x === "Extend canvas").length !== 1) throw new Error("the steps: " + labels);
+    out.command = { size: [r.width, r.height], layer: [L.x, L.y, L.w, L.h], steps: labels };
+    // without generate nothing runs
+    const h1 = ed.history.length;
+    const r2 = await c("extend_canvas", { doc: d.id, left: 16 });
+    if (r2.generated || ed.history.length !== h1) throw new Error("an extend without generate generated: " + JSON.stringify(r2));
+    // the switch: off by default (no stored value), both checkboxes follow it, stored per machine
+    try { localStorage.removeItem("ipc.extendGenerate"); } catch (_) { /* no storage */ }
+    if (ed.extendGenerate !== false) throw new Error("the switch is on by default");
+    const boxes = ed.extendGenerateInputs || [];
+    if (boxes.length !== 2) throw new Error("the switch has " + boxes.length + " checkboxes, not the options bar's and the Canvas section's");
+    boxes[0].checked = true; boxes[0].dispatchEvent(new Event("change"));
+    if (localStorage.getItem("ipc.extendGenerate") !== "1" || !boxes.every((b) => b.checked) || !ed.extendGenerate) throw new Error("the switch was not stored or followed");
+    // on: the frame's apply extends and generates on the border
+    const W2 = ed.width, H2 = ed.height, h2 = ed.history.length;
+    ed.lastExtendGenerate = null;
+    ed.setFrame({ x: -40, y: 0, w: W2 + 40, h: H2 }, ed.frame());
+    const ok = await ed.applyFrame();
+    if (!ok || ed.width !== W2 + 40) throw new Error("the frame's extend: " + ok + " / " + ed.width + " / " + ed.status);
+    if (!ed.lastExtendGenerate) throw new Error("the apply started no Generate");
+    await ed.lastExtendGenerate;
+    for (let t0 = Date.now(); ed.history.length <= h2 && Date.now() - t0 < 30000;) await new Promise((res) => setTimeout(res, 100));
+    if (ed.history.length !== h2 + 1) throw new Error("the frame's Generate landed no result: " + ed.status);
+    const R = ed.layers.find((l) => l.id === ed.history[ed.history.length - 1].layerId);
+    if (!R || R.x >= 40) throw new Error("the frame's result is not over the new border: " + (R && [R.x, R.y, R.w, R.h]));
+    out.frame = { size: [ed.width, ed.height], layer: [R.x, R.y, R.w, R.h] };
+    // off: the apply only extends
+    boxes[1].checked = false; boxes[1].dispatchEvent(new Event("change"));
+    if (localStorage.getItem("ipc.extendGenerate") !== "0" || boxes.some((b) => b.checked)) throw new Error("the switch did not go off");
+    const h3 = ed.history.length;
+    ed.lastExtendGenerate = null;
+    ed.setFrame({ x: 0, y: -20, w: ed.width, h: ed.height + 20 }, ed.frame());
+    if (!(await ed.applyFrame())) throw new Error("the second frame's extend: " + ed.status);
+    await new Promise((res) => setTimeout(res, 1500));
+    if (ed.lastExtendGenerate || ed.history.length !== h3) throw new Error("the switch off still generated");
+    return out;
+} finally {
+    host.setRecipe(prev);
+    try { if (stored0 === null) localStorage.removeItem("ipc.extendGenerate"); else localStorage.setItem("ipc.extendGenerate", stored0); } catch (_) { /* no storage */ }
+    await c("close_document", { doc: d.id, force: true });
+    await c("activate_document", { doc: window.__testDoc });
+}
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
     # set_filter / add_filter apply a preset's values as the layer row does, refuse before anything changes, and set_filter
     # pushes one undo step of its own; filter_types gives the options' labels and groups
     ("filter_presets", """

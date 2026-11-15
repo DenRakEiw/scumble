@@ -131,9 +131,12 @@ const POLICY = {
     rotate_canvas: () => ASK("turns the whole picture, every layer with it (Ctrl+Z takes it back)"),
     flip_canvas: () => ASK("mirrors the whole picture, every layer with it (Ctrl+Z takes it back)"),
     straighten_canvas: () => ASK("straightens and crops the whole picture: every layer is resampled once (Ctrl+Z takes it back)"),
-    extend_canvas: (call) => ASK(positive(call.args)
-        ? "bakes every visible layer into the base image and drops the others"
-        : "crops the canvas"),
+    // item 63: with generate the new border is rendered right after, as generate renders
+    extend_canvas: (call, facts) => (call.args && call.args.generate && positive(call.args)
+        ? ASK("bakes every visible layer into the base image, drops the others, then renders the new border: this costs money, or queues on your ComfyUI", renderCard(call, facts))
+        : ASK(positive(call.args)
+            ? "bakes every visible layer into the base image and drops the others"
+            : "crops the canvas")),
 
     glb_edit: (call, facts) => (call.args && call.args.depth_layer === false && !owns(call, facts)
         ? ASK("removes the depth layer of a 3D object you placed")

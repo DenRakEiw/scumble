@@ -5,6 +5,7 @@ import { host } from "./editor/host.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { refusal } from "./editor/inpaint_status.js";
 import { canvasSizeRefusal } from "./editor/inpaint_sizelimit.js";
+import { RunCommandsPart } from "./commands_runs.js";
 import { P, SHOT_WHAT, TEXT_LINE_HEIGHT_TEXT, TEXT_SPACING_TEXT, checkParams, docName, filterStepLabel, findLayer, layerSummary, setFont, shotCanvas, textSpacing, touch, withExportPath, writeParams } from "./commands_util.js";
 
 /** @typedef {import("./commands.js").Command} Command */
@@ -267,10 +268,18 @@ export const EditCommandsPart = {
     compare: { description: "Toggle the before / after split view.", params: { enabled: P.bool("on or off; toggles when omitted") }, async run(ed, a) { const want = a.enabled == null ? !ed.compare : !!a.enabled; if (want !== !!ed.compare) ed.toggleCompare(); return { compare: !!ed.compare, status: ed.status }; } },
     extend_canvas: {
         destructive: true,
-        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set).",
-        params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }) },
+        needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set); the new border is selected after it. generate: then run generate with the selected recipe on that border (outpainting), as the Canvas tool's Generate the new border does: refused before anything changes when no recipe can return a result, a run is going or no side grows; the extend is its own undo step, the result an ordinary result layer; generated is generate's answer (layer, seed, prompt_sent, notes, ...). A generate that fails after the extend throws with that said (the extend stays, Ctrl+Z takes it back). timeout bounds the generate.",
+        params: { left: P.int("", { default: 0 }), top: P.int("", { default: 0 }), right: P.int("", { default: 0 }), bottom: P.int("", { default: 0 }), generate: P.bool("then generate the new border with the selected recipe", { default: false }), timeout: P.timeout(600) },
         async run(ed, a) {
             const v = { left: Math.round(+a.left || 0), top: Math.round(+a.top || 0), right: Math.round(+a.right || 0), bottom: Math.round(+a.bottom || 0) };
+            // item 63: generate's own refusals before anything changes (generate itself would say them after the extend)
+            const gen = a.generate === true || a.generate === "true";
+            if (gen) {
+                if (!Object.values(v).some((x) => x > 0)) throw refusal("generate needs a side that grows: there is no new border to outpaint", "warn");
+                if (ed._eachArea) throw refusal("Each area is running on this document: wait for it, or stop it.");
+                if (ed.providerPending) throw refusal("a run is still going on this document");
+                if (!host.resultInputState(ed).wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
+            }
             // refused before the crop: the extend after it is made as one canvas at the final size (S5)
             const fw = ed.width + v.left + v.right, fh = ed.height + v.top + v.bottom;
             // a crop alone makes no single canvas (a tile document above 268 MP is cropped on its tiles)
@@ -287,6 +296,17 @@ export const EditCommandsPart = {
             if (Object.values(v).some((x) => x > 0)) {
                 await ed.extendCanvas(v);
                 if (ed.width !== fw || ed.height !== fh) throw refusal(`${ed.status || "The extend was refused."}${[a.left, a.top, a.right, a.bottom].some((x) => +x < 0) ? " The crop before it was made (one undo step)." : ""}`, ed.statusKind || "warn");
+            }
+            if (gen) {
+                const width = ed.width, height = ed.height;
+                let generated;
+                try { generated = await RunCommandsPart.generate.run(ed, { timeout: a.timeout }); }
+                catch (err) {
+                    const e = new Error(`The canvas was extended to ${width} × ${height} (its own undo step); the generate of the new border failed: ${(err && err.message) || err}`);
+                    if (err && err.statusKind) Object.assign(e, { statusKind: err.statusKind });
+                    throw e;
+                }
+                return { width, height, status: ed.status, generated };
             }
             return { width: ed.width, height: ed.height, status: ed.status };
         },

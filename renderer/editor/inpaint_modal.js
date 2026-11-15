@@ -867,6 +867,11 @@ function buildCanvasPanel(ed, section) {
         ed.extendFillSel.addEventListener("change", () => { ed.cropSettings.extendFill = ed.extendFillSel.value; ed.notifyChanged(); });
         fillLab.appendChild(ed.extendFillSel);
         sec.appendChild(fillLab);
+        // item 63: Generate on the new border right after an extend (the canvas tool's options bar has the same switch)
+        const genLab = el("label", null);
+        genLab.appendChild(ed.extendGenerateInput());
+        genLab.appendChild(el("span", null, "Generate the new border"));
+        sec.appendChild(genLab);
         const ext = iconButton("extend", "Apply the canvas frame: the pixels above extend the canvas (outpainting; the new border becomes the selection), negative values crop; with an angle the picture is straightened and cropped in one step. The canvas tool (C) sets the frame by dragging; Enter applies.", () => ed.applyFrame(), "Apply");
         ext.classList.add("ipc-small");
         sec.appendChild(ext);

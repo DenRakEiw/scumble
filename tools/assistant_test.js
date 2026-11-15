@@ -1413,6 +1413,7 @@ async function main() {
             ["rotate_canvas", { angle: 90 }, "ask"], ["flip_canvas", { axis: "horizontal" }, "ask"], ["straighten_canvas", { angle: 3 }, "ask"],
             ["extend_canvas", { left: 100 }, "ask"],
             ["extend_canvas", { left: -100 }, "ask"],
+            ["extend_canvas", { left: 100, generate: true }, "ask"],
             ["glb_edit", { layer: "Lmine", depth_layer: false }, "auto"],
             ["glb_edit", { layer: "Lyours", depth_layer: false }, "ask"],
             ["add_image_layer", { filename: "x.png" }, "auto"],

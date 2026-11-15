@@ -1058,7 +1058,7 @@ Toggle the before / after split view.
 
 ### `extend_canvas` *(image)* *(destructive)*
 
-Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set).
+Extend (positive) or crop (negative) the canvas on each side, in pixels. An extension bakes every visible layer into the base and fills the new border as set_crop's extendFill says (average color unless set); the new border is selected after it. generate: then run generate with the selected recipe on that border (outpainting), as the Canvas tool's Generate the new border does: refused before anything changes when no recipe can return a result, a run is going or no side grows; the extend is its own undo step, the result an ordinary result layer; generated is generate's answer (layer, seed, prompt_sent, notes, ...). A generate that fails after the extend throws with that said (the extend stays, Ctrl+Z takes it back). timeout bounds the generate.
 
 | param | type | description |
 |---|---|---|
@@ -1067,6 +1067,8 @@ Extend (positive) or crop (negative) the canvas on each side, in pixels. An exte
 | `top` | integer | (default `0`) |
 | `right` | integer | (default `0`) |
 | `bottom` | integer | (default `0`) |
+| `generate` | boolean | then generate the new border with the selected recipe (default `false`) |
+| `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
 ### `rotate_canvas` *(image)*
 

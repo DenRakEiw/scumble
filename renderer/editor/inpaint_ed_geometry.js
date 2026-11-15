@@ -1224,6 +1224,7 @@ export class GeometryPart {
         if (this.frameCustomRow) this.frameCustomRow.hidden = this.tool !== "canvas" || this.frameAspect !== "custom";
         if (this.frameStraightenBtn) this.frameStraightenBtn.classList.toggle("ipc-on", !!this.frameStraighten);
         if (this.canvasInfo) this.canvasInfo.textContent = this.frameInfoText();
+        this.syncExtendGenerate();
     }
 
     /**
@@ -1259,14 +1260,63 @@ export class GeometryPart {
                 this.draw();
                 return false;
             }
-            if (Object.values(pos).some((x) => x > 0)) await this.extendCanvas(pos);
+            let extended = false;
+            if (extending) {
+                await this.extendCanvas(pos);
+                extended = this.base !== base0 && this.width === W + pos.left + pos.right && this.height === H + pos.top + pos.bottom;
+            }
             if (Object.values(neg).some((x) => x < 0)) await this.cropCanvas(neg);
             ok = this.base !== base0;
+            // item 63: "Generate the new border" starts Generate on the border the extend selected (not awaited: a run
+            // takes as long as it takes, the frame is applied)
+            if (extended && this.extendGenerate) this.generateAfterExtend();
         }
         if (!ok && this.base === base0 && this.width === W && this.height === H && !this.canvasFrame) this.canvasFrame = f;
         this.syncFrameControls({ force: true });
         this.draw();
         return !!ok;
+    }
+
+    /**
+     * Item 63: the selected recipe's Generate on the new border, as the Generate button starts it (its refusals, its
+     * run and its result layer are Generate's own; the extend stays its own undo step). Returns Generate's promise.
+     */
+    generateAfterExtend() {
+        this.lastExtendGenerate = this.generate();
+        return this.lastExtendGenerate;
+    }
+
+    /**
+     * Item 63: the Canvas tool's "Generate the new border" switch, off unless set; remembered per machine, so every tab
+     * reads the one value (this tab's own copy only where there is no storage).
+     */
+    get extendGenerate() {
+        try { const v = localStorage.getItem("ipc.extendGenerate"); if (v !== null) return v === "1"; } catch (_) { /* no storage */ }
+        return !!this._extendGenerate;
+    }
+
+    setExtendGenerate(on) {
+        this._extendGenerate = !!on;
+        try { localStorage.setItem("ipc.extendGenerate", on ? "1" : "0"); } catch (_) { /* no storage */ }
+        this.syncExtendGenerate();
+    }
+
+    /** Every checkbox of the switch set from it (another tab may have changed it). */
+    syncExtendGenerate() {
+        if (!this.extendGenerateInputs) return;
+        const on = this.extendGenerate;
+        for (const c of this.extendGenerateInputs) c.checked = on;
+    }
+
+    /** A checkbox for the switch (the options bar's and the Canvas section's). */
+    extendGenerateInput() {
+        const c = document.createElement("input");
+        c.type = "checkbox";
+        c.checked = this.extendGenerate;
+        c.title = "After an extend, start Generate with the selected recipe on the new border (it is selected already); an API recipe is charged as for Generate";
+        c.addEventListener("change", () => { this.setExtendGenerate(c.checked); if (this.root) this.root.focus({ preventScroll: true }); });
+        (this.extendGenerateInputs || (this.extendGenerateInputs = [])).push(c);
+        return c;
     }
 
     /** The frame as sides in frame space (positive: added, negative: cut off): what the Canvas section shows. */
