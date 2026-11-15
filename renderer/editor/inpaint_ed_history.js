@@ -379,7 +379,16 @@ export class HistoryPart {
             }
             return { kind: "maps", map: step.map, prev, bytes: snapBytes };
         }
-        if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
+        // `data: "<plugin id>"`: the step holds that one plugin's per-document data too (a plugin whose layers and data
+        // change together: the 3D object plugin's placement and its parameters), and only that plugin's: another
+        // plugin's data written meanwhile without a step of its own is not taken back. Its other side (`dataKey` on the
+        // step) keeps the same key.
+        if (step.kind === "layers") {
+            const key = typeof step.data === "string" && step.data ? step.data : typeof step.dataKey === "string" ? step.dataKey : null;
+            const snap = { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
+            if (key) Object.assign(snap, this.pluginDataSlice(key));
+            return snap;
+        }
         if (step.kind === "transforms") {
             // the places of several layers moved or scaled together (a multi-selection): one step, no pixels
             const ids = step.ids || step.items.map((i) => i.id);
@@ -421,6 +430,16 @@ export class HistoryPart {
         if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             ...maskOf(layer.maskPx), mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0, maskOff: !!layer.maskOff };
         return null;
+    }
+
+    /**
+     * One plugin's per-document data as a layers step keeps it: `dataKey` the plugin id, `dataValue` a copy (undefined
+     * when the plugin has none), `bytes` the copy's size on the undo budget (two bytes a character, as a string costs).
+     */
+    pluginDataSlice(key) {
+        const v = this.pluginData && typeof this.pluginData === "object" && Object.prototype.hasOwnProperty.call(this.pluginData, key) ? this.pluginData[key] : undefined;
+        const json = v === undefined ? null : JSON.stringify(v);
+        return { dataKey: key, dataValue: json == null ? undefined : JSON.parse(json), bytes: json == null ? 0 : json.length * 2 };
     }
 
     pushUndo(step) {
@@ -592,6 +611,11 @@ export class HistoryPart {
             // (a clean-up, a file removed by hand) is uploaded from its pixels
             this.recheckRestoredFiles({ layers: this.layers, outgoing });
             this.groups = (snap.groups || []).map((g) => ({ ...g }));
+            if (typeof snap.dataKey === "string") {
+                if (!this.pluginData || typeof this.pluginData !== "object") this.pluginData = {};
+                if (snap.dataValue === undefined) delete this.pluginData[snap.dataKey];
+                else this.pluginData[snap.dataKey] = JSON.parse(JSON.stringify(snap.dataValue));
+            }
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;

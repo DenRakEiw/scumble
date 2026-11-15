@@ -1351,13 +1351,14 @@ Apply a film stock: changes the active film look layer, or adds one on top (see 
 
 ### `glb.place` *(plugin glb)*
 
-Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit.
+Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit. With mannequin: true it places the built-in posable human figure (1.75 m tall) instead of a file, posed by pose and joints.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `path` | string | absolute path of a .glb / .gltf file |
 | `filename` | string | instead of path: a file already in the local store (from an earlier glb.place) |
+| `mannequin` | boolean | instead of a file: the built-in posable mannequin (default false) |
 | `position` | object | { x, y } where the object's centre lands, as fractions of the picture (0..1, default 0.5 / 0.55) |
 | `depth` | number | distance from the camera in object units (the model is 1 unit on its longest side; default 3) |
 | `rotation` | object | { x, y, z } in degrees (default y 30) |
@@ -1367,6 +1368,9 @@ Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by pos
 | `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
 | `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
 | `name` | string | layer name (default the file name) |
+| `pose` | string | the mannequin only: a base pose; on glb.edit it replaces every joint's angles before `joints` (one of `standing`, `walking`, `running`, `sitting`, `arms_crossed`, `hands_on_hips`, `t_pose`) |
+| `joints` | object | the mannequin only: joint angles in degrees, { elbow_l: { bend: 90 }, shoulder_r: { forward: 40, out: 10 } }; merged onto the pose (an axis given as null goes back to 0). glb.info lists the joints, their axes and ranges (_l / _r are the figure's left / right; the pelvis's `lower` is in metres) |
+| `pose_layer` | boolean | the mannequin only: also write an OpenPose bones layer (18 body keypoints in the standard colours on black, role control, hidden) for a pose ControlNet (default false) |
 
 ### `glb.edit` *(plugin glb)*
 
@@ -1385,10 +1389,13 @@ Re-render a 3D object layer with changed parameters (only the given ones change)
 | `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
 | `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
 | `name` | string | layer name (default the file name) |
+| `pose` | string | the mannequin only: a base pose; on glb.edit it replaces every joint's angles before `joints` (one of `standing`, `walking`, `running`, `sitting`, `arms_crossed`, `hands_on_hips`, `t_pose`) |
+| `joints` | object | the mannequin only: joint angles in degrees, { elbow_l: { bend: 90 }, shoulder_r: { forward: 40, out: 10 } }; merged onto the pose (an axis given as null goes back to 0). glb.info lists the joints, their axes and ranges (_l / _r are the figure's left / right; the pelvis's `lower` is in metres) |
+| `pose_layer` | boolean | the mannequin only: also write an OpenPose bones layer (18 body keypoints in the standard colours on black, role control, hidden) for a pose ControlNet (default false) |
 
 ### `glb.info` *(plugin glb)* *(read-only)*
 
-The 3D object layers of this document with their parameters, and the parameter defaults.
+The 3D object layers of this document with their parameters, the parameter defaults, and the mannequin's base poses and joints (each joint's axes with their ranges).
 
 | param | type | description |
 |---|---|---|

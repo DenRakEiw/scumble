@@ -3,6 +3,7 @@
 // A native <dialog>, so Escape closes it (the editor lets keys inside an open dialog through).
 
 import { frameOf, framePlan } from "./render.js";
+import { POSES, POSE_NAMES, JOINTS, poseJoints, isPose } from "./mannequin.js";
 
 const SLIDERS = [
     ["x", "X", -0.5, 1.5, 0.005, (v) => Math.round(v * 100) + " %"],
@@ -29,6 +30,7 @@ const CSS = `
 .glb-side label { display:grid; grid-template-columns:78px 1fr 48px; align-items:center; gap:6px; }
 .glb-side label span:last-child { text-align:right; color:var(--sc-fg-2, #aaa); font-variant-numeric:tabular-nums; }
 .glb-side input[type=range] { width:100%; min-width:0; }
+.glb-side select { width:100%; min-width:0; font:inherit; background:var(--sc-btn, #333); color:var(--sc-fg, #ddd); border:1px solid var(--sc-border, #555); border-radius:var(--sc-radius, 4px); }
 .glb-side .glb-tick { display:flex; gap:6px; align-items:center; }
 .glb-title { padding:10px 12px 0; font-weight:600; }
 .glb-hint { color:var(--sc-muted, #999); margin:2px 0 6px; }
@@ -36,6 +38,68 @@ const CSS = `
 .glb-buttons button { font:inherit; padding:5px 14px; border-radius:var(--sc-radius, 4px); border:1px solid var(--sc-border, #555); background:var(--sc-btn, #333); color:var(--sc-fg, #ddd); cursor:pointer; }
 .glb-buttons button.glb-primary { background:var(--sc-go, #2b7a3d); border-color:var(--sc-go, #2b7a3d); color:var(--sc-on-active, #fff); }
 `;
+
+/**
+ * The mannequin's rows: a base pose (it sets every joint), a joint to turn, and that joint's sliders. They change
+ * `p.pose` / `p.joints` in place and call `changed` for the preview.
+ */
+function buildPoseControls(side, p, changed) {
+    if (!p.joints || typeof p.joints !== "object") p.joints = poseJoints(p.pose || "standing");
+    const row = (label, el) => {
+        const lab = document.createElement("label");
+        lab.appendChild(Object.assign(document.createElement("span"), { textContent: label }));
+        lab.appendChild(el);
+        lab.appendChild(document.createElement("span"));
+        side.appendChild(lab);
+        return lab;
+    };
+    const select = (items, value, cls) => {
+        const s = document.createElement("select");
+        s.className = cls;
+        for (const [v, t] of items) s.appendChild(Object.assign(document.createElement("option"), { value: v, textContent: t }));
+        s.value = value;
+        s.addEventListener("keydown", (e) => e.stopPropagation());
+        return s;
+    };
+    side.appendChild(Object.assign(document.createElement("div"), { className: "glb-hint", textContent: "Mannequin: a base pose, then turn any joint" }));
+    const pose = select(POSE_NAMES.map((n) => [n, POSES[n].label]), isPose(p.pose) ? p.pose : "standing", "glb-pose");
+    row("Pose", pose);
+    const joint = select(JOINTS.map((j) => [j.id, j.label]), "shoulder_l", "glb-joint");
+    row("Joint", joint);
+    const box = document.createElement("div");
+    box.className = "glb-joint-axes";
+    side.appendChild(box);
+    const fmt = (a, v) => (a.axis === "h" ? Math.round(v * 100) + " cm" : Math.round(v) + "°");
+    const axes = () => {
+        box.innerHTML = "";
+        const def = JOINTS.find((j) => j.id === joint.value);
+        for (const a of def.axes) {
+            const lab = document.createElement("label");
+            lab.appendChild(Object.assign(document.createElement("span"), { textContent: a.label }));
+            const inp = document.createElement("input");
+            inp.type = "range"; inp.min = a.min; inp.max = a.max; inp.step = a.axis === "h" ? 0.01 : 1;
+            inp.dataset.joint = def.id; inp.dataset.axis = a.key;
+            const cur = (p.joints[def.id] && p.joints[def.id][a.key]) || 0;
+            inp.value = cur;
+            const val = Object.assign(document.createElement("span"), { textContent: fmt(a, cur) });
+            inp.addEventListener("input", () => {
+                const v = +inp.value;
+                const j = { ...(p.joints[def.id] || {}) };
+                if (v) j[a.key] = v; else delete j[a.key];
+                p.joints = { ...p.joints, [def.id]: j };
+                if (!Object.keys(j).length) delete p.joints[def.id];
+                val.textContent = fmt(a, v);
+                changed();
+            });
+            inp.addEventListener("keydown", (e) => e.stopPropagation());
+            lab.appendChild(inp); lab.appendChild(val);
+            box.appendChild(lab);
+        }
+    };
+    pose.addEventListener("change", () => { p.pose = pose.value; p.joints = poseJoints(pose.value); axes(); changed(); });
+    joint.addEventListener("change", axes);
+    axes();
+}
 
 let cssDone = false;
 function ensureCss() {
@@ -116,8 +180,10 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
             lab.appendChild(cb); lab.appendChild(Object.assign(document.createElement("span"), { textContent: label }));
             side.appendChild(lab);
         };
+        if (model.mannequin) buildPoseControls(side, p, () => schedule());
         tick("shadow", "Ground shadow", "A soft contact shadow on an invisible ground under the object");
         tick("depthLayer", "Depth layer for a ControlNet", "Also write a depth layer (near = white, role control), hidden");
+        if (model.mannequin) tick("poseLayer", "Bones layer (OpenPose)", "Also write the figure's 18 body keypoints in the standard OpenPose colours on black (role control), hidden, for a pose ControlNet");
         const buttons = document.createElement("div");
         buttons.className = "glb-buttons";
         const cancel = Object.assign(document.createElement("button"), { textContent: "Cancel", type: "button" });

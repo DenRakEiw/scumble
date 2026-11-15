@@ -46,7 +46,9 @@ files/<type>/<subfolder>/<filename>    every mirror file the state and the plugi
     files/input/inpaint_canvas/n3_layer_1a2b3c4d5e6f.png    a layer (named by its hash)
     files/output/inpaint_canvas/result_00012_.png           a result (history)
     files/input/inpaint_canvas/fonts/MyFont.ttf             a font the user added
-    files/input/inpaint_canvas/cube.glb                     a 3D model (plugin data)
+    files/input/inpaint_canvas/cube.glb                     a 3D model (plugin data; the glb plugin's mannequin,
+                                                            ref { mannequin: 1 }, has no file: a version before 0.1.57
+                                                            lists it without one and cannot edit it, the layer stays)
 ```
 
 The writer's order is `mimetype`, `scumble/document.json`, the thumbnail when there is one, then the files in the order
