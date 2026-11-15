@@ -820,6 +820,9 @@ function buildMenu() {
                 // the canvas-only view (renderer/shell.js canvasOnly): the window's own key listener takes Tab, where it
                 // can tell a text field from the picture; a registered Tab would reach the fields too
                 { label: "Canvas Only", accelerator: "Tab", registerAccelerator: false, click: () => send("menu", "canvas-only") },
+                // pure black blue, pure white red on the screen (renderer/editor/inpaint_ed_scope.js); the editor's key listener
+                // takes Alt+J, where it can tell a text field from the picture
+                { label: "Clipping Warning", accelerator: "Alt+J", registerAccelerator: false, click: () => send("menu", "clipping-warning") },
                 { type: "separator" },
                 { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
                 // Ctrl+U is the editor's Upsample, and its check ignores Shift: Ctrl+Shift+U would do both

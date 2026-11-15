@@ -31,6 +31,7 @@ export function buildEditorModal(ed) {
     buildLayers(ed);
     buildReferences(ed);
     buildUndoHistory(ed, section);
+    ed.buildScopeSection(section);
     buildSelection(ed, section);
     buildCanvasPanel(ed, section);
     buildExport(ed, section);

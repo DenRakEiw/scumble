@@ -64,6 +64,7 @@ import { RelightPart } from "./inpaint_ed_relight.js";
 import { ChromePart } from "./inpaint_ed_chrome.js";
 import { ViewPart } from "./inpaint_ed_view.js";
 import { RefsPart } from "./inpaint_ed_refs.js";
+import { ScopePart } from "./inpaint_ed_scope.js";
 
 // ---------------------------------------------------------------------------
 // the editor
@@ -195,6 +196,8 @@ class InpaintEditor {
         this._pyramidBudget = Infinity; // new levels allowed in this frame (drawScene sets it to 1)
         this._pyramidPending = false;
         this.sceneCanvas = null;        // last composited view; overlays are drawn on top of it every frame
+        this._sceneSeq = 0;             // bumped each time sceneCanvas is drawn again (the clipping warning keys on it)
+        this.clipWarning = false;       // the clipping warning over the screen (Alt+J, inpaint_ed_scope.js): a view, never saved
         this.sceneSig = null;
         this.viewCanvas = null;         // the visible region, composited at screen resolution
         this.viewPass = null;           // {x, y, w, h, sx, sy} while a region is being composited
@@ -931,7 +934,7 @@ class InpaintEditor {
     }
 
     /** A skin was switched (renderer/skins.js): redraw what took its colours from THEME. */
-    themeChanged() { try { this.renderLayers(); } catch (err) { console.warn("theme: layers", err); } try { this.syncTipControls(); } catch (err) { console.warn("theme: tip", err); } this.drawSoon(); }
+    themeChanged() { try { this.renderLayers(); } catch (err) { console.warn("theme: layers", err); } try { this.syncTipControls(); } catch (err) { console.warn("theme: tip", err); } try { this.drawScope(); } catch (err) { console.warn("theme: scope", err); } this.drawSoon(); }
 
     // ---- queue -------------------------------------------------------------
 
@@ -1592,7 +1595,7 @@ class InpaintEditor {
         try { this.thumbObserver.disconnect(); } catch (_) { /* ignore */ }
     }
 }
-installParts(InpaintEditor, [PanelsPart, LayersPart, HistoryPanelPart, TextPart, TipsPart, HealPart, LiquifyPart, ShapePart, SelectPart, StackPart, SegmentPart, MasksPart, GeometryPart, PointerPart, DepthPart, FiltersPart, HistoryPart, PersistPart, ExportPart, OpenPart, StrokesPart, DisplayPart, CompositePart, MatchPart, DrawPart, RelightPart, ChromePart, ViewPart, RefsPart]);
+installParts(InpaintEditor, [PanelsPart, LayersPart, HistoryPanelPart, TextPart, TipsPart, HealPart, LiquifyPart, ShapePart, SelectPart, StackPart, SegmentPart, MasksPart, GeometryPart, PointerPart, DepthPart, FiltersPart, HistoryPart, PersistPart, ExportPart, OpenPart, StrokesPart, DisplayPart, CompositePart, MatchPart, DrawPart, RelightPart, ChromePart, ViewPart, RefsPart, ScopePart]);
 bindDisplay(InpaintEditor);
 bindComposite(InpaintEditor);
 bindExport(InpaintEditor);
