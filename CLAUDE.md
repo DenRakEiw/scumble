@@ -84,6 +84,9 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **Later the same night: items 66 (Parameters in the ComfyUI window's bar, never run on a real ComfyUI page: its
+  checklist is in `docs/PLAN_COMFY_VIEW.md`) and 67 (a posable mannequin in the glb plugin; undo steps can now carry
+  one plugin's data) built, reviewed and merged into `quick-wins` too; `docs/PLAN_0_1_57.md` "as built".**
 - **The night of 2026-11-15/16: items 63, 65, 68, 61 built on the branch `quick-wins`** (off `main` `c85360da`;
   local, not pushed; the user, going to sleep: "schau mal was wir davon bauen können heute nach"). Plan and "as built"
   in `docs/PLAN_0_1_57.md`: Generate the new border after an extend (63), the Scope section and the clipping warning
@@ -1069,11 +1072,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   *Parameters* list of the graph's inputs (denoise, an IPAdapter weight, a ControlNet strength ...) where a tick makes
   one a row of the recipe's Settings panel (a `settings` entry `{index, node, input, label}` in `recipes.js`'s
   format), saved with *Save to recipe*, so a user never edits the recipe JSON by hand. Check first what the importer
-  already reads. Medium.
+  already reads. Medium. **Built 2026-11-16 on `quick-wins`** (not run on a real ComfyUI page).
 - 67: **A posable mannequin in the glb plugin** (the user, 2026-11-07, with https://github.com/storytold): a bundled
   figure (procedural primitives or a CC0 / MIT model; no licence-encumbered rig), a few base poses and the main joints
   turnable in `plugins/glb`'s dialog, for posing a person, the camera's angle and the framing; it renders to the linked
-  depth control layer as the glb objects do, optionally as OpenPose-style coloured bones (drawn by Scumble). Medium.
+  depth control layer as the glb objects do, optionally as OpenPose-style coloured bones (drawn by Scumble). Medium. **Built 2026-11-16 on `quick-wins`**.
 - 68: **Pick a frame from a video** (the user, 2026-11-07): opening or dropping an .mp4 / .mov / .webm shows a small
   scrubber dialog on Chromium's own `<video>` (no FFmpeg dependency) and takes the chosen frame as the picture or as a
   layer / reference, so a green-screen clip's frame goes straight to the key. Small. (The four-corner perspective of

@@ -18,6 +18,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   a soft shadow of its own shape under it, darkest where it meets the ground and fading away from it. Distance,
   softness, opacity and direction show live in a small dialog, a depth map fades the shadow where the ground lies
   farther away, and it lands as an ordinary multiply layer in one undo step (MCP `contact_shadow`; 123 tools).
+- **Parameters in the ComfyUI window**: the window's bar has a *Parameters* list. Tick any input of the graph
+  (denoise, steps, a LoRA or ControlNet strength, a sampler, a text) and it becomes a row of the recipe's Settings
+  panel once you save; it starts with the value it had in ComfyUI, and unticking takes the row away.
+- **A posable mannequin** in the 3D object tool: a built-in figure about 1.75 m tall with seven base poses and
+  turnable joints, placed and lit like a 3D object, with its depth and an OpenPose bones layer as control layers.
+  The pose is saved with the document, and one undo takes an edit back, pose included (now also for other 3D
+  objects).
 
 ## 0.1.56 - 2026-11-15
 
