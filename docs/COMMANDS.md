@@ -799,6 +799,19 @@ Match a layer's edges to the picture under it: an inpaint result that came back 
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
 | `apply` | boolean | false: only fit and report, change nothing (default `true`) |
 
+### `contact_shadow` *(image)*
+
+Give a layer with transparency (a cut-out, a key, a pasted picture) a contact shadow: a new plain pixel layer directly under it, named "<layer> shadow", in multiply, black with the shadow as its alpha: the layer's shape squashed toward its lowest opaque edge (the foot), blurred, darkest where it meets the ground and fading away from it. Where the picture has a depth map (depth_map) it fades where the ground lies much farther than the foot. One undo step; the layer itself is not changed. Refused on a filter, reference or control layer and on a layer with nothing opaque.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+| `distance` | number | how far the shadow reaches below the foot, in % of the layer's opaque height, 1..300 (default `30`) |
+| `softness` | number | the blur at the shadow's far end, in % of the height, 0..100 (the contact stays sharper) (default `8`) |
+| `opacity` | number | the shadow layer's opacity 0..1 (default `0.8`) |
+| `skew` | number | direction: the far end shifted sideways by this % of the reach, -100..100 (positive to the right) (default `0`) |
+
 ### `transform_layer` *(image)*
 
 Transform one layer, baked into its pixels in one undo step, as the move tool's Rotate / Distort / Warp and its quarter turns. mode rotate: by `angle` degrees clockwise about the layer's middle (a text layer stays editable: the angle goes into the text, as set_text's angle); rotate90: a quarter turn (`dir` cw or ccw) without resampling; distort: the layer's four corners to `corners` (a perspective: [[x, y] top left, top right, bottom right, bottom left] in image pixels); warp: the layer bent on a grid of n × n cells: `points` holds the (n + 1) × (n + 1) grid points row by row from the top left, in image pixels (unbent they are x + w·i/n, y + h·j/n of the layer's box). Distort and warp turn a text layer into pixels; a live mask is baked into the pixels, a switched-off one dropped (undo brings both back). The layer keeps the resolution of its pixels. Refused on a locked or a filter layer; the base is no layer (rotate_canvas and straighten_canvas turn the whole picture). from: the layer's box before; changed false: nothing to do (an angle of 0).

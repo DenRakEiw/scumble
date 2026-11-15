@@ -14226,6 +14226,169 @@ await run("close_document", { doc: doc.id, force: true });
 if (out.content !== "abc" || !out.bold || out.top !== "Bold") throw new Error("the text edit's undo took back more than the edit: " + JSON.stringify(out));
 return out;
 """),
+    # item 61 (docs/PLAN_0_1_57.md): Layer > Add Contact Shadow. An opaque rectangle on the white canvas gets a multiply
+    # layer directly under it, darkest right under its bottom edge, nothing far away or up behind it; the rectangle is not
+    # touched and one undo takes the shadow away. A depth map farther than the foot fades it; the dialog's preview leaves
+    # nothing behind on Cancel and Apply makes one step; the refusals answer as errors
+    ("contact_shadow_under_a_cut_out", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const doc = d.id;
+const out = { tiles: !!ed.tileMode };
+const keepDepth = ed.maps ? ed.maps.depth : undefined;
+try {
+    await run("new_canvas", { width: 800, height: 400, doc });
+    const c = document.createElement("canvas"); c.width = 200; c.height = 100;
+    const x = c.getContext("2d"); x.fillStyle = "#c04020"; x.fillRect(0, 0, 200, 100);
+    const L0 = ed.addLayer({ name: "Box", kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 300, y: 150, w: 200, h: 100, dirty: true });
+    // an undo puts copies of the layers back: the rectangle is looked up by its id each time
+    const live = () => ed.layers.find((l) => l.id === L0.id);
+    const live2 = (l) => ed.layers.find((x) => x.id === l.id) || l;
+    let L = L0;
+    const own = () => Array.from(live().px.readRect(0, 0, 200, 100).data).join(",");
+    const before = own(), place = [L.x, L.y, L.w, L.h].join(",");
+    const n0 = ed.layers.length, u0 = ed.undo.length;
+    const r = await run("contact_shadow", { layer: L.id, doc });
+    const S = ed.layers.find((l) => l.id === r.id);
+    if (!S) throw new Error("contact_shadow made no layer: " + JSON.stringify(r));
+    // the shadow's alpha at an image pixel (0 outside its box)
+    const a = (X, Y) => (X < S.x || Y < S.y || X >= S.x + S.w || Y >= S.y + S.h ? 0 : S.px.readRect(Math.floor((X - S.x) * S.px.width / S.w), Math.floor((Y - S.y) * S.px.height / S.h), 1, 1).data[3]);
+    const col = []; for (let y = 230; y < 320; y++) col.push(a(400, y));
+    let best = -1, at = -1; for (let y = 250; y < 320; y++) { const v = a(400, y); if (v > best) { best = v; at = y; } }
+    out.made = { name: S.name, index: ed.layers.indexOf(S), source: ed.layers.indexOf(L), blend: S.blend, opacity: S.opacity, kind: S.kind, box: [S.x, S.y, S.w, S.h], best, at, ms: r.ms };
+    if (S.name !== "Box shadow" || S.blend !== "multiply" || S.kind !== "paint" || Math.abs(S.opacity - 0.8) > 1e-9) throw new Error("the shadow layer: " + JSON.stringify(out.made));
+    if (ed.layers.indexOf(S) !== ed.layers.indexOf(live()) - 1 || ed.layers.length !== n0 + 1) throw new Error("the shadow is not directly under the layer: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    if (at > 252 || best < 200) throw new Error("the darkest place is not right under the bottom edge: " + JSON.stringify(out.made) + " column " + col.join(" "));
+    // it fades with the distance, and is nothing far below, far beside, or up behind the box
+    if (!(a(400, 251) > a(400, 265) && a(400, 265) > a(400, 280) && a(400, 280) > 0)) throw new Error("the shadow does not fade away from the foot: " + col.join(" "));
+    out.far = [a(400, 330), a(400, 390), a(100, 255), a(700, 255), a(400, 170), a(400, 200)];
+    if (out.far.some((v) => v !== 0)) throw new Error("the shadow reaches too far: " + JSON.stringify(out.far));
+    const rgb = Array.from(S.px.readRect(Math.floor((400 - S.x) * S.px.width / S.w), Math.floor((252 - S.y) * S.px.height / S.h), 1, 1).data);
+    if (rgb[0] || rgb[1] || rgb[2]) throw new Error("the shadow is not black: " + rgb);
+    L = live();
+    if (own() !== before || [L.x, L.y, L.w, L.h].join(",") !== place) throw new Error("the rectangle changed");
+    if (ed.undo.length !== u0 + 1 || ed.undo[ed.undo.length - 1].label !== "Contact shadow") throw new Error("not one undo step: " + JSON.stringify(ed.undo.slice(u0).map((s) => s.label)));
+    await run("undo", { doc });
+    if (ed.layers.some((l) => l.id === S.id) || ed.layers.length !== n0 || !ed.layers.some((l) => l.id === L.id)) throw new Error("undo did not take the shadow away: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    if (own() !== before) throw new Error("undo changed the rectangle");
+    // the parameters: a longer reach goes farther, a skew to the right shifts the far end
+    const r2 = await run("contact_shadow", { layer: L.id, distance: 80, softness: 0, skew: 100, opacity: 0.5, doc });
+    const S2 = ed.layers.find((l) => l.id === r2.id);
+    const b = (X, Y) => (X < S2.x || Y < S2.y || X >= S2.x + S2.w || Y >= S2.y + S2.h ? 0 : S2.px.readRect(Math.floor((X - S2.x) * S2.px.width / S2.w), Math.floor((Y - S2.y) * S2.px.height / S2.h), 1, 1).data[3]);
+    out.params = { opacity: S2.opacity, box: [S2.x, S2.y, S2.w, S2.h], right: b(540, 300), left: b(320, 300) };
+    if (S2.opacity !== 0.5 || !(S2.y + S2.h > 320) || !(out.params.right > 0) || out.params.left !== 0) throw new Error("distance / skew / opacity: " + JSON.stringify(out.params));
+    await run("undo", { doc });
+    // a depth map: the ground right of x 450 lies far behind the foot, the shadow fades there and stays on the left
+    const dd = new Uint16Array(800 * 400);
+    for (let y = 0; y < 400; y++) for (let X = 0; X < 800; X++) dd[y * 800 + X] = Math.round(65535 * (y >= 245 && X >= 450 ? 0.9 : 0.3));
+    ed.maps = ed.maps || {};
+    ed.maps.depth = { data: dd, w: 800, h: 400 };
+    const r3 = await run("contact_shadow", { layer: L.id, doc });
+    const S3 = ed.layers.find((l) => l.id === r3.id);
+    const c3 = (X, Y) => (X < S3.x || Y < S3.y || X >= S3.x + S3.w || Y >= S3.y + S3.h ? 0 : S3.px.readRect(Math.floor((X - S3.x) * S3.px.width / S3.w), Math.floor((Y - S3.y) * S3.px.height / S3.h), 1, 1).data[3]);
+    out.depth = { near: c3(350, 252), far: c3(480, 252), status: r3.status };
+    if (!(out.depth.near > 150) || out.depth.far !== 0 || !/depth map/.test(r3.status)) throw new Error("the depth map does not fade the shadow: " + JSON.stringify(out.depth));
+    await run("undo", { doc });
+    ed.maps.depth = keepDepth;
+    // refusals: a filter layer, a layer with nothing opaque
+    const f = await run("add_filter", { type: "grain", doc });
+    const rf = await commands.call("contact_shadow", { layer: f.id, doc });
+    const E = ed.addLayer({ name: "Empty", kind: "paint", px: ed.pixels.Layer.empty(800, 400), x: 0, y: 0, w: 800, h: 400, dirty: true });
+    const re = await commands.call("contact_shadow", { layer: E.id, doc });
+    out.refused = [rf.ok ? "made" : rf.error, re.ok ? "made" : re.error];
+    if (rf.ok || !/filter layer/.test(rf.error) || re.ok || !/no opaque part/.test(re.error)) throw new Error("refusals: " + JSON.stringify(out.refused));
+    // the dialog: its preview is drawn over the screen only, never a layer: the document (getValue, the layer list) holds
+    // none while it is open, a step taken meanwhile (an agent's command) and its undo bring none back; Cancel leaves
+    // nothing, Apply makes one step
+    const u1 = ed.undo.length, n1 = ed.layers.length;
+    L = live();
+    const button = (label) => Array.from(ed.askOpen.querySelectorAll("button")).find((x) => x.textContent === label);
+    let p = ed.contactShadowDialog(L);
+    await wait(150);
+    const ov = ed._shadowOverlay, ovh = ov ? ov.h : 0;
+    const docNow = JSON.stringify(ed.getValue());
+    if (!ed.askOpen || !ov || ed.layers.length !== n1 || ed.undo.length !== u1 || /shadow/i.test(docNow)) throw new Error("the dialog's preview is not a screen overlay alone: " + JSON.stringify({ ask: !!ed.askOpen, overlay: !!ov, layers: ed.layers.map((l) => l.name), steps: ed.undo.length - u1, inDoc: /shadow/i.test(docNow), status: ed.status }));
+    const slider = ed.askOpen.querySelector("input[type=range]");
+    slider.value = "60"; slider.dispatchEvent(new Event("input"));
+    await wait(200);
+    if (!ed._shadowOverlay || !(ed._shadowOverlay.h > ovh + 20)) throw new Error("the preview did not follow the distance: " + JSON.stringify([ovh, ed._shadowOverlay && ed._shadowOverlay.h]));
+    await run("select_rect", { x: 10, y: 10, w: 50, h: 50, doc });
+    button("Cancel").click();
+    if ((await p) !== null || ed._shadowOverlay || ed.layers.length !== n1) throw new Error("Cancel left something: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    await run("undo", { doc });
+    if (ed.layers.length !== n1 || ed.layers.some((l) => /shadow/i.test(l.name)) || ed.undo.length !== u1) throw new Error("the undo of a step taken during the dialog brought something back: " + JSON.stringify(ed.layers.map((l) => l.name)));
+    p = ed.contactShadowDialog(L);
+    await wait(150);
+    button("Apply").click();
+    const made = await p;
+    out.dialog = { made: made && made.name, layers: ed.layers.length - n1, steps: ed.undo.length - u1, label: ed.undo[ed.undo.length - 1].label };
+    if (!made || ed.layers.length !== n1 + 1 || ed.undo.length !== u1 + 1 || out.dialog.label !== "Contact shadow" || ed._shadowOverlay) throw new Error("Apply: " + JSON.stringify(out.dialog));
+    if (ed.layers.indexOf(made) !== ed.layers.indexOf(live()) - 1) throw new Error("the dialog's shadow is not under the layer");
+    await run("undo", { doc });
+    // the review's must: the widest parameters on a tall layer stay within the grid's cap and land in seconds (they
+    // asked for a grid of about 13,000 x 14,000 cells before); the preview at the same values too
+    await run("remove_layer", { layer: E.id, doc });
+    await run("remove_layer", { layer: f.id, doc });
+    const tall = document.createElement("canvas"); tall.width = 120; tall.height = 380;
+    tall.getContext("2d").fillRect(0, 0, 120, 380);
+    const T = ed.addLayer({ name: "Tall", kind: "paint", px: ed.pixels.Layer.fromCanvas(tall), x: 60, y: 10, w: 120, h: 380, dirty: true });
+    const big = { distance: 300, softness: 100, skew: 100 };
+    const t0 = performance.now();
+    const rt = await commands.call("contact_shadow", { layer: T.id, ...big, doc });
+    const tBig = Math.round(performance.now() - t0);
+    const srcT = ed.shadowSource(live2(T), 2048), gT = ed.shadowGrid(srcT, big);
+    out.wide = { ok: rt.ok, ms: tBig, cells: gT.grid.w * gT.grid.h, error: rt.ok ? null : rt.error };
+    if (!rt.ok || tBig > 8000 || gT.grid.w * gT.grid.h > 4e6) throw new Error("the widest parameters: " + JSON.stringify(out.wide));
+    p = ed.contactShadowDialog(live2(T));
+    await wait(150);
+    for (const [i, v] of [[0, 300], [1, 100], [3, 100]]) { const s = ed.askOpen.querySelectorAll("input[type=range]")[i]; s.value = String(v); s.dispatchEvent(new Event("input")); }
+    await wait(1500);
+    out.wide.preview = !!ed._shadowOverlay;
+    if (!ed._shadowOverlay || ed.statusKind === "error") throw new Error("the preview at the widest parameters: " + ed.status);
+    button("Cancel").click();
+    await p;
+    await run("undo", { doc });
+    // tiles: the coverage is read from the region canvases, no display mirror of the whole layer is made
+    if (ed.tileMode) {
+        const Lp = live().px;
+        const had = !!Lp._mirror;
+        const rm = await run("contact_shadow", { layer: L.id, doc });
+        out.mirror = { before: had, after: !!live().px._mirror };
+        if (!had && live().px._mirror) throw new Error("the shadow made a display mirror of the whole layer");
+        await run("undo", { doc });
+        void rm;
+    }
+    // a clipped layer: its shadow never becomes the base it clips to. Clipped over a filter layer (a clip without
+    // effect): the shadow goes under the filter, which stays the target; clipped with nothing under it in its group: the
+    // shadow is clipped too and the clip stays without effect
+    const g = await run("add_filter", { type: "grain", doc });
+    const G = ed.layers.find((l) => l.id === g.id);
+    ed.layers.splice(ed.layers.indexOf(G), 1); ed.layers.splice(ed.layers.indexOf(live()), 0, G);
+    live().clip = true; ed.layersRestacked();
+    if (ed.clipTargetOf(live()) !== G || ed.clipBaseOf(live()) !== null) throw new Error("the clip over a filter is not set up");
+    const rc = await run("contact_shadow", { layer: L.id, doc });
+    const SC = ed.layers.find((l) => l.id === rc.id);
+    out.clip = { stack: ed.layers.map((l) => l.name), target: ed.clipTargetOf(live()) && ed.clipTargetOf(live()).name, base: ed.clipBaseOf(live()) && ed.clipBaseOf(live()).name };
+    if (ed.clipTargetOf(live()) !== ed.layers.find((l) => l.id === G.id) || ed.clipBaseOf(live()) !== null || ed.layers.indexOf(SC) >= ed.layers.indexOf(ed.layers.find((l) => l.id === G.id))) throw new Error("the shadow became the clipped layer's base: " + JSON.stringify(out.clip));
+    await run("undo", { doc });
+    await run("remove_layer", { layer: G.id, doc });
+    // with the filter gone the clipped box is the bottom layer: nothing to clip to
+    const B = live();
+    ed.layers.splice(ed.layers.indexOf(B), 1); ed.layers.unshift(B); ed.layersRestacked();
+    const rb = await run("contact_shadow", { layer: L.id, doc });
+    const SB = ed.layers.find((l) => l.id === rb.id);
+    out.clip.bottom = { stack: ed.layers.map((l) => l.name + (l.clip ? " (clip)" : "")), base: ed.clipBaseOf(live()) && ed.clipBaseOf(live()).name };
+    if (ed.clipBaseOf(live()) !== null || !SB.clip || ed.layers.indexOf(SB) !== ed.layers.indexOf(live()) - 1) throw new Error("the clip with nothing under it: " + JSON.stringify(out.clip.bottom));
+    await run("undo", { doc });
+} finally {
+    if (ed.askOpen) { const c = Array.from(ed.askOpen.querySelectorAll("button")).find((x) => x.textContent === "Cancel"); if (c) c.click(); }
+    if (ed.maps) ed.maps.depth = keepDepth;
+    host.shell.activate(ednow(window.__t) || host.editor);
+    await run("close_document", { doc, force: true });
+}
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

@@ -493,6 +493,17 @@ async def main():
             if not unknown.isError:
                 raise RuntimeError("unknown tool did not fail")
 
+            # item 61: a contact shadow under a text layer, through the tool, as a layer of its own directly under it
+            if "contact_shadow" not in names:
+                raise RuntimeError("tool missing: contact_shadow")
+            txt = data_of(await call(session, "add_text", {"text": "Shadow", "x": 120, "y": 120, "size": 60, "doc": doc}))
+            cs = data_of(await call(session, "contact_shadow", {"layer": txt["id"], "distance": 40, "opacity": 0.6, "doc": doc}))
+            listed = data_of(await call(session, "list_layers", {"doc": doc}))["layers"]
+            ids = [x["id"] for x in listed]
+            if cs.get("under") != txt["id"] or cs.get("id") not in ids or ids.index(cs["id"]) != ids.index(txt["id"]) - 1:
+                raise RuntimeError("contact_shadow: " + json.dumps(cs)[:300] + " " + json.dumps(ids))
+            report["contact_shadow"] = f"{cs.get('name')} under {txt['id']}, {cs.get('ms')} ms"
+
             await call(session, "close_document", {"doc": doc})
             docs = data_of(await call(session, "list_documents"))
             if any(d["id"] == doc for d in docs["documents"]):
