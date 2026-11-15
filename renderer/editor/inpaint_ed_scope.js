@@ -98,6 +98,20 @@ function clipContext() {
     }
 }
 
+/**
+ * Let the shared pass's drawing buffer and texture go (1 x 1), once the warning is off: a screen-sized canvas and its
+ * texture are kept otherwise. The next editor that turns it on computes its marks again (the owner is dropped).
+ */
+function shrinkClipGl() {
+    if (!clipGl || clipGl.gl.isContextLost()) return;
+    const { gl, canvas, tex } = clipGl;
+    canvas.width = 1; canvas.height = 1;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    clipGl.owner = null;
+    clipGl.seq = -1;
+}
+
 /** The marks of `src` (a canvas of W x H) on the GPU: a canvas of the same size, transparent but where it clips. */
 function clipMarksGl(src, W, H) {
     const c = clipContext();
@@ -146,7 +160,7 @@ export class ScopePart {
     /** Turn the clipping warning on or off (Alt+J, View > Clipping Warning, the Scope section's button). */
     toggleClipWarning(on = !this.clipWarning) {
         this.clipWarning = !!on;
-        this._clipMarks = null;
+        this.dropClipMarks();
         if (this.scopeClipBtn) this.scopeClipBtn.classList.toggle("ipc-toggle-on", this.clipWarning);
         this.setStatus(this.clipWarning
             ? "Clipping warning on: pure black shows blue, pure white red (on the screen only). Alt+J turns it off."
@@ -155,18 +169,29 @@ export class ScopePart {
         return this.clipWarning;
     }
 
+    /** Let this editor's marks go; with them the shared GL pass's buffers when this editor held them. */
+    dropClipMarks() {
+        const k = this._clipMarks;
+        this._clipMarks = null;
+        if (k && k.gl && clipGl && clipGl.owner === this._clipToken) shrinkClipGl();
+    }
+
     /**
      * The marks over the scene, drawn by drawScene right after the scene canvas, with the identity transform. Computed
      * again only when the scene was drawn again (`_sceneSeq`) or the screen changed size; one shared GL canvas serves
      * every editor, so its owner is kept with the marks: a token of the editor, not the editor (a closed one stays free).
+     * `_clipForceCpu` (set by the editor gate only) takes the CPU fallback, so both paths are held to the same pixels.
      */
     drawClipWarning(ctx, W, H) {
         if (!this.clipWarning || !this.sceneCanvas) return;
         const k = this._clipMarks;
-        let marks = k && k.seq === this._sceneSeq && k.w === W && k.h === H && (!k.gl || (clipGl && clipGl.owner === this._clipToken && clipGl.seq === k.seq)) ? k.canvas : null;
+        const glKept = (m) => !!(clipGl && !clipGl.gl.isContextLost() && clipGl.owner === this._clipToken && clipGl.seq === m.seq);
+        let marks = k && k.seq === this._sceneSeq && k.w === W && k.h === H && k.forced === !!this._clipForceCpu && (!k.gl || glKept(k)) ? k.canvas : null;
         if (!marks) {
             let gl = null;
-            try { gl = clipMarksGl(this.sceneCanvas, W, H); } catch (err) { console.warn("Inpaint Canvas: clipping warning", err); clipGl = false; }
+            if (!this._clipForceCpu) {
+                try { gl = clipMarksGl(this.sceneCanvas, W, H); } catch (err) { console.warn("Inpaint Canvas: clipping warning", err); clipGl = false; }
+            }
             if (gl) {
                 if (!this._clipToken) this._clipToken = {};
                 clipGl.owner = this._clipToken; clipGl.seq = this._sceneSeq;
@@ -174,7 +199,7 @@ export class ScopePart {
             } else {
                 marks = clipMarksCpu(this.sceneCanvas, W, H, k && !k.gl ? k.canvas : null);
             }
-            this._clipMarks = { seq: this._sceneSeq, w: W, h: H, canvas: marks, gl: !!gl };
+            this._clipMarks = { seq: this._sceneSeq, w: W, h: H, canvas: marks, gl: !!gl, forced: !!this._clipForceCpu };
         }
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -202,6 +227,12 @@ export class ScopePart {
             c.title = "Histogram of the visible picture: red, green and blue filled, luma as the line. Shadows left, highlights right.";
             wrap.appendChild(c);
             this.scopeCanvas = c;
+            // laid out again (the Image tab shown, the tab in front, canvas only left) or a new width: draw, and count
+            // if the picture changed while it could not be seen
+            if (typeof ResizeObserver === "function") {
+                this.scopeObserver = new ResizeObserver(() => { if (c.clientWidth > 0) { this.drawScope(); this.scopeSoon(0); } });
+                this.scopeObserver.observe(c);
+            }
             const row = el("div", "ipc-row ipc-scope-row");
             row.style.cssText = "display:flex; align-items:center; gap:6px; margin-top:4px; width:100%;";
             this.scopeInfo = el("span", "ipc-grow ipc-scope-info", "");
@@ -224,9 +255,22 @@ export class ScopePart {
         this.drawScope();
     }
 
-    /** Whether the histogram is to be kept current: the section open in a shown editor. */
+    /**
+     * Whether the histogram is to be kept current: the section open and laid out (the Image tab shown, this tab in
+     * front, not the canvas-only view) in an open editor, in a window that is visible. A headless instance, an agent's
+     * edits in a background tab and the Generate tab count nothing, whatever the stored open state says.
+     */
     scopeShown() {
-        return !!(this.scopeSection && this.scopeSection.open && this.isOpen);
+        const c = this.scopeCanvas;
+        return !!(this.scopeSection && this.scopeSection.open && this.isOpen && c && c.offsetParent !== null && c.clientWidth > 0)
+            && document.visibilityState === "visible";
+    }
+
+    /** The window was hidden while the section was open: count once when it is visible again. */
+    scopeWhenVisible() {
+        if (this._scopeVisWait || !this.scopeSection || !this.scopeSection.open || !this.isOpen) return;
+        this._scopeVisWait = true;
+        document.addEventListener("visibilitychange", () => { this._scopeVisWait = false; this.scopeSoon(0); }, { once: true });
     }
 
     /** What the histogram depends on: the composite's version and the undo step's (a jump in the history). */
@@ -235,15 +279,30 @@ export class ScopePart {
     }
 
     /**
-     * Count the histogram again `wait` ms after the last call, if what it shows is out of date. Called from draw(),
-     * so every change of the picture on screen reaches it; cheap when nothing changed or the section is closed.
+     * Count the histogram again `wait` ms after the first change it has not counted. Called from draw(), so every
+     * change of the picture on screen reaches it; cheap when nothing changed or the section is closed. A count already
+     * waiting is not pushed back: the marching ants draw every 120 ms, and a timer started again at every draw never
+     * fired while a selection was shown. The count reads the picture as it is when it runs.
      */
     scopeSoon(wait = SCOPE_WAIT) {
-        if (!this.scopeShown()) return;
-        const key = this.scopeKey();
-        if (this._scope && this._scope.key === key && !this._scopeTimer) return;
-        if (this._scopeTimer) clearTimeout(this._scopeTimer);
-        this._scopeTimer = setTimeout(() => { this._scopeTimer = null; this.updateScope().catch((err) => console.warn("Inpaint Canvas: scope", err)); }, wait);
+        if (!this.scopeShown()) {
+            if (document.visibilityState !== "visible") this.scopeWhenVisible();
+            return;
+        }
+        if (this._scopeTimer) return;
+        if (this._scope && this._scope.key === this.scopeKey() && !this._scopeBusy) return;
+        this._scopeTimer = setTimeout(() => {
+            this._scopeTimer = null;
+            // a held gesture (a stroke, a light dragged on its quick map) or something pending: not now, a moment later;
+            // the settled read would wait for relight's full march and composite 1 MP in the middle of the gesture
+            if (this.scopeHeld()) { this.scopeSoon(); return; }
+            this.updateScope().catch((err) => console.warn("Inpaint Canvas: scope", err));
+        }, wait);
+    }
+
+    /** A gesture in the editor that a scope read must not run under (as the composite's upload and Resize wait for). */
+    scopeHeld() {
+        return !!(this.gestureHeld() || this.pending);
     }
 
     /**
@@ -251,7 +310,7 @@ export class ScopePart {
      * @returns {Promise<object|null>} the histogram (`scopeHistogram`'s) with `w`, `h` and `key`, or null
      */
     async updateScope() {
-        if (!this.scopeShown()) return null;
+        if (!this.scopeShown() || this.scopeHeld()) return null;
         if (this._scopeBusy) { this._scopeAgain = true; return this._scopeBusy; }
         const run = (async () => {
             const key = this.scopeKey();

@@ -400,6 +400,8 @@ class InpaintEditor {
         this.flatCache = null;
         this.sceneCanvas = null;
         this.sceneSig = null;
+        if (this._scopeTimer) { clearTimeout(this._scopeTimer); this._scopeTimer = null; }
+        this.dropClipMarks();
         this.root.remove();
         this.drawThumb();
         this.notifyChanged();
@@ -1158,6 +1160,8 @@ class InpaintEditor {
             if (this[name]) { freed += px(this[name].c || this[name]); this[name] = null; }
         }
         if (this._brushRead) { for (const c of this._brushRead) if (c) freed += px(c); this._brushRead = null; }
+        // the clipping warning's marks: the CPU fallback's own canvas; the GL pass's shared buffers shrink with them
+        if (this._clipMarks) { if (!this._clipMarks.gl) freed += px(this._clipMarks.canvas); this.dropClipMarks(); }
         if (this._walkScratches) { for (const c of this._walkScratches.values()) freed += px(c); this._walkScratches = null; }
         releaseBoxBuffers();
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
@@ -1496,6 +1500,7 @@ class InpaintEditor {
         addPixels(scratch, "selection", this.sel);
         for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas", "_passView", "_passMaskView", "_filterMaskView"]) add(scratch, name, this[name]);
         add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
+        add(scratch, "clipMarks", this._clipMarks && this._clipMarks.canvas);   // the clipping warning's (inpaint_ed_scope.js)
 
         // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots
         // hold that the live document does not
@@ -1593,6 +1598,7 @@ class InpaintEditor {
         this.clearSnapshots();
         try { this.resizeObserver.disconnect(); } catch (_) { /* ignore */ }
         try { this.thumbObserver.disconnect(); } catch (_) { /* ignore */ }
+        if (this.scopeObserver) { try { this.scopeObserver.disconnect(); } catch (_) { /* ignore */ } }
     }
 }
 installParts(InpaintEditor, [PanelsPart, LayersPart, HistoryPanelPart, TextPart, TipsPart, HealPart, LiquifyPart, ShapePart, SelectPart, StackPart, SegmentPart, MasksPart, GeometryPart, PointerPart, DepthPart, FiltersPart, HistoryPart, PersistPart, ExportPart, OpenPart, StrokesPart, DisplayPart, CompositePart, MatchPart, DrawPart, RelightPart, ChromePart, ViewPart, RefsPart, ScopePart]);

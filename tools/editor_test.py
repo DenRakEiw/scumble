@@ -3565,11 +3565,14 @@ const d = ed.scopeSection;
 if (!d || d.tagName !== "DETAILS") throw new Error("no Scope section");
 if (!Array.from(ed.panes.image.querySelectorAll(":scope > details > summary")).some((s) => s.textContent === "Scope")) throw new Error("the Scope section is not in the Image tab");
 const wasOpen = d.open;
+const prevPane = (Object.entries(ed.panes).find(([, p]) => !p.hidden) || ["image"])[0];
+const prevDisplay = ed.selectionDisplay;
 let stored = null;
 try { stored = localStorage.getItem("ipc.scopeOpen"); } catch (_) { /* no storage */ }
 const out = {};
 let L = null;
 try {
+    ed.showPane("image");
     // closed: no count, no timer
     d.open = false;
     await wait(30);
@@ -3602,8 +3605,36 @@ try {
     const h3 = await ed.updateScope();
     if (h3.white !== 0.5 || h3.black !== 0.5) throw new Error("with the layer hidden " + [h3.black, h3.white]);
     out.hidden = [h3.black, h3.white];
+    // the count fires by itself a moment after a change, also while a selection's marching ants draw every 120 ms
+    // (a timer started again at every draw never fired then): no updateScope() here, only the wait
+    ed.selectionDisplay = "ants";
+    await run("select_rect", { x: 2, y: 2, w: 20, h: 20, doc: window.__t });
+    ed.draw();
+    if (!ed.antsTimer) throw new Error("the marching ants are not running");
+    await run("set_layer", { layer: L.id, visible: true, doc: window.__t });
+    ed.draw();
+    let t = 0;
+    while (t < 3000 && !(ed._scope && ed._scope.hist && ed._scope.hist.white === 0)) { await wait(100); t += 100; }
+    if (!ed.antsTimer) throw new Error("the marching ants stopped during the wait");
+    if (!(ed._scope && ed._scope.hist && ed._scope.hist.white === 0 && ed._scope.hist.black === 0.5)) throw new Error("the Scope did not count the change on its own within 3 s while the ants ran: " + JSON.stringify(ed._scope && ed._scope.hist && [ed._scope.hist.black, ed._scope.hist.white]));
+    out.onItsOwnMs = t;
+    // the Generate tab hides the section: nothing is counted there, and showing the Image tab again counts the change
+    ed.showPane("gen");
+    if (ed.scopeShown()) throw new Error("the Scope counts with the Generate tab in front");
+    await run("set_layer", { layer: L.id, visible: false, doc: window.__t });
+    ed.draw();
+    await wait(450);
+    if (ed._scopeTimer || ed._scopeBusy || ed._scope.hist.white !== 0) throw new Error("the hidden Scope counted");
+    ed.showPane("image");
+    t = 0;
+    while (t < 3000 && ed._scope.hist.white !== 0.5) { await wait(100); t += 100; }
+    if (ed._scope.hist.white !== 0.5) throw new Error("the Scope did not count the change made while it was hidden once it was shown again");
+    out.afterShownMs = t;
+    await run("select_none", { doc: window.__t });
 } finally {
     if (L) { try { await run("remove_layer", { layer: L.id, doc: window.__t }); } catch (_) { /* gone */ } }
+    ed.showPane(prevPane);
+    ed.selectionDisplay = prevDisplay;
     d.open = wasOpen;
     try { if (stored == null) localStorage.removeItem("ipc.scopeOpen"); else localStorage.setItem("ipc.scopeOpen", stored); } catch (_) { /* no storage */ }
 }
@@ -3669,6 +3700,16 @@ try {
     const moved = screen();
     if (moved.blue !== on.blue && Math.abs(moved.blue - on.blue) > on.blue * 0.05) throw new Error("the marks changed size with a pan: " + [on.blue, moved.blue]);
     if (moved.firstBlue === on.firstBlue) throw new Error("the marks did not move with the pan");
+    // the GPU pass ran; the CPU fallback (no WebGL2) marks exactly the same pixels
+    if (!ed._clipMarks || ed._clipMarks.gl !== true) throw new Error("the marks did not come from the GPU pass: " + JSON.stringify(ed._clipMarks && { gl: ed._clipMarks.gl }));
+    ed._clipForceCpu = true;
+    const cpu = screen();
+    if (!ed._clipMarks || ed._clipMarks.gl !== false) throw new Error("the CPU path did not run");
+    if (cpu.blue !== moved.blue || cpu.red !== moved.red || cpu.black || cpu.white || cpu.firstBlue !== moved.firstBlue) throw new Error("the CPU marks differ from the GPU's: " + JSON.stringify({ gpu: moved, cpu }));
+    ed._clipForceCpu = false;
+    const back = screen();
+    if (!ed._clipMarks.gl || back.blue !== moved.blue) throw new Error("the GPU pass did not come back: " + JSON.stringify(back));
+    out.cpu = cpu;
     // the export and the document know nothing of it
     await run("export", { format: "png", path: pathB, doc: window.__t });
     const b = await bytes(pathB);
@@ -3679,6 +3720,7 @@ try {
     if (ed.clipWarning) throw new Error("Alt+J did not turn the clipping warning off");
     const after = screen();
     if (after.blue || after.red) throw new Error("marks left after it was turned off: " + JSON.stringify(after));
+    if (ed._clipMarks) throw new Error("the marks were kept after the warning was turned off");
     // typing in a field: Alt+J is the field's
     const inp = document.createElement("input");
     ed.root.appendChild(inp);
@@ -3687,6 +3729,7 @@ try {
     inp.remove();
     if (ed.clipWarning) throw new Error("Alt+J in a text field turned the warning on");
 } finally {
+    delete ed._clipForceCpu;
     if (ed.clipWarning) ed.toggleClipWarning(false);
     Object.assign(ed.view, keepView);
     ed.draw();
