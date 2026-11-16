@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+## 0.1.57 - 2026-11-16
+
 - **Florence-2 as a helper model** (Microsoft, MIT): download it in *Settings › Helpers* (277 MB, every file checked by
   its sha256); it runs in the helpers' process, on the graphics card where it can. New results, pastes, cut-outs and
   reference images get a short name from what it sees ("Woman sitting on the hood of a blue car" instead of "Result 3")

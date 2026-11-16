@@ -1056,6 +1056,10 @@ sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) befo
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-16 (`rr57-c`, canvas): `videoframe` `a_video_without_a_duration` failed once with "the fixture had a
+  duration (1.967): it no longer tests this": Chromium read a duration from the MediaRecorder WebM it usually
+  reports as Infinity. Green on the rerun (`rr57-c2`) and on tiles; side by side (`all57`) the 25 fps step also
+  timed out waiting for a frame callback (an occluded window). Ruled out: the code under test (no change between runs).
 - 2026-11-10 (`seedream-layers`, `sl-final-tiles`): `ark_test.py` `a_model_not_activated_says_so` failed once with
   `TypeError: fetch failed`, 0 requests at the mock; `app.log` gives the cause, `connect ETIMEDOUT 127.0.0.1:<the mock's
   port>`. The connect to the loopback mock timed out before any request went out, while other agents' gates started on the
