@@ -197,7 +197,8 @@ Scumble is at 0.1.x and not every feature has been tested end to end. Run agains
 rendering through ComfyUI (FLUX 3 Image Klein with boxes among it), the in-app helper models, the film pack, the
 command core, the MCP server, the tile engine on large documents and auto-update; among the API providers FLUX 3 Image
 on Black Forest Labs (with boxes), OpenRouter and Comfy Router (on Comfy Router also through Comfy's SDK since 0.1.49),
-GPT Image 2.5 through OpenRouter, GPT Image 2 and Nano Banana 2 on Comfy Router, HY Image 3.5 through Comfy's Partner
+GPT Image 2.5 through OpenRouter, GPT Image 2 and Nano Banana 2 on Comfy Router, Seedream 5.5 on Comfy Router and
+OpenRouter, HY Image 3.5 through Comfy's Partner
 API, Ideogram 4 on fal (with boxes), Qwen Image 2.1 Edit on Comfy Cloud, Z-Image Turbo, Flux.2 Klein 9B and a Nano
 Banana 2 edit on Comfy Cloud through Comfy's SDK and its API v2 (a Cancel there stopped the job on Comfy's side), and
 the upscalers Topaz Precision on fal and Magnific Precision and Creative on Magnific; on a local ComfyUI the Realism
@@ -222,7 +223,8 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   document: it selects, limits filter layers, and drives lens blur, haze and Relight.
 - Models: FLUX 3 Image, FLUX.2 (max, pro, flex, klein) and FLUX.1 Fill from Black Forest Labs; GPT Image 2.6 and 2.5
   Flare / Sunburst and GPT Image 2; Nano Banana 2.1, 2, 2 Lite and Pro; Seedream 5.5 (on WaveSpeedAI, Comfy Cloud,
-  ToAPIs, Comfy Router, Oxen.ai and OpenRouter, and on BytePlus ModelArk in early access; not run live yet), 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
+  ToAPIs, Comfy Router, Oxen.ai and OpenRouter, and on BytePlus ModelArk in early access; run live on Comfy Router and
+  OpenRouter, the other hosts not yet), 5 and 4.5; Qwen Image Edit and Qwen Image 2.1;
   Ideogram 4 and 4.5; Grok Imagine, Krea 3 Edit and Krea 2, Recraft V4, Reve, Z-Image, HY Image 3.5, P-H3-Image and MiniMax-H3-Image (on MiniMax's own API, not run live yet); Magnific's Mystic, Ideogram
   inpainting and Image Expand outpainting. Each runs on the model's own API where Scumble
   has one, or through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, Comfy Router, OpenRouter, Oxen.ai and

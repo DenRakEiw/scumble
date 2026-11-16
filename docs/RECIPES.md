@@ -3110,6 +3110,8 @@ written from its host's public page that day, **none run against the live API** 
 The order of `providers`: `toapis`, `ark`, `wavespeed`, `comfycloud`, `comfyrouter`, `oxen`, `openrouter`. Not on fal,
 Replicate, OpenRouter or Magnific on that day; **OpenRouter listed it on 2026-11-12** (`GET /api/v1/images/models`, read
 2026-11-13) and its variant came last on 2026-11-13, written from that list and the model's endpoints, not run live.
+**Run live since by the user (said 2026-11-16):** through Comfy Router (the base picture of a key visual, with two
+reference layers) and through OpenRouter (the seed range fix of 0.1.57 came from those runs); the other hosts not yet.
 
 | Host | Model id | Read from | Size | Pictures | Background |
 | --- | --- | --- | --- | --- | --- |
