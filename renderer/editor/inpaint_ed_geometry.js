@@ -14,6 +14,9 @@ import { drawMesh, homography } from "./inpaint_mesh.js";
 
 /** A filter layer whose own pixels are an input (Deep paint): its pixels follow every change of the picture's geometry. */
 function ownPx(l) { return !!(l && l.kind === "filter" && FILTERS[l.filter] && FILTERS[l.filter].ownPixels); }
+/** A plain filter layer's px is an empty store of the canvas size (its mask is made at that size): a geometry op gives it a
+ *  new one of the new size (the undo step holds the old one by reference). */
+function plainFilterPx(ed, l, nw, nh) { if (l.kind === "filter" && !ownPx(l) && l.px) l.px = ed.pixels.Layer.empty(nw, nh); }
 
 export class GeometryPart {
     setTransformMode(mode) {
@@ -684,7 +687,7 @@ export class GeometryPart {
                     // the whole canvas: the size follows; its pixels are empty and stay as crop leaves them, but Deep paint's
                     // are its paint and turn with the picture
                     l.w = nw; l.h = nh;
-                    if (t.px) l.px = t.px;
+                    if (t.px) l.px = t.px; else plainFilterPx(this, l, nw, nh);
                 } else {
                     [l.x, l.y, l.w, l.h] = turnRect(op, l.x, l.y, l.w, l.h, W, H);
                     // new pixels (the canvas step holds the old ones), turned in their own resolution
@@ -1049,7 +1052,7 @@ export class GeometryPart {
             for (const l of this.layers) {
                 const p = plan.get(l);
                 if (!p) continue;
-                if (l.kind === "filter") { l.w = nw; l.h = nh; if (p.maskPx) l.maskPx = p.maskPx; if (p.px) l.px = p.px; continue; }
+                if (l.kind === "filter") { l.w = nw; l.h = nh; if (p.maskPx) l.maskPx = p.maskPx; if (p.px) l.px = p.px; else plainFilterPx(this, l, nw, nh); continue; }
                 if (p.rect) [l.x, l.y, l.w, l.h] = p.rect;
                 if (p.px) l.px = p.px;
                 if (p.maskPx) l.maskPx = p.maskPx;
@@ -1389,6 +1392,7 @@ export class GeometryPart {
                     // a new object (the canvas undo step holds the old one): the old mask placed at -left, -top
                     if (l.maskPx) { l.maskPx = l.maskPx.resized(nw, nh, { x: -left, y: -top }); l.maskDirty = true; }
                     if (ownPx(l) && l.px) { l.px = l.px.resized(nw, nh, { x: -left, y: -top }); l.dirty = true; }
+                    else plainFilterPx(this, l, nw, nh);
                 } else {
                     l.x -= left; l.y -= top;
                 }
@@ -1470,6 +1474,7 @@ export class GeometryPart {
                     if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = this.pixels.Mask.fromCanvas(m); l.maskDirty = true; }
                     // Deep paint's paint is resampled to the new size (a new object: the canvas step holds the old one)
                     if (ownPx(l) && l.px) { const c = makeCanvas(nw, nh); const cc = c.getContext("2d"); cc.imageSmoothingEnabled = true; cc.imageSmoothingQuality = "high"; l.px.drawTo(cc, 0, 0, nw, nh); l.px = this.pixels.Layer.fromCanvas(c); l.dirty = true; }
+                    else plainFilterPx(this, l, nw, nh);
                 } else {
                     l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy);
                     l.w = Math.max(1, Math.round(l.w * sx)); l.h = Math.max(1, Math.round(l.h * sy));
@@ -1647,6 +1652,7 @@ export class GeometryPart {
                     l.x = 0; l.y = 0; l.w = nw; l.h = nh;   // a filter covers the whole canvas
                     if (l.maskPx && l.maskPx.width === W && l.maskPx.height === H) { l.maskPx = l.maskPx.resized(nw, nh, { x: left, y: top }); l.maskDirty = true; l._maskedValid = false; }
                     if (ownPx(l) && l.px && l.px.width === W && l.px.height === H) l.px = l.px.resized(nw, nh, { x: left, y: top });
+                    else plainFilterPx(this, l, nw, nh);
                 } else if (l.kind === "paint" && l.px && l.px.width === W && l.px.height === H && l.w === W && l.h === H) {
                     // a new object (the canvas undo step holds the old one): the old pixels placed at left, top
                     l.px = l.px.resized(nw, nh, { x: left, y: top });
@@ -1655,7 +1661,8 @@ export class GeometryPart {
                 } else {
                     l.x += left; l.y += top;
                 }
-                l.dirty = true;
+                // a plain filter layer's px is an empty store with no file of its own to upload
+                l.dirty = l.kind !== "filter" || ownPx(l);
             }
             this.layers = kept;
             this.activeLayerId = null;
