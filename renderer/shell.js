@@ -13,6 +13,7 @@ import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins } from "./skins.js";
 import * as dialogs from "./dialogs.js";
 import { isVideoFile, loadVideo, showPicker } from "./videoframe.js";
+import { grantedFile, pictureType } from "./grantfile.js";
 import { remap, compare, checkNote, normalize as normalizeTokens } from "./editor/reftokens.js";
 import * as realism from "./editor/realism.js";
 import { failKind } from "./editor/inpaint_status.js";
@@ -1066,9 +1067,23 @@ ui.settings.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopP
 
 // ---- menu and files ----------------------------------------------------------------------
 
-window.scumble.file.onOpened(({ name, data }) => {
-    const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : /\.tiff?$/i.test(name) ? "image/tiff" : "image/png";
-    openInto(new File([data], name, { type }));
+// File › Open on a picture or a layered file: main sends a token and URL for that one file, never the bytes
+// (electron/main/grantedfiles.js, renderer/grantfile.js). The tab it goes into is chosen first (as openInto would), so
+// the read shows there; a picture that landed in it meanwhile sends this one to a new tab
+window.scumble.file.onOpened(async (g) => {
+    if (g.error) { if (host.editor) host.editor.setStatus(`Could not open ${g.name}: ${g.error}.`, "error"); return; }
+    let ed = host.editor;
+    if (!ed || ed.base) { ed = newDocument(); activate(ed); }
+    ed.setStatus(`Reading ${g.name} ...`);
+    let file;
+    try {
+        file = await grantedFile(g, { type: pictureType(g.name, { svg: false }) });
+    } catch (err) {
+        if (!ed._destroyed) ed.setStatus(`Could not open ${g.name}: ${String((err && err.message) || err)}.`, "error");
+        return;
+    }
+    if (ed._destroyed || ed.base) await openInto(file);
+    else await ed.loadFile(file);
 });
 
 // ---- a frame from a video (CLAUDE.md item 68, renderer/videoframe.js) --------------------------------------------

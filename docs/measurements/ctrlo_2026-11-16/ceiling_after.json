@@ -1,0 +1,50 @@
+[
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 536870912,
+  "ms": 703,
+  "MB": 512,
+  "page_alive_after": true
+ },
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 805306368,
+  "ms": 1058,
+  "MB": 768,
+  "page_alive_after": true
+ },
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 1073741824,
+  "ms": 1320,
+  "MB": 1024,
+  "page_alive_after": true
+ },
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 1610612736,
+  "ms": 2113,
+  "MB": 1536,
+  "page_alive_after": true
+ },
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 2146435072,
+  "ms": 2811,
+  "MB": 2047,
+  "page_alive_after": true
+ },
+ {
+  "how": "grant",
+  "ok": true,
+  "size": 2726297600,
+  "ms": 3255,
+  "MB": 2600,
+  "page_alive_after": true
+ }
+]

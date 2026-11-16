@@ -1,0 +1,21 @@
+serve_any_token_serves_the_last_grant    killed: an unknown token: 404 in the route's words: 200
+serve_a_path_for_a_token                 killed: the granted file's own path for a token: 404: 200
+release_keeps_the_token                  killed: release drops the token, once: null
+no_cap_on_grants                         killed: more than max: the oldest goes: 6
+cap_drops_the_newest                     killed: more than max: the oldest goes: 3
+short_token                              killed: grantReadable: a token of 32 hex characters, the size, the name, the absolute path:
+grant_without_the_open_check             killed: grantReadable: a token of 32 hex characters, the size, the name, the absolute path:
+grant_a_folder                           killed: grantReadable of a folder: refused, no token: null
+grant_reports_size_zero                  killed: grantReadable: a token of 32 hex characters, the size, the name, the absolute path:
+words_enoent_plain_code                  killed: fileProblem words: null
+range_end_not_clamped                    killed: parseRange forms: null
+range_suffix_off_by_one                  killed: parseRange forms: null
+range_start_past_end_served              SURVIVED
+range_ignored                            killed: a range across a piece's border: 206, its bytes, content-range: {"s":200,"n":367001
+stream_end_exclusive                     killed: GET without a range: 200, the whole file over many pieces, its length: {"s":200,"n"
+content_length_whole_on_range            killed: a range across a piece's border: 206, its bytes, content-range: {"s":206,"n":104859
+content_range_wrong                      killed: a range across a piece's border: 206, its bytes, content-range: {"s":206,"n":104859
+head_sends_a_body                        killed: HEAD: the length, no body: {"s":200}
+any_method                               killed: another method: 405: 200
+gone_without_words                       killed: a file gone since the grant: 404 in words: {"s":404,"t":""}
+restored: PASS | killed 19, survived 1

@@ -92,6 +92,11 @@ contextBridge.exposeInMainWorld("scumble", {
         saveFinish: (args) => ipcRenderer.invoke("file:saveFinish", args),
         saveAbort: (args) => ipcRenderer.invoke("file:saveAbort", args),
         read: (file) => ipcRenderer.invoke("file:read", file),
+        // a path as a token and URL (electron/main/grantedfiles.js): { name, path, size, token, url }; the window fetches
+        // `url` into a File (renderer/grantfile.js) and releases the token
+        grant: (file) => ipcRenderer.invoke("file:grant", file),
+        release: (token) => ipcRenderer.invoke("file:release", token),
+        // File › Open on a picture or a layered file: { name, path, size, token, url } (or { name, path, error }), no bytes
         onOpened: (cb) => on("file:opened", cb),
         // File › Open on a video (electron/main/videofiles.js): { name, path, token, url }, no bytes; the frame picker
         // plays `url` and releases the token when it closes
@@ -99,6 +104,8 @@ contextBridge.exposeInMainWorld("scumble", {
         releaseVideo: (token) => ipcRenderer.invoke("file:releaseVideo", token),
         // the videoframe gate, dev builds only (main registers it unpackaged): File › Open's route for a fixture
         testOpenVideo: (name) => ipcRenderer.invoke("file:testOpenVideo", name),
+        // the openfile gate and the Ctrl+O measurement, dev builds only: File › Open's route for a path
+        testOpen: (file) => ipcRenderer.invoke("file:testOpen", file),
     },
     // .scumble documents (electron/main/documents.js): main writes and reads the file, streamed into the mirror
     documents: {

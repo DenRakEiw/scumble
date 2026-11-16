@@ -11,6 +11,7 @@ import { fontList } from "./editor/inpaint_text.js";
 import { parse, remap } from "./editor/reftokens.js";
 import { lacksNodesText } from "./editor/comfyprompt.js";
 import { refusal } from "./editor/inpaint_status.js";
+import { grantPath, grantedFile, pictureType } from "./grantfile.js";
 import { MAX_LORAS, clampStrength, loraHint, missingLoras, normalizeName, recipeFamily } from "./editor/loras.js";
 
 /** @typedef {import("./commands.js").CommandDescriptor} CommandDescriptor */
@@ -341,9 +342,10 @@ async function fileFrom(a, fallbackName) {
     if (a.path) {
         // a video is never read whole into the window: its frame is picked in File › Open's picker (renderer/videoframe.js)
         if (/\.(mp4|m4v|webm|mov)$/i.test(String(a.path))) throw new Error(`${String(a.path).split(/[\\/]/).pop()} is a video: commands take pictures only. Open it with File › Open (or drop it on the window) to pick a frame, then export or use that picture.`);
-        const r = await window.scumble.file.read(String(a.path));
-        const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : /\.svg$/i.test(r.name) ? "image/svg+xml" : /\.tiff?$/i.test(r.name) ? "image/tiff" : "image/png";
-        return new File([r.data], a.name || r.name, { type });
+        // the file as a token and URL (electron/main/grantedfiles.js), fetched into a File: its bytes never cross in one
+        // IPC message (docs/BUGS.md "Ctrl+O sends the whole file to the window in one message")
+        const g = await grantPath(String(a.path));
+        return grantedFile(g, { name: a.name || g.name, type: pictureType(g.name) });
     }
     if (!a.filename) throw new Error("pass path (a local file) or filename (a file in the local store / ComfyUI input folder)");
     const ref = { filename: a.filename, subfolder: a.subfolder || "", type: a.type || "input" };

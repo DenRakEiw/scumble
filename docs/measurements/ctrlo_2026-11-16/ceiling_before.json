@@ -1,0 +1,50 @@
+[
+ {
+  "how": "read",
+  "ok": true,
+  "size": 536870912,
+  "ms": 905,
+  "MB": 512,
+  "page_alive_after": true
+ },
+ {
+  "how": "read",
+  "ok": true,
+  "size": 805306368,
+  "ms": 1374,
+  "MB": 768,
+  "page_alive_after": true
+ },
+ {
+  "how": "read",
+  "ok": true,
+  "size": 1073741824,
+  "ms": 1782,
+  "MB": 1024,
+  "page_alive_after": true
+ },
+ {
+  "how": "read",
+  "ok": true,
+  "size": 1610612736,
+  "ms": 2834,
+  "MB": 1536,
+  "page_alive_after": true
+ },
+ {
+  "how": "read",
+  "ok": false,
+  "err": "Cannot destructure property 'error' of '(intermediate value)' as it is null.",
+  "ms": 1540,
+  "MB": 2047,
+  "page_alive_after": true
+ },
+ {
+  "how": "read",
+  "ok": false,
+  "err": "Error invoking remote method 'file:read': RangeError [ERR_FS_FILE_TOO_LARGE]: File size (2726297600) is greater than 2 GiB",
+  "ms": 8,
+  "MB": 2600,
+  "page_alive_after": true
+ }
+]
