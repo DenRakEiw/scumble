@@ -21,8 +21,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/readme/hero.gif" width="100%" alt="Three boxes drawn and described on an empty canvas, then Generate new with FLUX 3 Image makes the café picture with each thing in its box (the wait sped up 16 times)">
+  <img src="docs/images/readme/workflow.gif" width="100%" alt="One key visual built in Scumble, its layers landing one by one: the generated and upscaled base, the wheels inpainted from a reference photo, a detail pass tile by tile, the face and the shoes swapped from references, the Realism Pass (sped up, the waits cut out)">
 </p>
+
+<p align="center"><sub>One picture from the first generation to the finished frame, 17 layers, without leaving the editor (sped up, the waits cut out; the app wears its Lighthouse Academy skin).</sub></p>
 
 ## Get Scumble
 
@@ -55,7 +57,8 @@ The Match slider in the layer's row changes that match at any time, and nothing 
 layer, erase parts, change its blend mode, put filters and text on top. The picture only becomes one when you flatten.
 The status line and the result's row in the history say where it ran ("FLUX 3 Image via Comfy Router, 23 s", or "via
 your ComfyUI"). An answer that comes back slightly shifted or scaled is lined up with the picture's edges, and *Match
-edges to the layer below* in a layer's menu does the same afterwards.
+edges to the layer below* in a layer's menu does the same afterwards. Each result is one undo step of its own:
+Ctrl+Z takes exactly that result back, also when it lands after you went on working.
 
 ![Colour match: the same result layer at Match 0 % with a visible cold rectangle, and at 100 % blended into the ground; below, the layer row with the Match slider](docs/images/colour-match.jpg)
 
@@ -93,8 +96,8 @@ curves, LUTs and more.
 ![The layer stack: a vignette and a film look as filter layers, a text layer and the base](docs/images/layers.jpg)
 
 The photo in the editor screenshots (the woman on the blue car) is a sample picture used to show the features;
-nothing in it was generated with Scumble. The café picture at the top and below was made in Scumble with FLUX 3
-Image.
+nothing in it was generated with Scumble. The key visual in the clip at the top is the author's own work, made in
+Scumble from the first generation to the Realism Pass; the café picture below was made in Scumble with FLUX 3 Image.
 
 ## Before / After
 
@@ -162,7 +165,8 @@ Planned, not started yet.
 - **Comfy Cloud:** your Comfy key in *Settings › API providers*; the same key runs Comfy Router.
 
 Without any of these Scumble still opens, paints, selects, layers, filters, saves and exports, and its in-app models
-(object selection, background removal, Remove, the depth map) run on your own machine once downloaded.
+(object selection, background removal, Remove, the depth map, the surface maps for Deep paint, layer names and
+descriptions) run on your own machine once downloaded.
 
 ## Demo: videos and the manual
 
@@ -197,7 +201,9 @@ GPT Image 2.5 through OpenRouter, GPT Image 2 and Nano Banana 2 on Comfy Router,
 API, Ideogram 4 on fal (with boxes), Qwen Image 2.1 Edit on Comfy Cloud, Z-Image Turbo, Flux.2 Klein 9B and a Nano
 Banana 2 edit on Comfy Cloud through Comfy's SDK and its API v2 (a Cancel there stopped the job on Comfy's side), and
 the upscalers Topaz Precision on fal and Magnific Precision and Creative on Magnific; on a local ComfyUI the Realism
-Pass (Windows only, RTX only) and RTX Video Super Resolution, the latter on Comfy Cloud too. The other API routes were
+Pass (Windows only, RTX only), RTX Video Super Resolution (on Comfy Cloud too), MOSS-Image, MOSS-Image Edit (its
+edit on Comfy Cloud too), P-H3-Image, LoRA rows (on Comfy Cloud with Qwen Image Edit 2509 too) and the green screen
+key with CorridorKey 2.0. The other API routes were
 built from the providers' documentation and have not run against the live services yet, nor have relight's model
 routes, the assistant's model calls, the portable zip on a second PC, or the Linux builds.
 
@@ -210,6 +216,8 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
 - Selection by brush, rectangle, ellipse, lasso, magic wand, object hover or box (SAM2, in the app), by depth,
   brightness or colour range, or by text (SAM3 on your ComfyUI); grow, shrink, feather, invert, from layer, saved
   selections.
+- A frame from a video: *File › Open* and a drop on the window take .mp4, .m4v, .webm and .mov files and show a small
+  player with a slider and one-frame steps; the frame you stop on becomes a new picture, a layer or a reference layer.
 - A depth map of the picture, computed in the app (Depth Anything V2 Small, *Selection › Depth*) and saved with the
   document: it selects, limits filter layers, and drives lens blur, haze and Relight.
 - Models: FLUX 3 Image, FLUX.2 (max, pro, flex, klein) and FLUX.1 Fill from Black Forest Labs; GPT Image 2.6 and 2.5
@@ -239,7 +247,10 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   The Comfy Cloud recipes take LoRA rows too, from Comfy Cloud's catalog and the LoRAs you imported there.
 - Your own workflow becomes a recipe when it holds an Inpaint Canvas node. The *ComfyUI* window (Ctrl+Shift+K) shows
   your ComfyUI's page or Comfy Cloud; *Edit in ComfyUI* opens a recipe's graph there, and *Save to recipe* or *Save as
-  new recipe* brings it back.
+  new recipe* brings it back. Its *Parameters* list turns any input of the graph (denoise, steps, a LoRA or ControlNet
+  strength, a sampler, a text) into a row of the recipe's Settings panel with a tick, so nobody edits recipe files by
+  hand. The Settings you pick for a recipe stay with it: a new tab, or the recipe picked again later, starts with the
+  values you last chose.
 - Comfy Cloud has a mode of its own beside *local* and *api*. Fifteen recipes from Comfy's templates come with
   Scumble (image edits, and new images for Generate new); *Cloud copy* turns one of your ComfyUI recipes into one that
   runs there, and a workflow made on Comfy Cloud imports as it is. Comfy Cloud and Comfy Router run through Comfy's
@@ -252,22 +263,27 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   instead of one crop of all of them scaled down to the model's size. Up to 8 areas; before an API run Scumble asks.
 - *Generate new* makes the base picture from the prompt alone, locally or through a provider, and you edit it from
   there. *New* in the top bar can make the empty canvas for a model, in one of its own aspects and size classes (1k,
-  2k, 4k), so boxes are drawn in the shape the picture will have; Generate new then opens on that choice.
+  2k, 4k), so boxes are drawn in the shape the picture will have; Generate new then opens on that choice. While the
+  current tab holds work, both open a tab of their own and take the reference layers, prompt, settings and boxes
+  along, so the document you were in stays as it is.
 - Boxes in the prompt for FLUX 3 Image, for FLUX 3 Image Klein and MOSS-Image on your own ComfyUI (with the Inpaint Canvas node's
   current version, see [What you need to render](#what-you-need-to-render)) and for Ideogram 4 (on fal): the Boxes
   tool (X) draws them, a double-click describes one right on the picture, one switch under the prompt turns them on
   and off, and they are saved with the document. With the switch on and no boxes drawn, the selection goes as one box.
   Ideogram 4 takes the new, kept and text boxes (it has no move, remove or reference boxes).
-- Prompt upsampling through a stored API key or a local OpenAI-compatible server, with your own prompt-writing rules
-  as Markdown templates.
+- Prompt upsampling through a stored API key (Gemini 4 Hydrogen on a Google or OpenRouter key among the models) or a
+  local OpenAI-compatible server, with your own prompt-writing rules as Markdown templates.
 
 ### Retouch, upscale, refine
 
 - Clone, heal, smudge, dodge and burn, liquify, and *Patch* for a whole area. *Remove* and *Content-aware move* fill
   with LaMa, a model that runs inside Scumble: no prompt, no key, no ComfyUI (download it once in *Settings › Helpers
   (in-app models)*).
-- Object masks (SAM2), background removal (BiRefNet, RMBG) and the depth map (Depth Anything V2 Small) run in the app
-  through ONNX Runtime.
+- Object masks (SAM2), background removal (BiRefNet, RMBG), the depth map (Depth Anything V2 Small), the surface maps
+  (Marigold IID Lighting, MoGe-2) and Florence-2 run in the app through ONNX Runtime, in a process of their own so the
+  window stays responsive. With Florence-2 downloaded, new results, pastes, cut-outs and reference images get a short
+  name from what it sees ("Woman sitting on the hood of a blue car" instead of "Result 3"), and *Image › Describe
+  Selection* writes a caption of the selection or the picture to copy or use as the prompt.
 - *Upscale* takes the selection (it comes back as a layer) or the whole picture (it becomes the new base, every layer
   and mask scaled along, in one undo step). Topaz, Clarity, SeedVR2, Recraft and Magnific through their providers; the
   upscale models of your own ComfyUI; RTX Video Super Resolution on your ComfyUI or on Comfy Cloud, 1 to 4 times (on
@@ -279,8 +295,8 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
   pack with its runtime, which you install there; Scumble ships none of it, and there is no Comfy Cloud version. The
   [manual](docs/MANUAL.md)'s chapter of the same name has the steps.
 - *Image › Split into Layers...* takes one picture apart into a base and separate layers with Seedream's layer
-  decomposition on BytePlus ModelArk, or for Seedream 5.5 on WaveSpeedAI or Oxen.ai (up to 99 layers and a base on
-  Seedream 5.5): they land above your layers in one group, one undo step.
+  decomposition on BytePlus ModelArk, or for Seedream 5.5 on WaveSpeedAI, Oxen.ai or OpenRouter (up to 99 layers and
+  a base on Seedream 5.5, up to 32 on OpenRouter): they land above your layers in one group, one undo step.
 - *Image › Key Green / Blue Screen...* keys a subject shot on a green or blue screen (or generated on a flat green)
   with CorridorKey 2.0 by Corridor Digital, on your own ComfyUI through the community node pack ComfyUI-CorridorKey2.0.
   It needs an NVIDIA card of the RTX 30 generation or newer on that machine; the pack and its models, about 5.1 GB,
@@ -295,22 +311,37 @@ routes, the assistant's model calls, the portable zip on a second PC, or the Lin
 ### Layers, filters, text
 
 - A full layer stack: paint, image, text and filter layers, groups, masks, 27 blend modes (from multiply and screen to
-  hard mix, divide and luminosity, the same on screen, in exports and in PSD files), opacity, transform, crop and
-  extend (which is how outpainting starts), copy and paste of whole layers between tabs, SVG files as layers.
+  hard mix, divide and luminosity, the same on screen, in exports and in PSD files), opacity, transform (a moved or
+  scaled layer snaps to the canvas, the guides and the other layers), crop and extend, copy and paste of whole layers
+  between tabs, SVG files as layers.
+- Outpainting in one step: tick *Generate the new border* in the Canvas tool, and applying an extend starts Generate
+  with your selected recipe on the new border (a recipe on an API provider asks first, since it is a paid run).
+- *Add Contact Shadow* (Layer menu): a cut-out, a keyed subject or a pasted picture gets a soft shadow of its own
+  shape under it, darkest where it meets the ground, as an ordinary multiply layer; a depth map fades it where the
+  ground lies farther away.
 - Colour match per layer, non-destructive, matched to the picture around the layer or to what lies below it.
 - Filter layers on the GPU (WebGL2, with a processor fallback): grain with film presets, curves, levels, colour
   balance, colour grading, HSL in eight channels, vibrance, gradient map, threshold, posterize, LUT (.cube), vignette,
   sharpen, blur, lens blur by the depth map, haze and dehaze, and more; each can be limited to a depth, brightness or
   colour range. The film pack plugin adds 46 film looks, halation, glow, bleach bypass, cross processing, split toning,
-  light leaks, frames and control points; the effects pack adds chromatic shift and glass displacement.
+  light leaks, frames and control points; the effects pack adds chromatic shift and glass displacement. A *Scope*
+  section shows the live histogram of the visible picture, and Alt+J marks pure black blue and pure white red on the
+  screen while you grade (never in exports).
 - *Relight* (*Layer › New Relight Layer*): a filter layer that lights the picture anew from its depth map, with up to
   four point, spot or sun lights placed with the Lights tool (L), each with a colour temperature or colour, an
   intensity and a softness; soft shadows, gloss, patterns for a spotlight and eight presets. *Render* sends it through
   a model instead (Magnific Relight, IC-Light v2 or Bria on fal, Qwen Image Edit 2509 with a relight LoRA on your
   ComfyUI or on Comfy Cloud) and lands the answer as a pixel layer. Agents use the `relight` command, a preset by name
   too.
+- *Deep paint*: paint on the picture's surfaces. *Image › Surface Maps* splits the picture once into its light, its
+  reflections and its surface shapes, on your own computer; on a *Deep paint layer* what you paint lands under the
+  picture's own light and keeps its highlights, and the eyedropper picks the surface's own colour. *New Light Brush
+  Layer* paints light where the brush goes, Relight layers on such a picture light its own colour and keep its
+  reflections, and *Wrap onto Surface* lays a logo, a pattern or a word round a curved surface such as a cup or a
+  bottle, in perspective and under the picture's light.
 - A shape tool, custom brushes from `.abr` files, and 3D objects (`.glb`) placed into the picture with their own
-  light.
+  light; a built-in posable mannequin (seven base poses, turnable joints) with its depth and an OpenPose bones layer
+  as control layers.
 - `.scumble` documents keep everything editable (layers, filters, text, 3D objects, prompts and results). Export
   PNG, JPEG, WebP, TIFF, PSD and ORA, at a percentage or into a frame of a given size; the *AI label* panel adds the
   EU's label for AI-generated content.
@@ -339,6 +370,10 @@ and what it costs: [docs/ASSISTANT.md](docs/ASSISTANT.md).
   steps on your ComfyUI, the node on Comfy Cloud, the seconds on other providers.
 - Tabs with session restore, a local file mirror (no server needed to reopen your work), a console and a log file,
   updates from GitHub releases with the release notes shown before you restart.
+- Requests to API providers, Comfy Cloud, model downloads and a remote ComfyUI go through your system's curl
+  (*Settings › Network*, on by default): company networks often let curl through where they block other programs.
+- Skins (*Settings › Appearance*): the default look, 90s, Duck, Comfy, Black Forest and Lighthouse Academy, or one
+  you add ([docs/SKINS.md](docs/SKINS.md)).
 
 ## Linux notes
 
@@ -401,7 +436,8 @@ crates/px/         the Rust source of the pixel kernels
 recipes/           ComfyUI recipes, Comfy Cloud recipes and model recipes (one per model, a variant per provider),
                    docs/RECIPES.md
 plugins/           built-in plugins: sample, film (the film pack), effects (chromatic shift and glass),
-                   glb (3D objects), ailabel (the EU AI label), boxes (boxes in the prompt), and two skins
+                   glb (3D objects and the mannequin), ailabel (the EU AI label), boxes (boxes in the prompt), and
+                   five skins
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
 tools/             build_node.py (the node's editor), build_px.py (the kernels), cdp.py (DevTools driver), the tests,
                    run_gates.sh
