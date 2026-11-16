@@ -207,7 +207,13 @@ async function main() {
         // seed and n
         const s4 = fakeServer();
         await openrouter.edit(editReq(v, { seed: -5 }), ctxFor(s4));
-        check("a negative seed goes as seed >>> 0", s4.images[0].seed === (-5 >>> 0) && s4.images[0].seed === 4294967291, String(s4.images[0].seed));
+        // Seedream refuses a seed above 2147483647 (the user, 2026-11-16, on 5.5): the variant's seed_max folds it in
+        check("a negative seed goes as seed >>> 0, folded under Seedream's seed_max", s4.images[0].seed === (-5 >>> 0) % 2147483648 && s4.images[0].seed === 2147483643, String(s4.images[0].seed));
+        const s4b = fakeServer();
+        await openrouter.edit(editReq(v, { seed: 4e9 }), ctxFor(s4b));
+        const s4c = fakeServer();
+        await openrouter.edit(editReq(variant("seedream_5_5"), { seed: 4294967295 }), ctxFor(s4c));
+        check("a seed above 2^31 - 1 stays inside Seedream's range (5.0 pro, 5.5)", s4b.images[0].seed === 4e9 % 2147483648 && s4c.images[0].seed === 2147483647, short([s4b.images[0].seed, s4c.images[0].seed]));
         const s5 = fakeServer();
         await openrouter.edit(editReq(v, { params: { random_seed: true } }), ctxFor(s5));
         check("params.random_seed: no seed is sent (and random_seed itself is not)", !("seed" in s5.images[0]) && !("random_seed" in s5.images[0]), Object.keys(s5.images[0]).join(","));

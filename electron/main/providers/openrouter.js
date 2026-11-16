@@ -54,7 +54,7 @@
 // other key never to it (so a real key cannot reach a local listener that a setting points at).
 "use strict";
 
-const { sleep: realSleep, closestAspect, editAspect } = require("./util");
+const { sleep: realSleep, closestAspect, editAspect, seedOf } = require("./util");
 const { layoutOf, refRoles, instruction } = require("./refs");
 
 const DEFAULT_BASE = "https://openrouter.ai";
@@ -403,7 +403,8 @@ function bodyFor(req, pics, ignore) {
         // "preset_or_none": a model whose list has no "auto" (OpenRouter refuses an unlisted value) gets no aspect instead
         if (a !== "auto" || o.edit_aspect === "preset_or_auto") body.aspect_ratio = a;
     }
-    if (accepts.has("seed") && req.seed != null && !p.random_seed) body.seed = Number(req.seed) >>> 0;
+    // options.seed_max: the model's largest seed (Seedream refuses one above 2147483647); the editor's runs to 2^32 - 1
+    if (accepts.has("seed") && req.seed != null && !p.random_seed) body.seed = +o.seed_max > 0 ? seedOf(req, +o.seed_max) : Number(req.seed) >>> 0;
     if (accepts.has("n")) body.n = 1;
     if (pics.length) body.input_references = pics.map((x) => ({ type: "image_url", image_url: { url: `data:${x.mime};base64,${x.bytes.toString("base64")}` } }));
     const provider = {};

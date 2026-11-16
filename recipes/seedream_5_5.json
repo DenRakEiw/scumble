@@ -215,6 +215,7 @@
       "model": "bytedance-seed/seedream-5-5",
       "input": "edit",
       "options": {
+        "seed_max": 2147483647,
         "accepts": [
           "resolution",
           "aspect_ratio",

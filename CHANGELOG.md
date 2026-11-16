@@ -4,6 +4,9 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Fixed: Seedream on OpenRouter refused about half of all runs** with "seed must be between -1 and 2147483647":
+  the editor's seed runs up to 4,294,967,295, and Seedream 5.5, 5.0 pro and 5.0 lite take half that. Their seed now
+  stays inside the model's range.
 - **Outpainting in one step**: tick *Generate the new border* in the Canvas tool, and applying an extend starts
   Generate with your selected recipe on the new border. A recipe on an API provider asks first, since it is a paid
   run; the result and the extend are one Ctrl+Z each. Agents use `extend_canvas` with `generate: true`.
