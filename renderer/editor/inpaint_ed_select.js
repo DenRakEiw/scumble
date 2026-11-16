@@ -1359,6 +1359,7 @@ export class SelectPart {
         const name = src && !/^the visible image/.test(src) ? `${src} copy` : `Paste ${this.pasteCounter}`;
         const layer = this.addLayer({ name, kind: "image", ref: null, px: this.pixels.Layer.fromCanvas(copy), x, y, w: canvas.width, h: canvas.height, dirty: true });
         this.setStatus(`${layer.name} added (${canvas.width} × ${canvas.height} at ${x}, ${y}). Move it with T.`);
+        if (this.layerLanded) this.layerLanded(layer, "paste");
         return layer;
     }
 

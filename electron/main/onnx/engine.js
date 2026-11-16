@@ -12,6 +12,7 @@ const { Matting } = require("./matting");
 const { Depth } = require("./depth");
 const { Intrinsic, MAX_SIDE: INTRINSIC_SIDE } = require("./intrinsic");
 const { Normals } = require("./normals");
+const { Florence2, TASKS: VLM_TASKS, SIDE: VLM_SIDE } = require("./florence2");
 
 function checkImage(req) {
     const image = req && req.image;
@@ -56,6 +57,17 @@ function checkNormals(req) {
     return checkPicture(req, "the normal model", 14, 2048);
 }
 
+/** A describe job's picture: RGBA at Florence-2's 768 x 768 (the renderer scales it, as for the other helpers). */
+function checkVlm(req) {
+    const image = req && req.image;
+    if (!image || image.length !== VLM_SIDE * VLM_SIDE * 4) throw new Error(`Florence-2 needs an RGBA image of ${VLM_SIDE} × ${VLM_SIDE} pixels`);
+    if (req.task != null && !VLM_TASKS[req.task]) throw new Error(`unknown describe task "${req.task}" (caption or detailed)`);
+    return image;
+}
+
+/** How long a describe job may take before it is stopped (a first run loads four sessions: about 5 s on DirectML). */
+const VLM_TIMEOUT_MS = 60000;
+
 /** The fields of a registry entry (models.js) the models read; a job carries them across the port. */
 function modelInfo(model) {
     const m = model || {};
@@ -72,6 +84,8 @@ function engine(runtime = new Runtime()) {
     const depths = new Map();     // "id\nfile" -> Depth
     const intrinsics = new Map(); // the set's four files -> Intrinsic
     const normalsBy = new Map();  // "id\nfile" -> Normals
+    const vlms = new Map();       // the set's five files -> Florence2
+    const cancelled = new Set();  // describe jobs' `jobId`s a cancel named (cleared when the job ends)
     const encoding = new WeakMap();   // Sam2 -> Map(key -> the encode under way)
 
     function samOf(files) {
@@ -102,6 +116,12 @@ function engine(runtime = new Runtime()) {
         const k = model.id + "\n" + file;
         if (!normalsBy.has(k)) normalsBy.set(k, new Normals(runtime, model, file));
         return normalsBy.get(k);
+    }
+
+    function vlmOf(files) {
+        const k = [files.vision, files.embed, files.encoder, files.decoder, files.tokenizer].join("\n");
+        if (!vlms.has(k)) vlms.set(k, new Florence2(runtime, files));
+        return vlms.get(k);
     }
 
     /** The encode under way for a key, if any: a second job for the same picture waits for it instead of encoding it again. */
@@ -218,6 +238,39 @@ function engine(runtime = new Runtime()) {
             };
         },
 
+        /**
+         * A caption (Florence-2, item 62): job { model, files: { vision, embed, encoder, decoder, tokenizer }, image
+         * (RGBA 768²), task: "caption" | "detailed", jobId?, timeoutMs? } -> { text, task, steps, seconds, ms,
+         * provider, model, label }. Stopped between decoder steps by `cancel(jobId)` ("cancelled") or after
+         * `timeoutMs` (60 s by default).
+         */
+        async describe(job) {
+            const image = checkVlm(job);
+            const id = job.jobId != null ? String(job.jobId) : null;
+            const limit = Math.max(1000, Math.min(600000, Number(job.timeoutMs) || VLM_TIMEOUT_MS));
+            const t0 = Date.now();
+            const check = () => {
+                if (id && cancelled.has(id)) throw new Error("cancelled");
+                if (Date.now() - t0 > limit) throw new Error(`Florence-2 took longer than ${Math.round(limit / 1000)} s and was stopped`);
+            };
+            try {
+                const res = await vlmOf(job.files).run(image, { task: job.task || "caption", check });
+                return { text: res.text, task: res.task, steps: res.steps, seconds: (Date.now() - t0) / 1000, ms: res.ms, provider: res.provider, model: job.model.id, label: job.model.label };
+            } finally {
+                if (id) cancelled.delete(id);
+            }
+        },
+
+        /** A describe job told to stop at its next step (a name for a job not under way is dropped after two minutes). */
+        cancel(jobId) {
+            if (jobId == null) return false;
+            const id = String(jobId);
+            cancelled.add(id);
+            const t = setTimeout(() => cancelled.delete(id), 120000);
+            if (typeof t.unref === "function") t.unref();
+            return true;
+        },
+
         /** Every session released and the embeddings dropped (the fallback's Free VRAM). -> the number released */
         async free() {
             for (const s of sams.values()) s.cache.clear();
@@ -226,7 +279,7 @@ function engine(runtime = new Runtime()) {
 
         /** The instances dropped (their files may have moved: a folder change, a scan, a removal). */
         clear() {
-            sams.clear(); mattings.clear(); depths.clear(); intrinsics.clear(); normalsBy.clear();
+            sams.clear(); mattings.clear(); depths.clear(); intrinsics.clear(); normalsBy.clear(); vlms.clear();
         },
 
         status() {
@@ -235,4 +288,4 @@ function engine(runtime = new Runtime()) {
     };
 }
 
-module.exports = { engine, checkImage, checkDepth, checkIntrinsic, checkNormals, modelInfo, outSize, SIZE };
+module.exports = { engine, checkImage, checkDepth, checkIntrinsic, checkNormals, checkVlm, modelInfo, outSize, SIZE, VLM_SIDE, VLM_TIMEOUT_MS };

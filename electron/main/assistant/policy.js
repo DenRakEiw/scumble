@@ -54,7 +54,7 @@ const POLICY = {
     // ---- read the app -------------------------------------------------------------------
     ping: AUTO, list_documents: AUTO, list_recipes: AUTO, list_loras: AUTO, list_plugins: AUTO, list_layers: AUTO,
     list_brush_tips: AUTO, filter_types: AUTO, status: AUTO, get_state: AUTO, read_log: AUTO,
-    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, surface_maps: AUTO, depth_edit: AUTO, depth_from_layer: AUTO, screenshot: AUTO, compare: AUTO,
+    film_looks: AUTO, glb_info: AUTO, sample_mean_color: AUTO, sample_depth: AUTO, depth_map: AUTO, surface_maps: AUTO, describe: AUTO, depth_edit: AUTO, depth_from_layer: AUTO, screenshot: AUTO, compare: AUTO,
 
     // ---- selection ----------------------------------------------------------------------
     select_rect: AUTO, select_all: AUTO, select_none: AUTO, select_invert: AUTO, select_feather: AUTO,

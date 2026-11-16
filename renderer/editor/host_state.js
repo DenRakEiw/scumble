@@ -302,6 +302,9 @@ export const HostStatePart = {
         try { this.hookStatus(editor); } catch (err) { console.warn("status hook", err); }
         try { this.buildUpscaleButton(editor); } catch (err) { console.warn("upscale button", err); }
         try { buildAreaButton(this, editor); } catch (err) { console.warn("each area button", err); }
+        // Florence-2's names for new layers (item 62, host_vlm.js): the editor calls this hook where a result, a paste,
+        // a cutout or a reference lands; the node's host never sets it
+        editor.layerLanded = (layer, why) => { try { this.autoNameLayer(editor, layer, why); } catch (err) { console.warn("layer name", err); } };
         this.emit("built", { editor });
     },
 

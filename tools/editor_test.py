@@ -14579,6 +14579,140 @@ try {
 }
 return out;
 """),
+    # item 62 (docs/PLAN_0_1_57.md, Florence-2): new layers named from a caption, the model stubbed (host.vlmModel,
+    # host.describeImage). A paste and a "Result" get the short name a moment later, no undo step, a later step's undo
+    # keeps it; a name typed meanwhile, a name that says something, the switch off, no model: nothing changes
+    ("florence2_names_new_layers", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const doc = d.id;
+const out = { tiles: !!ed.tileMode };
+const keep = { vlmModel: host.vlmModel, describeImage: host.describeImage, autoName: host.helpers.autoName };
+const asked = [];
+let release = null;
+try {
+    await run("new_canvas", { width: 640, height: 400, doc });
+    host.vlmModel = () => ({ id: "florence2_base_ft", label: "Florence-2 base", kind: "vlm", present: true });
+    host.helpers.autoName = true;
+    host.describeImage = async (image, o) => { asked.push({ n: image.length, detailed: !!(o && o.detailed) }); if (release) await release.p; return { text: "A red apple on a wooden table.", provider: "stub" }; };
+    if (typeof ed.layerLanded !== "function") throw new Error("the app did not set the editor's layerLanded hook");
+    // a paste of the visible picture is "Paste n"
+    await run("select_rect", { x: 100, y: 50, width: 200, height: 150, doc });
+    ed.copySelection({ merged: true });
+    const u0 = ed.undo.length;
+    const P = ed.pasteClipboard();
+    out.pasted = P.name;
+    for (let i = 0; i < 50 && ed.layers.find((l) => l.id === P.id).name === out.pasted; i++) await wait(40);
+    const P1 = ed.layers.find((l) => l.id === P.id);
+    out.named = P1.name;
+    if (P1.name !== "Red apple on a wooden table") throw new Error("the paste was not named: " + JSON.stringify({ name: P1.name, asked }));
+    if (!asked.length || asked[0].n !== 768 * 768 * 4 || asked[0].detailed) throw new Error("the model's input: " + JSON.stringify(asked));
+    if (ed.undo.length !== u0) throw new Error("the name made an undo step: " + JSON.stringify(ed.undo.slice(u0).map((s) => s.label)));
+    const square = (name) => ed.addLayer({ name, kind: "result", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 64, height: 64 })), x: 10, y: 10, w: 64, h: 64, dirty: true });
+    const hold = () => { let open; release = { p: new Promise((r) => { open = r; }) }; return () => { release = null; open(); }; };
+    const entered = async (n) => { for (let i = 0; i < 150 && asked.length === n; i++) await wait(20); if (asked.length === n) throw new Error("the stub was never asked"); };
+    // a layers step taken while the model runs holds the old name: its undo after the name landed keeps the new one
+    let open = hold();
+    const Q = square("Result 9");
+    let n = asked.length;
+    const pq = host.autoNameLayer(ed, Q, "result");
+    await entered(n);
+    await run("duplicate_layer", { layer: Q.id, doc });   // a layers step: it holds every layer's name
+    open();
+    await pq;
+    await run("undo", { doc });
+    out.afterUndo = ed.layers.find((l) => l.id === Q.id).name;
+    if (out.afterUndo !== "Red apple on a wooden table") throw new Error("an undo brought the old name back: " + out.afterUndo);
+    // a name typed while the model runs stays
+    open = hold();
+    const R = square("Result 7");
+    n = asked.length;
+    const pr = host.autoNameLayer(ed, R, "result");
+    await entered(n);
+    ed.layers.find((l) => l.id === R.id).name = "my apple";
+    open();
+    out.typed = [await pr, ed.layers.find((l) => l.id === R.id).name];
+    if (out.typed[0] !== null || out.typed[1] !== "my apple") throw new Error("a typed name was overwritten: " + JSON.stringify(out.typed));
+    const R2 = square("Result 8");
+    out.result = await host.autoNameLayer(ed, R2, "result");
+    if (out.result !== "Red apple on a wooden table") throw new Error("the result was not named: " + out.result);
+    // Cancel (cancel_run, a tab's close: host.cancelRuns): the name running and the one waiting never land
+    open = hold();
+    const A = square("Result 11"), B = square("Result 12");
+    n = asked.length;
+    const pa = host.autoNameLayer(ed, A, "result"), pb = host.autoNameLayer(ed, B, "result");
+    await entered(n);
+    host.cancelRuns(ed);
+    open();
+    out.cancelled = [await pa, await pb, asked.length - n, ed.layers.find((l) => l.id === A.id).name, ed.layers.find((l) => l.id === B.id).name];
+    if (out.cancelled[0] !== null || out.cancelled[1] !== null || out.cancelled[2] !== 1 || out.cancelled[3] !== "Result 11" || out.cancelled[4] !== "Result 12") throw new Error("a cancelled name landed: " + JSON.stringify(out.cancelled));
+    // a name that says something, the switch off, no model: left alone, nothing asked
+    const n0 = asked.length;
+    const K = ed.addLayer({ name: "jacket", kind: "image", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 8, height: 8 })), x: 0, y: 0, w: 8, h: 8, dirty: true });
+    out.kept = [await host.autoNameLayer(ed, K, "reference")];
+    host.helpers.autoName = false;
+    out.kept.push(await host.autoNameLayer(ed, R2, "result"));
+    host.helpers.autoName = true;
+    host.vlmModel = () => null;
+    out.kept.push(await host.autoNameLayer(ed, P1, "paste"));
+    if (out.kept.some((v) => v !== null) || asked.length !== n0 || K.name !== "jacket") throw new Error("a name was replaced that should stay: " + JSON.stringify({ kept: out.kept, asked: asked.length - n0 }));
+} finally {
+    host.vlmModel = keep.vlmModel; host.describeImage = keep.describeImage; host.helpers.autoName = keep.autoName;
+    host.shell.activate(ednow(window.__t) || host.editor);
+    await run("close_document", { doc, force: true });
+}
+return out;
+"""),
+    # item 62: Describe selection (host.describeArea, MCP describe) with the model stubbed: the selection's box as
+    # 768 x 768, the text in the status line and with to_prompt in the prompt field; without the model a refusal that
+    # names the download
+    ("florence2_describe_selection", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const doc = d.id;
+const out = { tiles: !!ed.tileMode };
+const keep = { vlmModel: host.vlmModel, describeImage: host.describeImage };
+const asked = [];
+try {
+    await run("new_canvas", { width: 600, height: 400, doc });
+    host.vlmModel = () => ({ id: "florence2_base_ft", label: "Florence-2 base", kind: "vlm", present: true });
+    host.describeImage = async (image, o) => {
+        // the picture's middle pixel: the selection's box is red, the rest white
+        const i = 4 * (384 * 768 + 384);
+        asked.push({ n: image.length, detailed: !!o.detailed, mid: [image[i], image[i + 1], image[i + 2]], timeoutMs: o.timeoutMs });
+        return { text: o.detailed ? "In this image we can see a red square." : "A red square.", seconds: 0.2, provider: "stub", model: "florence2_base_ft" };
+    };
+    await run("select_rect", { x: 200, y: 100, width: 120, height: 80, doc });
+    const c = document.createElement("canvas"); c.width = 600; c.height = 400;
+    const x = c.getContext("2d"); x.fillStyle = "#ffffff"; x.fillRect(0, 0, 600, 400); x.fillStyle = "#ff0000"; x.fillRect(200, 100, 120, 80);
+    ed.addLayer({ name: "Square", kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: 600, h: 400, dirty: true });
+    const r = await run("describe", { doc });
+    out.plain = { text: r.text, area: r.area, box: r.box, status: ed.status };
+    if (r.text !== "A red square." || r.area !== "selection" || !Array.isArray(r.box) || r.box.join() !== "200,100,320,180") throw new Error("describe: " + JSON.stringify(out.plain));
+    if (asked[0].n !== 768 * 768 * 4 || asked[0].detailed || asked[0].timeoutMs !== 120000 || !(asked[0].mid[0] > 200 && asked[0].mid[1] < 60)) throw new Error("the model's input: " + JSON.stringify(asked[0]));
+    if (!/^Selection: A red square\\./.test(ed.status || "")) throw new Error("the status line: " + ed.status);
+    const p0 = ed.promptText;
+    const r2 = await run("describe", { detailed: true, to_prompt: true, doc });
+    out.prompt = { text: r2.text, prompt: ed.promptText };
+    if (!asked[1].detailed || ed.promptText !== "In this image we can see a red square." || r2.detailed !== true) throw new Error("to_prompt / detailed: " + JSON.stringify(out.prompt));
+    ed.setPromptText(p0);
+    await run("select_none", { doc });
+    const r3 = await run("describe", { doc });
+    out.picture = r3.area;
+    if (r3.area !== "picture" || r3.box !== null) throw new Error("without a selection: " + JSON.stringify(r3));
+    host.vlmModel = () => null;
+    const r4 = await commands.call("describe", { doc });
+    out.refused = r4.ok ? "ran" : r4.error;
+    if (r4.ok || !/Florence-2: download it in Settings/.test(r4.error)) throw new Error("no model: " + JSON.stringify(r4));
+} finally {
+    host.vlmModel = keep.vlmModel; host.describeImage = keep.describeImage;
+    host.shell.activate(ednow(window.__t) || host.editor);
+    await run("close_document", { doc, force: true });
+}
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

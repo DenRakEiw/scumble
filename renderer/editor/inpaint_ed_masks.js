@@ -132,6 +132,7 @@ export class MasksPart {
             this.draw();
             const pct = Math.round(100 * sum / (255 * W * H));
             this.setStatus(`${layer.name}: background removed with ${pending.backend.label}, ${pct}% kept. Enable mask editing to touch it up with P / E.`);
+            if (this.layerLanded) this.layerLanded(layer, "cutout");
             return true;
         } catch (err) {
             console.error(err);

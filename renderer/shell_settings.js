@@ -644,6 +644,11 @@ function renderHelpers(status) {
     }
     const normalsIn = normals.filter((m) => m.present);
     ui.helpersNormals.value = (normalsIn.find((m) => m.id === st.normals) || normalsIn[0] || normals.find((m) => m.id === st.normals) || normals[0] || { id: "" }).id;
+    // Florence-2's names for new layers (item 62): offered once the model is there, on unless turned off
+    const vlm = (st.models || []).find((m) => m.kind === "vlm" && m.present);
+    ui.helpersAutoName.checked = !!vlm && st.autoName !== false;
+    ui.helpersAutoName.disabled = !vlm;
+    ui.helpersAutoNameNote.textContent = vlm ? `with ${vlm.label}` : "needs Florence-2 (download it above)";
     ui.helpersDir.textContent = (st.dir || "") + (st.isComfyDir ? " (ComfyUI models folder, downloads go to onnx/)" : st.isDefaultDir ? " (app folder)" : "");
     ui.helpersDir.title = st.downloadDir || "";
     ui.helpersDefault.disabled = !!st.isDefaultDir;
@@ -666,7 +671,7 @@ function renderHelpers(status) {
         row.className = "shell-model";
         const name = document.createElement("span");
         name.textContent = m.label;
-        name.title = `${({ sam2: "objects (SAM2)", matting: "background removal", inpaint: "the Remove tool (inpainting)", depth: "depth maps (Select by depth, Limit by depth)", intrinsic: "Deep paint: the picture's colour, light and reflections", normals: "Deep paint: surface normals and shape" })[m.kind] || m.kind} · ${m.source} · ${m.license}`;
+        name.title = `${({ sam2: "objects (SAM2)", matting: "background removal", inpaint: "the Remove tool (inpainting)", depth: "depth maps (Select by depth, Limit by depth)", intrinsic: "Deep paint: the picture's colour, light and reflections", normals: "Deep paint: surface normals and shape", vlm: "captions: names for new layers, Describe selection" })[m.kind] || m.kind} · ${m.source} · ${m.license}`;
         row.appendChild(name);
         const info = document.createElement("span");
         info.className = "shell-model-info";

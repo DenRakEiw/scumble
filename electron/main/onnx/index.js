@@ -13,12 +13,14 @@ const { app, dialog, shell } = require("electron");
 const settings = require("../settings");
 const keys = require("../keys");
 const models = require("./models");
-const { checkImage, checkDepth, checkIntrinsic, checkNormals, modelInfo } = require("./engine");
+const { checkImage, checkDepth, checkIntrinsic, checkNormals, checkVlm, modelInfo } = require("./engine");
 const { HelperProcess } = require("./helpers");
 const { Lama, SIZE: LAMA_SIZE } = require("./lama");
 
 const HF_TOKEN = "hf-token";
-const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small", intrinsic: "intrinsic", normals: "moge2_vitb_normal" };
+// autoName: new result, paste, cutout and reference layers named by Florence-2 once it is downloaded (item 62); on
+// unless the user turned it off in Settings › Helpers
+const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama", depth: "da2_small", intrinsic: "intrinsic", normals: "moge2_vitb_normal", vlm: "florence2_base_ft", autoName: true };
 
 const helperProcess = new HelperProcess();
 let progressSink = null;
@@ -66,6 +68,7 @@ function status() {
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
         device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint, depth: c.depth, intrinsic: c.intrinsic, normals: c.normals,
+        vlm: c.vlm, autoName: c.autoName !== false,
         models: models.describeAll(dir, links(), sc ? sc.elsewhere : null).map((r) => (r.terms ? { ...r, termsAccepted: termsAccepted(models.byId(r.id)) } : r)),
         scan: sc,
         downloads: downloader.running(),
@@ -192,6 +195,7 @@ const MISSING = {
     depth: "No depth model is downloaded (Settings › Helpers).",
     intrinsic: "Deep paint needs the Marigold IID Lighting model: download it in Settings › Helpers.",
     normals: "Deep paint needs a MoGe-2 normal model: download it in Settings › Helpers.",
+    vlm: "Describing a picture needs Florence-2: download it in Settings › Helpers.",
 };
 
 function presentOf(kind, wanted) {
@@ -323,4 +327,19 @@ async function normals(req) {
     return job("normals", { ...m, image, width: w, height: h, tokens: req.tokens || undefined });
 }
 
-module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, intrinsic, normals, setProgressSink, helperProcess, HF_TOKEN, DEFAULTS, LAMA_SIZE };
+/**
+ * A caption of a picture (Florence-2, item 62): req { model?, image (Uint8Array RGBA 768²), task: "caption" |
+ * "detailed", jobId?, timeoutMs? } -> { text, task, steps, seconds, ms, provider, model, label }. `cancelDescribe(jobId)`
+ * stops it at its next decoder step (it then refuses with "cancelled").
+ */
+async function describe(req) {
+    const image = checkVlm(req);
+    const m = jobModel("vlm", (req && req.model) || conf().vlm);
+    return job("describe", { ...m, image, task: req.task || "caption", jobId: req.jobId != null ? String(req.jobId) : null, timeoutMs: req.timeoutMs || undefined });
+}
+
+function cancelDescribe(jobId) {
+    return helperProcess.cancel(jobId);
+}
+
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, depth, intrinsic, normals, describe, cancelDescribe, setProgressSink, helperProcess, HF_TOKEN, DEFAULTS, LAMA_SIZE };

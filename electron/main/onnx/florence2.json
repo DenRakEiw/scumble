@@ -1,0 +1,25 @@
+{
+  "about": "Florence-2 base (fine-tuned), Microsoft, MIT: onnx-community's ONNX export, its 8-bit files (transformers.js' q8), for captions in the helpers' process (item 62: layer names, Describe selection; electron/main/onnx/florence2.js). Every URL is pinned to the repo's commit e88a44ea (read 2026-11-16); the sha256 of an .onnx is its LFS oid, tokenizer.json's was computed from the download (it is not in LFS). Not loadable from a ComfyUI models folder: a set sits in its own folder.",
+  "id": "florence2_base_ft",
+  "kind": "vlm",
+  "label": "Florence-2 base",
+  "note": "describes a picture: names new layers, Describe selection",
+  "source": "onnx-community/Florence-2-base-ft @ e88a44ea (8-bit)",
+  "sourceUrl": "https://huggingface.co/onnx-community/Florence-2-base-ft",
+  "license": "MIT",
+  "subdir": "onnx/florence2",
+  "placeholder": false,
+  "version": 1,
+  "files": [
+    { "name": "vision_encoder_quantized.onnx", "role": "vision", "size": 93746540, "sha256": "3b79d54f23f666f731549db23cb070c35a979ce19cbd9720e90e67a78dc9768c",
+      "url": "https://huggingface.co/onnx-community/Florence-2-base-ft/resolve/e88a44eaf3791a35eae0c5a47b3dbcd36e67eb6f/onnx/vision_encoder_quantized.onnx" },
+    { "name": "embed_tokens_quantized.onnx", "role": "embed", "size": 39390433, "sha256": "6b2258db1c8ee9b160576ccde3cd3814d83a2edaed0dd1c6ca9ff3c38fa62214",
+      "url": "https://huggingface.co/onnx-community/Florence-2-base-ft/resolve/e88a44eaf3791a35eae0c5a47b3dbcd36e67eb6f/onnx/embed_tokens_quantized.onnx" },
+    { "name": "encoder_model_quantized.onnx", "role": "encoder", "size": 43651493, "sha256": "f4ad7a68f1fb875d3bcf735ea14a7021b7ba7e83baf7cf10289881b4ed6d9b85",
+      "url": "https://huggingface.co/onnx-community/Florence-2-base-ft/resolve/e88a44eaf3791a35eae0c5a47b3dbcd36e67eb6f/onnx/encoder_model_quantized.onnx" },
+    { "name": "decoder_model_merged_quantized.onnx", "role": "decoder", "size": 98177697, "sha256": "f22f52f980c33df0efa15932c2f3db6d9d3595ce6387eca938b8cfe23dc4c641",
+      "url": "https://huggingface.co/onnx-community/Florence-2-base-ft/resolve/e88a44eaf3791a35eae0c5a47b3dbcd36e67eb6f/onnx/decoder_model_merged_quantized.onnx" },
+    { "name": "tokenizer.json", "role": "tokenizer", "size": 2297961, "sha256": "d69dcdb2323e124ac4f800cb9863ddccea0d7bb11e16125e8df3bd60f2f8aeac",
+      "url": "https://huggingface.co/onnx-community/Florence-2-base-ft/resolve/e88a44eaf3791a35eae0c5a47b3dbcd36e67eb6f/tokenizer.json" }
+  ]
+}

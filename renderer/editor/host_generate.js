@@ -330,6 +330,8 @@ export const HostGeneratePart = {
         for (const t of runs) t.cancelled = true;
         // Each area (eacharea.js): the areas not yet sent never go
         for (const ed of this._editors) if (ed._eachArea && (!editor || ed === editor)) ed._eachArea.cancelled = true;
+        // Florence-2's describe jobs (host_vlm.js): the one running stops at its next step, waiting names never go
+        if (this.cancelDescribes) this.cancelDescribes(editor);
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
         return runs;
     },

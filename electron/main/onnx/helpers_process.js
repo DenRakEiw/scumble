@@ -4,7 +4,8 @@
 // gives their memory and VRAM back at once. onnxruntime-node is loaded first: a process that cannot load it ends
 // before its "ready" message, and main runs the engine on its own thread instead.
 //
-// Messages in: { id, type: "objects" | "segment" | "cutout" | "depth" | "intrinsic" | "normals", device, model, files, ...the job }.
+// Messages in: { id, type: "objects" | "segment" | "cutout" | "depth" | "intrinsic" | "normals" | "describe", device, model, files, ...the job },
+// and { type: "cancel", jobId } (no answer: a describe job stops at its next step with "cancelled").
 // Messages out: { type: "ready", pid, status } once at the start, then { id, result, ms, status } or
 // { id, error, ms, status } per job: `ms` is the job's time in this process, `status` the runtime's (what is loaded on
 // which provider, the failures), so main answers helpers:status without asking.
@@ -18,9 +19,11 @@ loadOrt();   // throws (the process ends before "ready") where onnxruntime-node 
 const eng = engine();
 const port = process.parentPort || null;
 const send = (m) => (port ? port.postMessage(m) : process.send(m));
-const JOBS = new Set(["objects", "segment", "cutout", "depth", "intrinsic", "normals"]);
+const JOBS = new Set(["objects", "segment", "cutout", "depth", "intrinsic", "normals", "describe"]);
 
 async function handle(msg) {
+    // a control message, answered by nobody: a describe job told to stop at its next decoder step
+    if (msg && msg.type === "cancel") { eng.cancel(msg.jobId); return; }
     const t = performance.now();
     try {
         if (!msg || !JOBS.has(msg.type)) throw new Error("unknown request " + (msg && msg.type));
