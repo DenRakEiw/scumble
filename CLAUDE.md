@@ -963,6 +963,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   https://huggingface.co/Cactus-Compute/mirage/tree/main: the spike and its download go with a later update. Open: the
   README's other questions (a closed-source engine as a download, the uses that matter, a mail to Cactus, the Store's
   policy 10.2.2 and Flathub), asked when that update is planned.
+  **The spike ran 2026-11-16** (engine 4.1.1 as wasm, offline; `docs/research/mirage_spike_2026-11-16/`): good boxes on
+  large obvious objects, but main subjects missed, wrong names as confident as right ones, `keywords` relabel found
+  boxes, coarse masks, OCR exact on clean English and wrong on German special letters; only the OCR line boxes look
+  useful. **On hold** (the user, 2026-11-16: "erstmal auf hold ... aber auf mögliche upcoming updates liste
+  lassen"): stays on this list, not built.
 - 54: **One crop per connected selection area** (issue #9, bornd3vil, 2026-10-23: several separate areas, e.g. people
   selected by text, go as one large crop scaled down to the model's size, so the patches come out soft). The user,
   2026-11-07: "ja, das wäre ok so", and the button only shows while the selection has more than one area. For the next
