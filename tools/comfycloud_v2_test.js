@@ -665,7 +665,7 @@ async function main() {
         const io = await cloud.generate(textReq(iv, [{ name: QL, strength: 1, on: true }]), ctxOf(idf));
         const iw = (idf.jobs[0] || {}).workflow || {};
         check("Cloud LoRAs: loras false (cloud_ideogram_4) leaves the graph alone, the answer's loras empty, the note says why",
-            iv.loras === false && chain(iw).length === 0 && io.loras.length === 0 && (io.notes || []).includes("The LoRAs stayed out: the recipe takes no LoRAs."),
+            iv.loras === false && chain(iw).length === 0 && io.loras.length === 0 && JSON.stringify(io.notes || []) === JSON.stringify(["The LoRA rows stored for this recipe stayed out: the recipe takes no LoRAs."]),
             short({ decl: iv.loras, chain: chain(iw), notes: io.notes }));
         // declared false on both routes of a recipe with an edit and a text graph
         cloud._clearNodeList();
@@ -722,6 +722,21 @@ async function main() {
         const six = Array.from({ length: 6 }, (_, i) => ({ name: `l${i}.safetensors`, strength: 1, on: true }));
         const se = await thrown(() => cloud.edit(editReq(qv, six), ctxOf(sf)));
         check("Cloud LoRAs: six usable rows throw before any upload or submit", /^At most 5 LoRAs per recipe; the rows name 6\.$/.test(se || "") && sf.uploads.length === 0 && posts(sf).length === 0, se);
+        // a stored row on a route without a source (two loaders, no declaration): the plain line, which HINT_NOTE reads
+        // as a hint (the window's status stays plain), the graph unchanged
+        const twoSrc = { scumble_m1: { class_type: "UNETLoader", inputs: { unet_name: "a.safetensors", weight_dtype: "default" } },
+            scumble_m2: { class_type: "UNETLoader", inputs: { unet_name: "b.safetensors", weight_dtype: "default" } },
+            k1: { class_type: "KSampler", inputs: { model: ["scumble_m1", 0] } }, k2: { class_type: "KSampler", inputs: { model: ["scumble_m2", 0] } },
+            mix: { class_type: "ImageBlend", inputs: { image1: ["k1", 0], image2: ["k2", 0] } },
+            scumble_save: { class_type: "SaveImage", inputs: { images: ["mix", 0] } } };
+        const nsReq = { kind: "text", loras: { rows: [{ name: QL, strength: 1, on: true }] }, options: { graph: twoSrc, save: "scumble_save" } };
+        const ns = cloud._withLoras(nsReq, null);
+        const hintRe = /^The LoRA rows stored for this recipe stayed out: /;   // host_util.js HINT_NOTE's alternative
+        check("Cloud LoRAs: a stored row on a route without a model source gives the plain line (two loaders named), the graph as it was",
+            ns.req === nsReq && ns.applied.length === 0 && ns.notes.length === 1 && hintRe.test(ns.notes[0]) && /2 model loaders \(scumble_m1, scumble_m2\)/.test(ns.notes[0]),
+            short(ns.notes));
+        const utilSrc = fs.readFileSync(path.join(ROOT, "renderer", "editor", "host_util.js"), "utf8");
+        check("Cloud LoRAs: the window's HINT_NOTE holds that line's start (so its status is not red)", utilSrc.includes("|^The LoRA rows stored for this recipe stayed out: |"), "");
         // no rows: the request is the same request
         const same = cloud._withLoras(editReq(qv, null), null);
         check("Cloud LoRAs: a request without rows goes as it is", same.req.options === qv.options && same.applied.length === 0 && same.notes.length === 0, "");

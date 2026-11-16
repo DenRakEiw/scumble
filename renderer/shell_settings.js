@@ -633,6 +633,17 @@ function renderHelpers(status) {
         ui.helpersSam2.appendChild(o);
     }
     ui.helpersSam2.value = st.sam2 || (sam2s[0] && sam2s[0].id) || "";
+    // Deep paint's normal model (MoGe-2 ViT-B or ViT-S): the chosen one when it is downloaded (host.surfaceModels),
+    // else the first downloaded, which is what the select shows then
+    const normals = (st.models || []).filter((m) => m.kind === "normals");
+    ui.helpersNormals.innerHTML = "";
+    for (const m of normals) {
+        const o = document.createElement("option");
+        o.value = m.id; o.textContent = m.label + (m.present ? "" : " (not downloaded)");
+        ui.helpersNormals.appendChild(o);
+    }
+    const normalsIn = normals.filter((m) => m.present);
+    ui.helpersNormals.value = (normalsIn.find((m) => m.id === st.normals) || normalsIn[0] || normals.find((m) => m.id === st.normals) || normals[0] || { id: "" }).id;
     ui.helpersDir.textContent = (st.dir || "") + (st.isComfyDir ? " (ComfyUI models folder, downloads go to onnx/)" : st.isDefaultDir ? " (app folder)" : "");
     ui.helpersDir.title = st.downloadDir || "";
     ui.helpersDefault.disabled = !!st.isDefaultDir;

@@ -838,7 +838,8 @@ function buildRangeSelect(ed, d) {
     ed.rangeInvertInput.title = "Select what lies outside the range";
     ed.rangeInvertInput.addEventListener("change", () => {
         ed.rangeLimit.invert = ed.rangeInvertInput.checked;
-        if (ed.rangeBar) ed.rangeBar.refresh();
+        // the bar hands its own invert on a drag (inpaint_rangebar.js own()): it takes the checkbox's
+        if (ed.rangeBar) ed.rangeBar.set({ invert: ed.rangeLimit.invert });
         if (ed._rangeTint) ed.setRangePreview(ed.rangeLimit);
     });
     invLab.appendChild(ed.rangeInvertInput); invLab.appendChild(el("span", null, "Invert"));

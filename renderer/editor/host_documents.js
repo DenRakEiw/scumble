@@ -26,7 +26,7 @@ export const HostDocumentsPart = {
      * @param {(text: string) => void} [say]
      * @param {string} [when]
      */
-    async flushEditor(ed, say = (_text) => {}, when = "saving") {
+    async flushEditor(ed, say = (_text) => {}, when = "saving", { maps = true } = {}) {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
         if (ed.heldEdit) await ed.heldEdit();   // a heal or a Remove still landing (its stroke is drawn until it has)
@@ -34,6 +34,12 @@ export const HostDocumentsPart = {
         const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx) || l._uploading || l._maskUploading);
         if (edited()) say(`Saving the edited layers before ${when}...`);
         for (let round = 0; round < 3 && edited(); round++) await ed.syncLayers();
+        // a map whose upload failed when it was made: stored now, or the save refuses (getValue would leave it out);
+        // `maps: false` for a copy that drops the maps (newTabFrom)
+        if (maps && ed.base && typeof ed.storeMaps === "function" && ed.mapsUnstored().length) {
+            say(`Saving the maps before ${when}...`);
+            await ed.storeMaps();
+        }
         const pending = () => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
         for (const until = Date.now() + 60000; pending() && Date.now() < until;) {
             if (!ed._selEncoding) {
@@ -71,6 +77,7 @@ export const HostDocumentsPart = {
         if (ed.pointer && ed.pointer.healing) return true;   // a heal stroke blending in a worker is an edit on its way
         if (!ed.docFile || !ed.docFile.key) return true;
         if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx) || l._uploading || l._maskUploading)) return true;
+        if (typeof ed.mapsUnstored === "function" && ed.mapsUnstored().length) return true;
         if (ed.sel && !ed.selectionEncoded) return true;
         if (ed._stateKey == null) return true;
         return ed._stateKey !== ed.docFile.key;
@@ -130,7 +137,7 @@ export const HostDocumentsPart = {
             return fresh;
         }
         // the references' pixels in the local store first, as a save does (an edited one would come back as it was)
-        await Promise.race([this.flushEditor(ed, () => {}, "copying"), new Promise((r) => setTimeout(r, 30000))]);
+        await Promise.race([this.flushEditor(ed, () => {}, "copying", { maps: false }), new Promise((r) => setTimeout(r, 30000))]);
         let st;
         try { st = JSON.parse(ed.getValue()); } catch (_) { return null; }
         st.layers = (st.layers || []).filter((l) => refIds.has(l.id)).map((l) => { const c = { ...l }; delete c.group; return c; });

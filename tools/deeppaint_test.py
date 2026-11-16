@@ -538,6 +538,31 @@ JS = r"""
                     const b2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
                     check("MoGe normals: the CPU twin within 2 levels of the GPU", diff(b1, b2).max <= 2, diff(b1, b2));
                 } else check("MoGe normals: the GPU path ran", false);
+                // where MoGe's mask is 0 (the sky) the depth map's normals light it, as Wrap does: the tilted left half
+                // with its mask off is lit as with no normals map at all; the right half (mask on) stays MoGe's
+                await ed.setMaps({ normals: null });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const depthLit = await all();
+                const sky = new Uint8Array(tilt);
+                for (let y = 0; y < mh; y++) for (let x = 0; x < mw / 2; x++) sky[4 * (y * mw + x) + 3] = 0;
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, sky, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const skyLit = await all();
+                const area = (d, x0, x1) => { const o = []; for (let y = 20; y < H - 20; y += 2) for (let x = x0; x < x1; x += 2) for (let k = 0; k < 3; k++) o.push(d[4 * (y * W + x) + k]); return o; };
+                check("MoGe normals: where the mask is 0 the depth's normals light it (as with no normals map)", diff(area(skyLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)).max <= 1 && diff(area(tiltLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)).max > 3,
+                    [diff(area(skyLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)), diff(area(tiltLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40))]);
+                check("MoGe normals: where the mask is on, MoGe's normals as before", diff(area(skyLit, W / 2 + 40, W - 20), area(tiltLit, W / 2 + 40, W - 20)).max <= 1, diff(area(skyLit, W / 2 + 40, W - 20), area(tiltLit, W / 2 + 40, W - 20)));
+                const g3 = applyFilterGL("relight", rb2, RL.params, ri2());
+                if (g3) {
+                    const b1 = glToCanvas(g3).getContext("2d").getImageData(0, 0, W, H).data;
+                    const b2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+                    check("MoGe normals with a mask: the CPU twin within 2 levels of the GPU", diff(b1, b2).max <= 2, diff(b1, b2));
+                }
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, tilt, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
                 await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
                 if (ed.relightSettled) await ed.relightSettled();
                 await settle(ed);
@@ -884,6 +909,70 @@ JS = r"""
             host.depthModel = keepModel;
         }
         shell.closeDocument && shell.closeDocument(e4, { force: true });
+    }
+
+    // a surface map whose upload failed when it was made (ref null): it counts as unsaved, the save's flush stores it
+    // again, and while the upload keeps failing the flush refuses in words; never left out of the file silently
+    {
+        const { api } = await import("./editor/host.js");
+        const nm = ed.maps && ed.maps.normals;
+        check("there is a normals map for the upload step", !!nm);
+        if (nm) {
+            nm.ref = null;
+            check("a map without its file counts as unsaved", ed.mapsUnstored().includes("normals") && host.documentDirty(ed), ed.mapsUnstored());
+            const keepFetch = api.fetchApi;
+            api.fetchApi = async (url, opts) => (/upload/.test(String(url)) ? new Response("no", { status: 500 }) : keepFetch.call(api, url, opts));
+            let err = null;
+            try { await host.flushEditor(ed); } catch (e) { err = e; } finally { api.fetchApi = keepFetch; }
+            check("a failing upload: the save's flush refuses, naming the map", !!err && /normals map could not be stored/.test(String(err && err.message)) && !nm.ref, err && err.message);
+            // documentDirty's own line: a saved file whose key is the state's, nothing else changed, only the map unstored
+            const keepFile = ed.docFile, keepKey = ed._stateKey;
+            ed.docFile = { name: "deeppaint", path: "x:/deeppaint.scumble", key: "k" };
+            ed._stateKey = "k";
+            const otherwise = !ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx)) && !(ed.sel && !ed.selectionEncoded);
+            const dirtyBefore = host.documentDirty(ed);
+            await ed.syncLayers();
+            ed._stateKey = "k";   // the pass's notifyChanged clears the key until the next autosave: as if it settled
+            const dirtyAfter = host.documentDirty(ed);
+            ed.docFile = keepFile; ed._stateKey = keepKey;
+            check("documentDirty: unsaved while the map lacks its file, saved once it has it", !otherwise || (dirtyBefore && !dirtyAfter), { otherwise, dirtyBefore, dirtyAfter });
+            check("documentDirty's step ran with nothing else unsaved", otherwise);
+            const gv = ed.getValue();
+            const v = typeof gv === "string" ? JSON.parse(gv) : gv;
+            check("the next pass stores it: the map is in the document's state again", !!nm.ref && !!(v.maps && v.maps.normals && v.maps.normals.ref && v.maps.normals.ref.filename) && !ed.mapsUnstored().length, v.maps && v.maps.normals);
+        }
+    }
+
+    // Settings › Helpers: the Deep paint normals select lists both MoGe-2 models and shows the one in use; a pick goes to
+    // main's settings, and surfaceModels takes it while both are downloaded (ViT-S could not be chosen beside ViT-B)
+    {
+        const { renderHelpers } = await import("./shell_settings.js");
+        const sel = document.getElementById("set-helpers-normals");
+        const before = await window.scumble.helpers.status();
+        const B = "moge2_vitb_normal", S = "moge2_vits_normal";
+        const fake = (present, normals) => ({ ...before, normals, models: (before.models || []).map((m) => (m.kind === "normals" ? { ...m, present: present.includes(m.id) } : m)) });
+        try {
+            renderHelpers(fake([B, S], B));
+            const opts = sel ? [...sel.options].map((o) => o.value) : [];
+            check("the normals select lists ViT-B and ViT-S, ViT-B chosen", opts.includes(B) && opts.includes(S) && sel.value === B, { opts, v: sel && sel.value });
+            renderHelpers(fake([S], B));
+            check("the normals select shows ViT-S when only it is downloaded (the one a run uses)", sel && sel.value === S, sel && sel.value);
+            renderHelpers(fake([B, S], B));
+            sel.value = S;
+            sel.dispatchEvent(new Event("change"));
+            let st = null;
+            for (let i = 0; i < 40; i++) { st = await window.scumble.helpers.status(); if (st.normals === S) break; await wait(100); }
+            check("a pick of ViT-S goes to the settings", st && st.normals === S, st && st.normals);
+            const keepH = host.helpers;
+            host.helpers = fake([B, S], S);
+            const picked = host.surfaceModels().normals;
+            host.helpers = keepH;
+            check("with both downloaded the pick is the model Compute Surface Maps runs", picked && picked.id === S, picked && picked.id);
+        } finally {
+            await window.scumble.helpers.configure({ normals: before.normals || B });
+            await host.refreshHelpers();
+            renderHelpers(await window.scumble.helpers.status());
+        }
     }
 
     shell.closeDocument && shell.closeDocument(ed, { force: true });

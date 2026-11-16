@@ -118,7 +118,7 @@ const ui = {
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     netCurl: $("set-net-curl"), netNote: $("set-net-note"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateHelpNotify: $("set-update-help-notify"), updateNotes: $("set-update-notes"),
-    helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
+    helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersNormals: $("set-helpers-normals"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
 
@@ -778,6 +778,7 @@ ui.promptFolder.addEventListener("click", async () => {
 
 ui.helpersDevice.addEventListener("change", async () => renderHelpers(await window.scumble.helpers.configure({ device: ui.helpersDevice.value })));
 ui.helpersSam2.addEventListener("change", async () => { renderHelpers(await window.scumble.helpers.configure({ sam2: ui.helpersSam2.value })); host.refreshHelpers(); });
+ui.helpersNormals.addEventListener("change", async () => { renderHelpers(await window.scumble.helpers.configure({ normals: ui.helpersNormals.value })); host.refreshHelpers(); });
 ui.helpersBrowse.addEventListener("click", async () => { const r = await window.scumble.helpers.browseDir(); if (r) { renderHelpers(r); host.refreshHelpers(); } });
 ui.helpersDefault.addEventListener("click", async () => { renderHelpers(await window.scumble.helpers.configure({ dir: null })); host.refreshHelpers(); });
 ui.helpersOpen.addEventListener("click", () => window.scumble.helpers.openFolder());
@@ -1015,6 +1016,13 @@ async function saveBeforeRestart(say = () => {}, when = "the restart") {
             try { await ed.syncLayers(); } catch (err) { console.warn("saving a document's layers", err); }
             await window.scumble.state.save(JSON.stringify(host.bundle()));
         }
+    }
+    // a map whose upload failed when it was made (no layer need be edited for it): once more, said when it still fails
+    for (const ed of eds) {
+        if (!ed.base || typeof ed.storeMaps !== "function" || !ed.mapsUnstored().length) continue;
+        const lost = await ed.storeMaps({ quiet: true });
+        if (lost.length) say(`The ${lost.join(" and ")} map${lost.length === 1 ? "" : "s"} of ${host.documentName(ed)} could not be stored and ${lost.length === 1 ? "is" : "are"} not kept after ${when}.`);
+        else await window.scumble.state.save(JSON.stringify(host.bundle()));
     }
     const selectionPending = (ed) => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
     const failed = new Set();   // an encode that could not start (toCanvas throws above the canvas limit)

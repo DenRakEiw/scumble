@@ -926,6 +926,9 @@ class InpaintEditor {
                 }
             }
         }
+        // a map whose upload failed when it was made (setMap / setMaps): tried again on every pass, quietly (a save's
+        // flush, host.flushEditor, asks storeMaps itself and refuses in words)
+        await this.storeMaps({ quiet: true });
         this.notifyChanged();
     }
 
