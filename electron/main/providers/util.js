@@ -96,6 +96,32 @@ function gapWatch() {
 function readSignal() {
     return AbortSignal.timeout(TIMES.readMs);
 }
+
+/**
+ * pollJob's rules for an adapter's own poll loop (bfl.js, toapis.js, magnific.js): the run's time counts only after a
+ * read that was answered (`late`), so a machine that slept past it reads once first; reads without an answer (a thrown
+ * fetch, a read past TIMES.readMs, a 429 / 5xx, a body that is no status) go on for the gap window in a row (`missed`
+ * gives the gap so far: at TIMES.gapMs or more the caller gives up), any answer starts that count again (`answered`).
+ * `paused(ms)` after every wait; `read()` the signal of one read; `backoff(n)` the wait after the n-th miss in a row.
+ */
+function pollWatch(waitMs, now = Date.now) {
+    const t0 = now(), gap = gapWatch();
+    let answered = true;
+    return {
+        get late() { return answered && now() - t0 > waitMs; },
+        answered() { answered = true; gap.answered(); },
+        missed() { answered = false; return gap.miss(); },
+        paused(ms) { if (!answered) gap.paused(ms); },
+        read: readSignal,
+        backoff: (n) => Math.min(1000 * n, TIMES.pauseMaxMs),
+        get gapMs() { return TIMES.gapMs; },
+    };
+}
+
+/** A read of a poll loop ended by its own time (`sig`, from pollWatch's read()), not by the run's Cancel. */
+function readTimedOut(err, sig, ctx) {
+    return !!(sig && sig.aborted) && !(ctx && ctx.signal && ctx.signal.aborted);
+}
 const STOP_WAIT_MS = 2000;
 const STOP_TIMEOUT_MS = 10000;
 
@@ -584,4 +610,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, keyedUrl, uploadUrlOk, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, keyedUrl, uploadUrlOk, pollWatch, readTimedOut, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

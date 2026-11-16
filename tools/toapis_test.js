@@ -350,7 +350,27 @@ async function main() {
         check("status queries answered 502, 500 and 504 are polled past, and the image arrives", out5.bytes.equals(png("RESULT")) && s5.submits.length === 1, `${s5.calls.filter((c) => /generations\//.test(c.url)).length} polls, ${s5.submits.length} submit`);
         const s6 = fakeServer({ polls: Array.from({ length: 7 }, () => gateway(502)) });
         const e6 = await throws(() => toapis.edit(editReq(v), ctxFor(s6)));
-        check("a status query failing six times in a row ends the run with the task id and the console hint", !!e6 && /tsk_img_test/.test(e6) && /ToAPIs console/.test(e6) && s6.calls.filter((c) => /generations\//.test(c.url)).length === 6, e6);
+        // (handrolled-pollers) lost status queries go on for the gap window (2 minutes of waits, util.pollWatch), not six
+        check("status queries failing in a row end the run after the gap window, with the task id and the console hint", !!e6 && /tsk_img_test/.test(e6) && /ToAPIs console/.test(e6) && /times in a row over \d+ s/.test(e6) && s6.calls.filter((c) => /generations\//.test(c.url)).length > 6, e6);
+        const done9 = { status: "completed", result: { data: [{ url: "https://files.toapis.com/generated/b.png" }] } };
+        const s9 = fakeServer({ polls: [() => new Response("<html>captive portal</html>", { status: 200, headers: { "content-type": "text/html" } }), () => new Response('{"status":"in_pro', { status: 200, headers: { "content-type": "application/json" } }), done9] });
+        let out9 = null, e9 = null;
+        try { out9 = await toapis.edit(editReq(v), ctxFor(s9)); } catch (err) { e9 = String(err && err.message || err); }
+        check("a 200 status that is no JSON (a portal page, a body cut short) is a lost query: polled past, the image arrives", !e9 && out9 && out9.bytes.equals(png("RESULT")) && s9.submits.length === 1, e9 || "");
+        {
+            // a machine that slept past the 15 minutes: the first query on waking is lost, the next finds the finished task
+            const realNow = Date.now;
+            let clock = realNow(), slept = false;
+            Date.now = () => clock;
+            const s10 = fakeServer({ polls: [() => { throw new TypeError("fetch failed"); }, done9] });
+            let e10 = null;
+            try { await toapis.edit(editReq(v), ctxFor(s10, { sleep: async () => { if (!slept) { slept = true; clock += 20 * 60 * 1000; } } })); } catch (err) { e10 = String(err && err.message || err); }
+            finally { Date.now = realNow; }
+            check("a sleep past the run's time: the lost query on waking is asked again and the finished task lands", !e10 && s10.calls.filter((c) => /generations\//.test(c.url)).length === 2, e10 || "");
+            const c11 = ctxFor(fakeServer());
+            await toapis.edit(editReq(v), c11);
+            check("a finished task is marked done on the caller's context before its download (a Cancel then says it is charged)", c11.jobDone === true, String(c11.jobDone));
+        }
         let dl = 0;
         const s7 = fakeServer();
         const f7 = s7.fetch;

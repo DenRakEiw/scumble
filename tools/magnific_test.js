@@ -588,8 +588,19 @@ async function main() {
         const eu = await throws(() => mag.upscale({ model: up.model, kind: "upscale", image: pngOf(64, 64), factor: 2, params: {}, options: up.options }, ctxFor(su, { now: () => clock, sleep: async (ms) => { clock += ms * 50; } })));
         check("an upscale waits 30 minutes", /no answer after 30 minutes/.test(eu || ""), eu);
         const e500 = () => json(500, { message: "oops" });
-        x = await runEdit(v, editReq(v), {}, { poll: [e500, e500, e500, e500, e500] });
-        check("five failed status reads in a row end the run", /status reads failed 5 times in a row; the task \(.*\) may still finish/.test(x.err || "") && x.s.polls.length === 5, x.err);
+        const net0 = () => { throw new Error("getaddrinfo ENOTFOUND api.magnific.com"); };
+        // (handrolled-pollers) the task is made and billed: reads without an answer go on for the gap window (2 minutes
+        // of waits, util.pollWatch), not five tries (15 s)
+        x = await runEdit(v, editReq(v), {}, { poll: Array.from({ length: 100 }, () => e500) });
+        check("failed status reads in a row end the run after the gap window, not after five", /status reads failed \d+ times in a row over \d+ s; the task \(.*\) may still finish/.test(x.err || "") && x.s.polls.length > 5 && x.s.polls.length < 100, (x.err || "") + " polls " + x.s.polls.length);
+        x = await runEdit(v, editReq(v), {}, { poll: [() => html(200, "<html>gateway</html>"), () => json(200, {})] });
+        check("a 200 that is no task (a gateway page, an empty object) is read again, not taken as a task (then the fake's IN_PROGRESS, COMPLETED)", !x.err && x.s.polls.length === 4, x.err || String(x.s.polls.length));
+        {
+            // a machine that slept past the 15 minutes: the first read on waking fails, the next one finds the finished task
+            let clock = 0, slept = false;
+            x = await runEdit(v, editReq(v), { now: () => clock, sleep: async () => { if (!slept) { slept = true; clock += 20 * 60 * 1000; } } }, { poll: [net0, (c) => task("COMPLETED", [new URL(c.url).origin + "/asset/out.png"])] });
+            check("a sleep past the run's time: the failed read on waking is read again and the finished task lands", !x.err && x.s.polls.length === 2, x.err || String(x.s.polls.length));
+        }
         const net = () => { throw new Error("socket hang up"); };
         x = await runEdit(v, editReq(v), {}, { poll: [e500, net, e500, e500, () => task("IN_PROGRESS"), e500, net, e500, e500] });
         check("the count starts again after a good read (a network error counts too)", !x.err && x.s.polls.length === 11, x.err || String(x.s.polls.length));

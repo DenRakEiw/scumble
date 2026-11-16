@@ -44,7 +44,7 @@
 // Referral: the key link (keyUrl) carries DenRakEiw's ToAPIs referral code.
 "use strict";
 
-const { fetchImage, readError, sleep: realSleep, closestAspect, fitPixels } = require("./util");
+const { fetchImage, readError, sleep: realSleep, closestAspect, fitPixels, pollWatch, readTimedOut } = require("./util");
 const { layoutOf, refRoles } = require("./refs");
 
 const DEFAULT_BASE = "https://toapis.com";
@@ -417,34 +417,46 @@ function resultUrl(j) {
 }
 
 async function poll(ctx, model, id) {
-    const t0 = Date.now();
     const url = api(ctx) + "images/generations/" + encodeURIComponent(id);
+    // the run's time counts after an answered read (a machine that slept past it reads first), and lost queries go on
+    // for the gap window in a row (util.pollWatch), at least LOST_QUERIES of them
+    const watch = pollWatch(TIMEOUT_MS);
     let wait = FIRST_POLL_MS, lost = 0;
+    const lose = (what) => {
+        lost++;
+        const g = watch.missed();
+        if (lost > LOST_QUERIES && g >= watch.gapMs) throw new Error(`ToAPIs ${model} (task ${id}): status query ${what} ${lost} times in a row over ${Math.round(g / 1000)} s; the task may still finish in the ToAPIs console.`);
+        ctx.log(`task ${id}: status query lost (${lost}), polling on`);
+    };
     for (;;) {
-        if (Date.now() - t0 > TIMEOUT_MS) throw new Error(`ToAPIs ${model} (task ${id}): no answer after 15 minutes; the task may still finish in the ToAPIs console.`);
+        if (watch.late) throw new Error(`ToAPIs ${model} (task ${id}): no answer after 15 minutes; the task may still finish in the ToAPIs console.`);
         await ctx.sleep(wait);
+        watch.paused(wait);
         wait = POLL_MS + Math.floor(ctx.random() * 1000);
-        let r;
+        let r, j = null, cut = null;
+        const sig = watch.read();
         try {
-            r = await ctx.fetch(url, { headers: { Authorization: "Bearer " + ctx.key } });
+            r = await ctx.fetch(url, { headers: { Authorization: "Bearer " + ctx.key }, signal: sig });
+            // a 200 whose body is cut short or no JSON (a gateway's page) is a lost query, not the end of a paid task
+            if (r.ok) { try { j = await r.json(); } catch (err) { cut = err; } }
         } catch (err) {
-            // a status query costs nothing and changes nothing: a few lost ones are not a failure
-            if (++lost > LOST_QUERIES) throw new Error(`ToAPIs ${model} (task ${id}): status query failed ${lost} times in a row: ${scrub(err && err.message || err, ctx.key)}; the task may still finish in the ToAPIs console.`);
-            ctx.log(`task ${id}: status query lost (${lost}), polling on`);
+            if (ctx.signal && ctx.signal.aborted) throw err;
+            // a status query costs nothing and changes nothing: lost ones are not a failure
+            lose(`failed (${readTimedOut(err, sig, ctx) ? "the read timed out" : scrub(err && err.message || err, ctx.key)})`);
             continue;
         }
-        if (r.status === 429 || r.status === 503) { lost = 0; wait = retryAfterMs(r); continue; }
+        if (r.status === 429 || r.status === 503) { lost = 0; watch.answered(); wait = retryAfterMs(r); continue; }
         if (r.status >= 500) {
             // a gateway error on a status query is a lost query too: the paid task runs on upstream
             const msg = await failure(r, ctx.key);
-            if (++lost > LOST_QUERIES) throw new Error(`ToAPIs ${model} (task ${id}): status query answered ${r.status} ${lost} times in a row (${msg}); the task may still finish in the ToAPIs console.`);
-            ctx.log(`task ${id}: status query answered ${r.status} (${lost}), polling on`);
+            lose(`answered ${r.status} (${msg})`);
             wait = Math.min(30000, wait * lost);
             continue;
         }
-        lost = 0;
         if (!r.ok) throw new Error(`ToAPIs ${model} (task ${id}): ${await failure(r, ctx.key)}`);
-        const j = (await r.json()) || {};
+        if (cut || !j || typeof j !== "object") { lose(`answered a body that is no status${cut ? ` (${scrub(cut.message || cut, ctx.key)})` : ""}`); continue; }
+        lost = 0;
+        watch.answered();
         const status = String(j.status || "").toLowerCase();
         if (status === "completed" || status === "succeeded" || status === "success") return j;
         if (FAILED.has(status)) {
@@ -477,7 +489,9 @@ async function download(ctx, model, id, url) {
 }
 
 async function run(req, ctx) {
-    // ctx.sleep and ctx.random are injectable so tools/toapis_test.js runs a poll in milliseconds
+    // ctx.sleep and ctx.random are injectable so tools/toapis_test.js runs a poll in milliseconds; `caller` the context
+    // index.js reads the Cancel's words from (jobDone)
+    const caller = ctx;
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, random: ctx.random || Math.random, log: ctx.log || (() => {}) };
     const ch = channelOf(req);
     checkPaths(req, ch);
@@ -495,6 +509,7 @@ async function run(req, ctx) {
     const task = await submit(ctx, body);
     ctx.log(`task ${task.id} submitted (${ch.model})`);
     const done = await poll(ctx, ch.model, task.id);
+    caller.jobDone = true;   // finished and charged: a Cancel during the download says so
     const url = resultUrl(done);
     if (!url) throw new Error(`ToAPIs ${ch.model} (task ${task.id}): completed without an image URL.`);
     const file = await download(ctx, ch.model, task.id, url);   // files.toapis.com, no key
