@@ -107,7 +107,7 @@ export class LayersPart {
                 }
                 last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: !ref });
                 added.push(last);
-                if (role === "reference" && this.layerLanded) this.layerLanded(last, "reference");
+                if (this.layerLanded) this.layerLanded(last, role === "reference" ? "reference" : "paste");
                 n++;
             } catch (err) {
                 console.error(err);

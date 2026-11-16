@@ -41,8 +41,8 @@ const GENERIC_WORDS = /\b(?:result|paste|pasted|copy|layer|image|img|pic|picture
 
 /**
  * Whether a layer's name says nothing of its content, so an automatic name may replace it: "Result 3", "Paste 2",
- * "Result 3 copy", "image", "IMG_2041", "Screenshot 2026-11-16 at 07.12", "3f2a9c0e41d7"; "jacket" or "anna_face" are
- * kept.
+ * "Result 3 copy", "image", "IMG_2041", "Screenshot 2026-11-16 at 07.12", "3f2a9c0e41d7": only the listed words,
+ * digits, separators and hashes. "jacket", "anna_face", "me" or a single CJK character are kept.
  */
 export function isGenericName(name) {
     const s = String(name || "").trim();
@@ -50,6 +50,6 @@ export function isGenericName(name) {
     // a hash or an id: long hex or a uuid
     if (/^[0-9a-f]{8,}$/i.test(s.replace(/[-_\s]/g, ""))) return true;
     const rest = s.replace(/[_\-.0-9]+/g, " ").replace(GENERIC_WORDS, " ").replace(/\b(?:at|am|pm|from)\b/gi, " ").replace(/[0-9\s()[\]#,:+]+/g, " ").trim();
-    // no word of three letters or more is left
-    return !/\p{L}{3,}/u.test(rest);
+    // nothing but the listed words, digits and separators
+    return !/[\p{L}\p{N}]/u.test(rest);
 }

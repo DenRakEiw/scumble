@@ -214,6 +214,7 @@ class InpaintEditor {
         // (layer, why) where a result, a paste, a cutout or a reference lands ("result", "paste", "cutout", "reference"):
         // the app names it (Florence-2, host_vlm.js); null in the node
         this.layerLanded = null;
+        this.vlmUsed = false;           // the app's caption model ran (host_vlm.js): a local Generate frees the helpers first
         this.layerCounter = 0;
         this.paintCounter = 0;
         this.pointer = null;
@@ -1265,6 +1266,7 @@ class InpaintEditor {
         const mb = Math.round(freed / 1048576);
         this.drawSoon();
         try { await host.freeHelpers(); } catch (err) { console.warn(err); }
+        this.vlmUsed = false;
         if (!host.connected) { this.helperUsed = false; this.setStatus(`Freed ${mb} MB of caches; the in-app helper models are unloaded too.`); return; }
         try {
             this.setStatus(`Freed ${mb} MB of caches. Freeing helper models (SAM, Qwen-VL) from VRAM ...`);
@@ -1318,6 +1320,8 @@ class InpaintEditor {
             // instances, invisible to ComfyUI's model management. Before a local run they are freed, so a big
             // model such as Flux.2 gets the whole card; in API mode they simply stay resident.
             if (this.genSettings.mode === "local" && this.helperUsed) await this.freeHelperModels();
+            // the app's caption model (Florence-2) in VRAM: its process let go, nothing asked of ComfyUI
+            else if (this.genSettings.mode === "local" && this.vlmUsed) { this.vlmUsed = false; try { await host.freeHelpers(); } catch (err) { console.warn(err); } }
             this.setStatus(wired ? `Queueing (${this.genSettings.mode}, seed ${this.genSettings.seed}, result from ${name}) ...` : `Queueing, but nothing is wired into "result" or "result_local": the result will not come back into the canvas.`);
             await host.queueGenerate(this, area ? { refs, area } : { refs });
         } catch (err) {

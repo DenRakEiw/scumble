@@ -124,7 +124,9 @@ class Florence2 {
         if (!t) throw new Error(`unknown task "${task}" (caption or detailed)`);
         const rt = this.runtime;
         const tok = this.tokenizer();
-        const [vis, emb, enc, dec] = await Promise.all([
+        // the decoder and the embedding are asked for again at every step: in the main-thread fallback a free releases
+        // the sessions mid-run, and the next step loads them again (the cache's tensors are plain data)
+        const [vis, , enc, dec] = await Promise.all([
             rt.session(this.files.vision), rt.session(this.files.embed), rt.session(this.files.encoder), rt.session(this.files.decoder),
         ]);
         if (check) await check();
@@ -133,7 +135,7 @@ class Florence2 {
         const nImg = feat.dims[1];
         const t1 = Date.now();
         const ids = tok.encode(t.prompt);
-        const embed = async (list) => (await emb.session.run({ input_ids: rt.tensor("int64", BigInt64Array.from(list.map((v) => BigInt(v))), [1, list.length]) })).inputs_embeds;
+        const embed = async (list) => (await (await rt.session(this.files.embed)).session.run({ input_ids: rt.tensor("int64", BigInt64Array.from(list.map((v) => BigInt(v))), [1, list.length]) })).inputs_embeds;
         const text = await embed(ids);
         const L = nImg + ids.length;
         const joined = new Float32Array(L * 768);
@@ -151,7 +153,7 @@ class Florence2 {
         }
         let steps = 0;
         const step = async (token, index) => {
-            const out = await dec.session.run({
+            const out = await (await rt.session(this.files.decoder)).session.run({
                 encoder_attention_mask: mask, encoder_hidden_states: states, inputs_embeds: await embed([token]),
                 use_cache_branch: rt.tensor("bool", [index > 0], [1]), ...past,
             });

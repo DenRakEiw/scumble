@@ -14609,23 +14609,44 @@ try {
     if (P1.name !== "Red apple on a wooden table") throw new Error("the paste was not named: " + JSON.stringify({ name: P1.name, asked }));
     if (!asked.length || asked[0].n !== 768 * 768 * 4 || asked[0].detailed) throw new Error("the model's input: " + JSON.stringify(asked));
     if (ed.undo.length !== u0) throw new Error("the name made an undo step: " + JSON.stringify(ed.undo.slice(u0).map((s) => s.label)));
-    // a later step's undo keeps the name (the steps holding the layer under its old name were renamed too)
-    await run("set_layer", { layer: P.id, opacity: 0.5, doc });
+    const square = (name) => ed.addLayer({ name, kind: "result", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 64, height: 64 })), x: 10, y: 10, w: 64, h: 64, dirty: true });
+    const hold = () => { let open; release = { p: new Promise((r) => { open = r; }) }; return () => { release = null; open(); }; };
+    const entered = async (n) => { for (let i = 0; i < 150 && asked.length === n; i++) await wait(20); if (asked.length === n) throw new Error("the stub was never asked"); };
+    // a layers step taken while the model runs holds the old name: its undo after the name landed keeps the new one
+    let open = hold();
+    const Q = square("Result 9");
+    let n = asked.length;
+    const pq = host.autoNameLayer(ed, Q, "result");
+    await entered(n);
+    await run("duplicate_layer", { layer: Q.id, doc });   // a layers step: it holds every layer's name
+    open();
+    await pq;
     await run("undo", { doc });
-    out.afterUndo = ed.layers.find((l) => l.id === P.id).name;
+    out.afterUndo = ed.layers.find((l) => l.id === Q.id).name;
     if (out.afterUndo !== "Red apple on a wooden table") throw new Error("an undo brought the old name back: " + out.afterUndo);
-    // a result layer: named; a name typed while the model runs stays
-    let open; release = { p: new Promise((r) => { open = r; }) };
-    const R = ed.addLayer({ name: "Result 7", kind: "result", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 64, height: 64 })), x: 10, y: 10, w: 64, h: 64, dirty: true });
+    // a name typed while the model runs stays
+    open = hold();
+    const R = square("Result 7");
+    n = asked.length;
     const pr = host.autoNameLayer(ed, R, "result");
+    await entered(n);
     ed.layers.find((l) => l.id === R.id).name = "my apple";
     open();
     out.typed = [await pr, ed.layers.find((l) => l.id === R.id).name];
     if (out.typed[0] !== null || out.typed[1] !== "my apple") throw new Error("a typed name was overwritten: " + JSON.stringify(out.typed));
-    release = null;
-    const R2 = ed.addLayer({ name: "Result 8", kind: "result", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 64, height: 64 })), x: 10, y: 10, w: 64, h: 64, dirty: true });
+    const R2 = square("Result 8");
     out.result = await host.autoNameLayer(ed, R2, "result");
     if (out.result !== "Red apple on a wooden table") throw new Error("the result was not named: " + out.result);
+    // Cancel (cancel_run, a tab's close: host.cancelRuns): the name running and the one waiting never land
+    open = hold();
+    const A = square("Result 11"), B = square("Result 12");
+    n = asked.length;
+    const pa = host.autoNameLayer(ed, A, "result"), pb = host.autoNameLayer(ed, B, "result");
+    await entered(n);
+    host.cancelRuns(ed);
+    open();
+    out.cancelled = [await pa, await pb, asked.length - n, ed.layers.find((l) => l.id === A.id).name, ed.layers.find((l) => l.id === B.id).name];
+    if (out.cancelled[0] !== null || out.cancelled[1] !== null || out.cancelled[2] !== 1 || out.cancelled[3] !== "Result 11" || out.cancelled[4] !== "Result 12") throw new Error("a cancelled name landed: " + JSON.stringify(out.cancelled));
     // a name that says something, the switch off, no model: left alone, nothing asked
     const n0 = asked.length;
     const K = ed.addLayer({ name: "jacket", kind: "image", px: ed.pixels.Layer.fromCanvas(Object.assign(document.createElement("canvas"), { width: 8, height: 8 })), x: 0, y: 0, w: 8, h: 8, dirty: true });

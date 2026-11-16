@@ -195,7 +195,7 @@ function fakeRuntime(tok, script, { stepMs = 0 } = {}) {
         for (const [c, want] of cases) check(`shortName ${JSON.stringify(c).slice(0, 40)}`, N.shortName(c) === want, N.shortName(c));
         check("names stay short", cases.every(([c]) => N.shortName(c).length <= N.NAME_MAX));
         for (const g of ["Result 3", "Paste 2", "Result 3 copy", "merged copy", "image", "IMG_2041", "Screenshot 2026-11-16 at 07.12.33", "3f2a9c0e41d7", "pasted image (2)", "DSC01234", "", "PXL_20261116_071233"]) check(`generic: ${JSON.stringify(g)}`, N.isGenericName(g) === true);
-        for (const k of ["jacket", "anna_face", "Woman on a car", "logo final", "Sky"]) check(`kept: ${JSON.stringify(k)}`, N.isGenericName(k) === false);
+        for (const k of ["jacket", "anna_face", "Woman on a car", "logo final", "Sky", "me", "\u732b", "x"]) check(`kept: ${JSON.stringify(k)}`, N.isGenericName(k) === false);
     }
 
     // ---- the real model through the helpers' process ----------------------------------------------------------------

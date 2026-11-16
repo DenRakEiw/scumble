@@ -44,6 +44,36 @@ export const HostVlmPart = {
         try { return window.scumble.helpers.cancelDescribe(jobId); } catch (_) { return false; }
     },
 
+    vlmSeq: 0,
+
+    /**
+     * `describeImage` for one document, with a job id `cancelDescribes` reaches. The editor's `vlmUsed` marks that
+     * Florence-2 holds VRAM, so a local Generate frees the helpers first (only that: no `/free` on ComfyUI, which
+     * `helperUsed` would send).
+     */
+    async vlmJob(editor, image, { detailed = false, jobId = null, timeoutMs = undefined } = {}) {
+        const run = { editor, jobId: jobId || "vlm" + Date.now().toString(36) + "-" + ++this.vlmSeq };
+        if (!this._vlmRuns) this._vlmRuns = new Set();
+        this._vlmRuns.add(run);
+        try {
+            const res = await this.describeImage(image, { detailed, jobId: run.jobId, timeoutMs });
+            if (editor) editor.vlmUsed = true;
+            return res;
+        } finally {
+            this._vlmRuns.delete(run);
+        }
+    },
+
+    /**
+     * The describe jobs of `editor` (every document's without one) stopped, a running one at its next decoder step, the
+     * names still waiting never asked for: Cancel in the title row, `cancel_run` and a tab's close (`cancelRuns`).
+     */
+    cancelDescribes(editor) {
+        if (editor) editor._vlmGen = (editor._vlmGen || 0) + 1;
+        else this._vlmGenAll = (this._vlmGenAll || 0) + 1;
+        for (const r of this._vlmRuns || []) if (!editor || r.editor === editor) this.cancelDescribe(r.jobId);
+    },
+
     /**
      * A layer as Florence-2 sees it: its own pixels with its mask, on neutral grey, squashed into 768 x 768. On tiles
      * read from the layer's levels (as the object tool's input is), on canvases its masked canvas.
@@ -101,13 +131,15 @@ export const HostVlmPart = {
         if (!isGenericName(layer.name)) return null;
         if (this.vlmJobs >= NAME_QUEUE_MAX) return null;
         const id = layer.id, before = layer.name;
+        const gen = editor._vlmGen || 0, genAll = this._vlmGenAll || 0;
+        const stopped = () => (editor._vlmGen || 0) !== gen || (this._vlmGenAll || 0) !== genAll || editor._destroyed || !this._editors.includes(editor);
         this.vlmJobs++;
         const run = async () => {
-            const find = () => (editor._destroyed ? null : editor.layers.find((l) => l.id === id) || null);
+            const find = () => (stopped() ? null : editor.layers.find((l) => l.id === id) || null);
             const live = find();
             if (!live || live.name !== before || !this.autoNameOn()) return null;
             const image = await this.layerVlmInput(editor, live);
-            const res = await this.describeImage(image, { detailed: false });
+            const res = await this.vlmJob(editor, image, { detailed: false });
             const name = shortName(res && res.text);
             const now = find();
             if (!name || !now || now.name !== before) return null;
@@ -161,13 +193,12 @@ export const HostVlmPart = {
             const pic = box
                 ? await this.pictureInputBox(editor, box, S, S, { skipFilters: false, background: "#808080" })
                 : await this.pictureInput(editor, S, S, { skipFilters: false, background: "#808080" });
-            res = await this.describeImage(pic.image, { detailed, jobId, timeoutMs });
+            res = await this.vlmJob(editor, pic.image, { detailed, jobId, timeoutMs });
         } catch (err) {
             const text = String((err && err.message) || err);
             editor.setStatus(text === "cancelled" ? "Describe cancelled." : "Describe failed: " + text, text === "cancelled" ? "info" : failKind(err));
             throw err;
         }
-        editor.helperUsed = true;
         const text = String((res && res.text) || "");
         if (toPrompt && text) editor.setPromptText(text);
         editor.setStatus(`${area === "selection" ? "Selection" : "Picture"}: ${text}${toPrompt ? " (in the prompt field)" : ""}`);
