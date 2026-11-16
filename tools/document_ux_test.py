@@ -178,6 +178,23 @@ SETTLE = r"""
     ed.docFile.clean = true;
     try { await host.settleKey(ed); } finally { host.flushEditor = orig; }
     out.editMeanwhileShowsChanged = host.documentDirty(ed);
+    // review 2026-11-16: input the user gives the tab meanwhile that pushes no undo step (a prompt typed) leaves it
+    // changed too (the listener counts trusted input; counted here as it would), and plugin data alone is a change
+    await host.saveDocument(ed, {}); await settle(ed);
+    host.flushEditor = async function (...args) {
+        const r = await orig.apply(this, args);
+        ed._userInputs = (ed._userInputs || 0) + 1;
+        await must("set_prompt", { doc: ed.node.id, prompt: "typed while it settled" });
+        return r;
+    };
+    ed.docFile.clean = true;
+    try { await host.settleKey(ed); } finally { host.flushEditor = orig; }
+    out.inputMeanwhileShowsChanged = host.documentDirty(ed);
+    await host.saveDocument(ed, {}); await settle(ed);
+    out.savedAgainClean = !host.documentDirty(ed);
+    ed.pluginData = { ...(ed.pluginData || {}), probe: { n: 1 } };
+    host.changed(ed); host.bundle();
+    out.pluginDataShowsChanged = host.documentDirty(ed);
     await sh.closeDocument(ed, { force: true });
     return out;
 """
@@ -229,7 +246,8 @@ async def run(c):
     step(results, "commands", ok, r)
 
     r = await ev(SETTLE)
-    step(results, "settle_key_keeps_an_edit_made_meanwhile_changed", r["savedClean"] and r["untouchedStaysClean"] and r["editMeanwhileShowsChanged"], r)
+    step(results, "settle_key_keeps_an_edit_made_meanwhile_changed", r["savedClean"] and r["untouchedStaysClean"] and r["editMeanwhileShowsChanged"]
+         and r["inputMeanwhileShowsChanged"] and r["savedAgainClean"] and r["pluginDataShowsChanged"], r)
 
     # a second start with a path: close ux_b first so the open is new, then start the app again on this profile
     await c.eval("(async () => { const sh = await import('./shell.js'); const { host } = await import('./editor/host.js'); for (const e of host.editors().filter((x) => x.docFile && x.docFile.name === 'ux_b.scumble')) await sh.closeDocument(e, { force: true }); return 1; })()")

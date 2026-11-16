@@ -123,6 +123,15 @@ function hashString(s) {
     return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
+/**
+ * The key of what a .scumble file holds of a tab: its state (`getValue()`), its plugin data (the Boxes rows, 3D
+ * placements) and a newer document's unknown fields, which the file keeps beside the state (saveDocument). Every
+ * `docFile.key` and `_stateKey` is this, so a change to plugin data alone leaves the tab changed.
+ */
+function stateKey(ed, state) {
+    return hashString(`${state}\u0000${JSON.stringify((ed && ed.pluginData) || {})}\u0000${JSON.stringify((ed && ed.docExtra) || {})}`);
+}
+
 function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
 
 /**
@@ -473,6 +482,6 @@ function objectId(o) {
     return n;
 }
 
-export { API_SIZES, AREA_RECIPE_CHANGED, AREA_STOPPED, AREA_STOPPED_API, CLOSED_MAX, ENCODER_MAX_SIDE, EXPORT_PERCENTS, HINT_NOTE, KEY_BAND_ROWS, KEY_MASK_RGB, MAX_EXPORT_SIDE, NOT_SENT, RELIGHT_DEFAULTS, RUN_GOING, SAVE_PIECE, SHAPE_ERROR, STATE_KEYS, SUBFOLDER, answeredSeed, aspectOf, boxesSchema, capExportSide, docMeta, documentQuestion, fmtMB, hashString, keyGreyRgba, keyHelper, kleinEncoderHint, kleinRun, listWords, mosaicPixels, normPath, notesKind, objectId, plainObject, promptMissing, providerEdit, runIdOf, sentTexts, textOptions, upsampledNote, upscaleWords, viaLine, bindUtil };
+export { API_SIZES, AREA_RECIPE_CHANGED, AREA_STOPPED, AREA_STOPPED_API, CLOSED_MAX, ENCODER_MAX_SIDE, EXPORT_PERCENTS, HINT_NOTE, KEY_BAND_ROWS, KEY_MASK_RGB, MAX_EXPORT_SIDE, NOT_SENT, RELIGHT_DEFAULTS, RUN_GOING, SAVE_PIECE, SHAPE_ERROR, STATE_KEYS, SUBFOLDER, answeredSeed, aspectOf, boxesSchema, capExportSide, docMeta, documentQuestion, fmtMB, hashString, keyGreyRgba, stateKey, keyHelper, kleinEncoderHint, kleinRun, listWords, mosaicPixels, normPath, notesKind, objectId, plainObject, promptMissing, providerEdit, runIdOf, sentTexts, textOptions, upsampledNote, upscaleWords, viaLine, bindUtil };
 
 function bindUtil(C) { host = C; }
