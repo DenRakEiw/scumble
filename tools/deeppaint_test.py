@@ -932,6 +932,38 @@ JS = r"""
         }
     }
 
+    // Settings › Helpers: the Deep paint normals select lists both MoGe-2 models and shows the one in use; a pick goes to
+    // main's settings, and surfaceModels takes it while both are downloaded (ViT-S could not be chosen beside ViT-B)
+    {
+        const { renderHelpers } = await import("./shell_settings.js");
+        const sel = document.getElementById("set-helpers-normals");
+        const before = await window.scumble.helpers.status();
+        const B = "moge2_vitb_normal", S = "moge2_vits_normal";
+        const fake = (present, normals) => ({ ...before, normals, models: (before.models || []).map((m) => (m.kind === "normals" ? { ...m, present: present.includes(m.id) } : m)) });
+        try {
+            renderHelpers(fake([B, S], B));
+            const opts = sel ? [...sel.options].map((o) => o.value) : [];
+            check("the normals select lists ViT-B and ViT-S, ViT-B chosen", opts.includes(B) && opts.includes(S) && sel.value === B, { opts, v: sel && sel.value });
+            renderHelpers(fake([S], B));
+            check("the normals select shows ViT-S when only it is downloaded (the one a run uses)", sel && sel.value === S, sel && sel.value);
+            renderHelpers(fake([B, S], B));
+            sel.value = S;
+            sel.dispatchEvent(new Event("change"));
+            let st = null;
+            for (let i = 0; i < 40; i++) { st = await window.scumble.helpers.status(); if (st.normals === S) break; await wait(100); }
+            check("a pick of ViT-S goes to the settings", st && st.normals === S, st && st.normals);
+            const keepH = host.helpers;
+            host.helpers = fake([B, S], S);
+            const picked = host.surfaceModels().normals;
+            host.helpers = keepH;
+            check("with both downloaded the pick is the model Compute Surface Maps runs", picked && picked.id === S, picked && picked.id);
+        } finally {
+            await window.scumble.helpers.configure({ normals: before.normals || B });
+            await host.refreshHelpers();
+            renderHelpers(await window.scumble.helpers.status());
+        }
+    }
+
     shell.closeDocument && shell.closeDocument(ed, { force: true });
     return { fails, tiles: !!ed.tileMode };
 })()
