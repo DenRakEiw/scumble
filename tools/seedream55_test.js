@@ -365,7 +365,20 @@ async function main() {
         const d = await run(layerReq("openrouter"));
         check("no count, no tier, no prompt: 16 layers (max_images 17), Text recognition off, no resolution (the host's own), the plain prompt OpenRouter requires", d.post.body.provider.options.seed.layer_decomposition_options.max_images === 17 && d.post.body.provider.options.seed.layer_decomposition_options.text_recognition === false && !("resolution" in d.post.body) && d.post.body.prompt === "Split this picture into layers of its main elements.", short(d.post.body));
         const one = await run(layerReq("openrouter"), { data: [DEFAULT_DATA[0]] });
-        check("an answer with the base alone lands the base (the landing says no separate elements came)", one.out.layers.length === 1 && one.out.info.layers === 0 && one.out.layers[0].base === true, short(one.out.info));
+        check("an answer with the base alone lands the base and says OpenRouter may have dropped the layer mode, with the cost it reported", one.out.layers.length === 1 && one.out.info.layers === 0 && one.out.layers[0].base === true && one.out.info.base_only === "OpenRouter answered with the picture only, no layers: it may not have passed the layer mode on to bytedance-seed/seedream-5-5. OpenRouter reported a cost of 0.068 USD for it.", short(one.out.info));
+        const oneNoCost = await run(layerReq("openrouter"), { answer: () => json(200, { created: 1, data: [DEFAULT_DATA[0]] }) });
+        check("... without a reported cost the line names none", oneNoCost.out.info.base_only === "OpenRouter answered with the picture only, no layers: it may not have passed the layer mode on to bytedance-seed/seedream-5-5." && !("base_only" in a.out.info), short(oneNoCost.out.info.base_only));
+        const red = split.baseOnlyWords("Seedream 5.5", "Photo", "Seedream 5.5 via OpenRouter, 12 s", one.out.info);
+        const amberLine = split.baseOnlyWords("Seedream 5.5", "Photo", "Seedream 5.5 via WaveSpeedAI, 12 s", { layers: 0 });
+        check("the landing's line for a base alone: red in OpenRouter's words; amber 'found no separate elements' where the adapter says nothing (the other hosts)", red.kind === "error" && red.text === `${one.out.info.base_only} Only its base came back, in the group "Photo" · Seedream 5.5 via OpenRouter, 12 s.` && amberLine.kind === "warn" && amberLine.text === 'Seedream 5.5 found no separate elements: only its base came back, in the group "Photo" · Seedream 5.5 via WaveSpeedAI, 12 s.', short([red, amberLine]));
+        // (review 1) a picture too large to send inline gets a split's words, not an edit's
+        {
+            let calls = 0;
+            const bigPic = pngOf(1200, 800, "BIGPIC", openrouter.MAX_INLINE);
+            const fetch = async (url) => { calls++; return String(url).endsWith("/api/v1/providers") ? json(200, { data: [] }) : json(500, {}); };
+            const err = await thrown(() => openrouter.layers(layerReq("openrouter", { image: bigPic }), { key: "test-or-0123456789", base: MOCK, fetch, log() {}, sleep: async () => {}, opaque: async () => false, toJpeg: async () => null }));
+            check("a split's picture past the inline limit (with transparency) is refused in a split's words, before any POST", !!err && /the pictures come to .* MB, more than the 18 MB this app sends in one request\. Use a smaller picture or layer\.$/.test(err) && !/Highres|Original|reference/.test(err) && calls === 0, err);
+        }
         const empty = await thrown(() => run(layerReq("openrouter"), { data: [DEFAULT_DATA[0], { media_type: "image/png" }] }));
         check("an answer with an empty slot is refused in words that say the job is charged", !!empty && /OpenRouter bytedance-seed\/seedream-5-5: an answer without its pictures \(1 of 2\); the job is charged, nothing landed\./.test(empty), empty);
         const refused = await thrown(() => run(layerReq("openrouter"), { answer: () => json(400, { error: { code: 400, message: "Unknown parameter: layer_decomposition for provider seed" } }) }));

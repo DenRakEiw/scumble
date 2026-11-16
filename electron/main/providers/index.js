@@ -340,7 +340,9 @@ async function edit(request, hooks = {}) {
     // job puts its note back (S6); any other provider run (except a local in-app helper crop) keeps the bytes locally
     // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own; a split
     // keeps its whole answer (the base and every layer) in one `.split` file the new page lands as a document of its own
+    let pageWentAway = false;   // a split's pictures are not held for a page that is gone (its kept file has them)
     if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
+        pageWentAway = true;
         if (ctx.jobNote && ctx.jobs && !split) {
             ctx.jobs.add(ctx.jobNote);
             log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
@@ -358,14 +360,19 @@ async function edit(request, hooks = {}) {
                     fs.mkdirSync(resDir, { recursive: true });
                     const target = path.join(resDir, file);
                     tmp = target + ".tmp";
-                    const fd = fs.openSync(tmp, "w");
-                    try {
+                    if (split) {
                         // a split's answer is its layers (out.bytes is only the base plate): the whole answer goes into
-                        // one file the window lands as a document holding them (cloudjobs.writeSplit, docs/BUGS.md)
-                        if (split) cloudjobs.writeSplit(fd, out, { seconds: (Date.now() - t0) / 1000, prompt: String(req.prompt || "").slice(0, 4000), notes: notes.concat(Array.isArray(out.notes) ? out.notes.map(String) : []).slice(0, 50) });
-                        else fs.writeFileSync(fd, toBuffer(out.bytes));
-                        fs.fsyncSync(fd);
-                    } finally { fs.closeSync(fd); }
+                        // one file the window lands as a document holding them (cloudjobs.writeSplit, docs/BUGS.md),
+                        // written without holding main's thread
+                        const fh = await fs.promises.open(tmp, "w");
+                        try {
+                            await cloudjobs.writeSplit(fh, out, { seconds: (Date.now() - t0) / 1000, prompt: String(req.prompt || "").slice(0, 4000), notes: notes.concat(Array.isArray(out.notes) ? out.notes.map(String) : []).slice(0, 50) });
+                            await fh.sync();
+                        } finally { await fh.close(); }
+                    } else {
+                        const fd = fs.openSync(tmp, "w");
+                        try { fs.writeFileSync(fd, toBuffer(out.bytes)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+                    }
                     cloudjobs.retrying(() => fs.renameSync(tmp, target));
                     tmp = null;
                     const noted = cloudjobs.store(dir, { pushedOut: notesPushedOut }).add({
@@ -401,6 +408,8 @@ async function edit(request, hooks = {}) {
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes, ...(split ? { layers: out.layers.map((l) => ({ z: l.z_index, name: l.name, description: l.description.slice(0, 400) })) } : {}) } });
     // a split's pictures stay here and the window takes them one at a time: dozens of 2K PNGs in one IPC message end the
     // renderer (docs/BUGS.md, the same limit as a large export's save)
+    // (no page to take them: nothing held, the kept file or the log above has them)
+    if (split && pageWentAway) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], layersToken: null, layers: [] };
     if (split) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], ...keepLayerParts(out.layers) };
     const bytes = toBuffer(out.bytes);
     // the LoRAs a Comfy Cloud graph's chain loaded (item 50): the via line and loras_sent name them
@@ -682,6 +691,7 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
             const file = path.join(dir, "results", clean);
             let got;
             try { got = cloudjobs.readSplitHead(file); } catch (err) {
+                if (err && err.code === "EBADSPLIT") log.record({ level: "error", source: provId || "providers", message: `the kept split ${clean} (${meta.providerLabel || provId || "a provider"}, ${e.model || "its model"}) is damaged and was dropped: ${err.message}` });
                 if (err && (err.code === "ENOENT" || err.code === "EBADSPLIT")) localDropped.push(e.jobId);
                 else { localKeptIds.push(e.jobId); localUnread++; }
                 continue;

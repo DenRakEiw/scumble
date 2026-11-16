@@ -850,7 +850,9 @@ async function main() {
             const sLay = fakeServer({ answers: [layerAnswer] });
             globalThis.fetch = sLay.fetch;
             let lErr = null, changed = 0;
-            try { await index.edit(layerReq(variant("seedream_5_5"), { prompt: "split it" }), { pageGone: () => true, cloudJobsChanged: () => { changed++; } }); } catch (e) { lErr = String(e && e.message || e); } finally { globalThis.fetch = realFetch; }
+            let goneOut = null;
+            try { goneOut = await index.edit(layerReq(variant("seedream_5_5"), { prompt: "split it" }), { pageGone: () => true, cloudJobsChanged: () => { changed++; } }); } catch (e) { lErr = String(e && e.message || e); } finally { globalThis.fetch = realFetch; }
+            check("index.edit for a page that went away holds none of the split's pictures in memory (no token, no layers)", !!goneOut && goneOut.layersToken === null && Array.isArray(goneOut.layers) && goneOut.layers.length === 0, short(goneOut && { token: goneOut.layersToken, layers: goneOut.layers }));
             const kept = fs.existsSync(resDir) ? fs.readdirSync(resDir) : [];
             const said = logged.find((l) => /went away before its layers came/.test(l.message || ""));
             const noted = (() => { try { return JSON.parse(fs.readFileSync(path.join(userDir, "cloudjobs.json"), "utf8")).jobs; } catch (_) { return []; } })();
@@ -880,6 +882,22 @@ async function main() {
             if (f2) fs.truncateSync(path.join(resDir, f2), 200);
             const r2 = await index.recoverCloudJobs();
             check("recoverCloudJobs: a kept split cut short is dropped, nothing handed to the window", !!f2 && r2.pictures.length === 0 && r2.dropped === 1, short({ f2, r2: { pictures: r2.pictures.length, dropped: r2.dropped } }));
+            const badLog = logged.find((l) => l.level === "error" && /the kept split .*\.split .* is damaged and was dropped/.test(l.message || ""));
+            check("... and the drop is logged at error level, naming the split's file", !!badLog && badLog.message.includes(f2), short(badLog));
+            // (review 5) a layer whose picture is empty is left out and named; the rest of the split is kept and lands
+            const cj = require(path.join(ROOT, "electron", "main", "providers", "cloudjobs.js"));
+            const pf = path.join(userDir, "empty-layer.split");
+            const fh = await fs.promises.open(pf, "w");
+            let wrote = 0;
+            try { wrote = await cj.writeSplit(fh, { layers: [{ bytes: pngOf(64, 48, 80, "B"), base: true, z_index: 0, name: "" }, { bytes: new Uint8Array(0), z_index: 1, name: "empty one" }, { bytes: pngOf(32, 32, 80, "L2"), z_index: 2, name: "kept" }], missing: ["failed earlier"] }); } finally { await fh.close(); }
+            let head = null, hErr = null;
+            try { head = cj.readSplitHead(pf).head; } catch (e) { hErr = String(e && e.message || e); }
+            check("writeSplit leaves an empty picture out and names it in missing; the file reads whole", wrote === 2 && !hErr && head.layers.length === 2 && head.layers[1].name === "kept" && eq(head.missing, ["failed earlier", "empty one"]), short({ wrote, hErr, head: head && { n: head.layers.length, missing: head.missing } }));
+            const fh2 = await fs.promises.open(pf, "w");
+            let emptyBase = null;
+            try { await cj.writeSplit(fh2, { layers: [{ bytes: new Uint8Array(0), base: true }] }); } catch (e) { emptyBase = String(e && e.message || e); } finally { await fh2.close(); }
+            check("writeSplit refuses a split whose base picture is empty", /base picture is empty/.test(emptyBase || ""), emptyBase);
+            fs.rmSync(pf, { force: true });
         }
         fs.rmSync(userDir, { recursive: true, force: true });
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY) && !JSON.stringify(logged).includes(REAL_KEY), `${logged.length} records`);

@@ -2938,7 +2938,9 @@ Cancel during the downloads says the job finished and is charged. The POST carri
 (`headersTimeout` and `bodyTimeout` at the run's deadline, 30 s more), or Node's default 300 s would end a request of up to
 100 pictures first. The base is the row without a box, else the row of `z_index` 0, else `data[0]`, so a 5.5 answer of
 another shape is not thrown away after it is paid for. Main keeps the pictures and the window
-takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer.
+takes them one at a time over `provider:layerPart`: one IPC message of dozens of 2K pictures ends the renderer. A split
+whose window reloaded or crashed during the run is kept in one `.split` file and opens as a document of its own at the
+size of the model's base (at most about 2K), not of the picture it was made from (docs/BUGS.md, fixed 2026-11-16).
 
 The landing: bottom to top by `z_index`, the base lowest, in one new group named after the source (the layer's name, or
 the document's), one `layers` undo step, each layer's name from `name` (one line, 60 characters, numbered when it
@@ -3177,7 +3179,10 @@ input rule is ModelArk's (512 x 512 to 6000 x 6000 in area, 16:1), since neither
   `data: [{ b64_json, media_type }]`, read here with `layersplit.collect` as ModelArk's shape (the base first, then
   each layer with `z_index`, a box, `name`, `description` where an entry carries them), a layer without a box laid
   over the whole picture. OpenRouter has no URL answers, so the most is 32 layers (ModelArk's base64 limit). An answer
-  of the base alone lands the base (the status line says no separate elements came). Never run live: the first run must
+  of the base alone lands the base, and the status line says in red that OpenRouter answered with the picture only and
+  may not have passed the layer mode on (`info.base_only`, `splitlayers.js` `baseOnlyWords`; the cost only where
+  OpenRouter reported one). The other hosts keep the amber "found no separate elements": only OpenRouter's adapter sets
+  `base_only`. Never run live: the first run must
   settle whether the layers come back at all, with boxes and names, and what each costs.
 
 `tools/seedream55_test.js` holds the three splits against canned answers (two layers, one without a box), their refusals,

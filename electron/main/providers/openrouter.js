@@ -243,7 +243,8 @@ const b64Length = (n) => 4 * Math.ceil(n / 3);
  */
 async function picturesFor(req, o, ctx, model) {
     const text = req.kind === "text";
-    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
+    const split = req.kind === "layers";   // a split's one picture: its own words, no crop advice
+    const pics = text ? [] : [{ what: split ? "picture" : "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
     if (req.kind === "fill" && req.mask) pics.push({ what: "mask", bytes: Buffer.from(req.mask), mime: "image/png", jpeg: false });
     req.references.forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png", jpeg: true }));
     const max = +o.max_images > 0 ? +o.max_images : 16;
@@ -258,7 +259,7 @@ async function picturesFor(req, o, ctx, model) {
         for (const p of pics) {
             const s = pngSize(p.bytes);
             if (s && Math.max(s[0], s[1]) > +o.max_ratio * Math.min(s[0], s[1]) + 1e-9) {
-                throw new Error(`OpenRouter ${model} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${s[0]} × ${s[1]}. Use a less narrow ${text ? "reference layer" : "selection or reference layer"}.`);
+                throw new Error(`OpenRouter ${model} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${s[0]} × ${s[1]}. Use a less narrow ${text ? "reference layer" : split ? "picture or layer" : "selection or reference layer"}.`);
             }
         }
     }
@@ -275,7 +276,7 @@ async function picturesFor(req, o, ctx, model) {
             p.mime = "image/jpeg";
         }
         if (total > MAX_INLINE) {
-            throw new Error(`OpenRouter ${model}: the pictures come to ${(total / 1e6).toFixed(1)} MB, more than the ${MAX_INLINE / 1e6} MB this app sends in one request. ${text ? "Use fewer or smaller reference layers." : "Set Highres fix lower, turn Original off, or use fewer or smaller reference layers."}`);
+            throw new Error(`OpenRouter ${model}: the pictures come to ${(total / 1e6).toFixed(1)} MB, more than the ${MAX_INLINE / 1e6} MB this app sends in one request. ${text ? "Use fewer or smaller reference layers." : split ? "Use a smaller picture or layer." : "Set Highres fix lower, turn Original off, or use fewer or smaller reference layers."}`);
         }
     }
     return pics;
@@ -542,7 +543,7 @@ async function layers(req, ctx) {
     const base = root(ctx);
     checkKey(base, ctx.key);
     const ask = split.askOf(req, who, spec);
-    const pics = await picturesFor({ ...req, kind: "edit", references: [] }, { max_images: 1, max_ratio: 16 }, ctx, model);
+    const pics = await picturesFor({ ...req, kind: "layers", references: [] }, { max_images: 1, max_ratio: 16 }, ctx, model);
     const body = { model, prompt: ask.prompt || LAYER_PROMPT };
     if (spec.tiers && ask.tier !== "auto") body.resolution = ask.tier;
     body.output_format = "png";
@@ -577,13 +578,21 @@ async function layers(req, ctx) {
     };
     const { out, missing } = await split.collect(items, get, ctx, who);
     const usage = j.usage || {};
-    if (out.length === 1) ctx.log("the answer holds the base alone: no layer came back through OpenRouter");
+    // a base alone through OpenRouter may mean the layer mode never reached the model: the window's line says so in red
+    // (splitlayers.js baseOnlyWords), with the cost only where OpenRouter reported it
+    let baseOnly = null;
+    if (out.length === 1) {
+        ctx.log("the answer holds the base alone: no layer came back through OpenRouter");
+        const cost = Number.isFinite(+usage.cost) && usage.cost !== null && usage.cost !== "" ? ` OpenRouter reported a cost of ${+usage.cost} USD for it.` : "";
+        baseOnly = `OpenRouter answered with the picture only, no layers: it may not have passed the layer mode on to ${model}.${cost}`;
+    }
     return {
         bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out, missing,
         info: {
             model, resolution: body.resolution || null, asked: ask.count, max_images: options.layer_decomposition_options ? options.layer_decomposition_options.max_images : null,
             text_recognition: spec.text ? ask.textRecognition : null, layers: out.length - 1, unplaced: out.filter((l) => l.full).length,
             picture: pics[0].mime === "image/jpeg" ? "jpeg" : "png", cost: usage.cost != null ? usage.cost : null,
+            ...(baseOnly ? { base_only: baseOnly } : {}),
         },
     };
 }

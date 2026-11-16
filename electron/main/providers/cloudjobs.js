@@ -190,15 +190,25 @@ const SPLIT_LAYERS_MAX = 512;
 const SPLIT_TEXT = { name: 400, description: 4000, mime: 100 };
 
 /**
- * Writes a split's answer to the open file `fd`: `out` the adapter's answer ({ layers: [{ bytes, mime, z_index, base,
- * bounding_box, full, name, description, size }], info, missing }), `extra` more of the head (seconds, prompt, notes).
- * -> the number of layers written.
+ * Writes a split's answer to the open file handle `fh` (fs.promises; main's thread is not held while up to 101 pictures
+ * go to disk): `out` the adapter's answer ({ layers: [{ bytes, mime, z_index, base, bounding_box, full, name,
+ * description, size }], info, missing }), `extra` more of the head (seconds, prompt, notes). A layer whose picture is
+ * empty is left out and named in the head's `missing` (readSplitHead would refuse the whole file for it); an empty base
+ * throws, since every box is in its frame. Each write is checked for its length. -> the number of pictures written.
  */
-function writeSplit(fd, out, extra = {}) {
-    const list = Array.isArray(out && out.layers) ? out.layers : [];
-    if (!list.length) throw new Error("the split's answer holds no pictures");
-    if (list.length > SPLIT_LAYERS_MAX) throw new Error(`the split's answer holds ${list.length} pictures, more than ${SPLIT_LAYERS_MAX}`);
-    const bufs = list.map((l) => { const b = l && l.bytes; return Buffer.isBuffer(b) ? b : b instanceof Uint8Array ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : Buffer.from(b || []); });
+async function writeSplit(fh, out, extra = {}) {
+    const all = Array.isArray(out && out.layers) ? out.layers : [];
+    if (!all.length) throw new Error("the split's answer holds no pictures");
+    if (all.length > SPLIT_LAYERS_MAX) throw new Error(`the split's answer holds ${all.length} pictures, more than ${SPLIT_LAYERS_MAX}`);
+    const bufOf = (l) => { const b = l && l.bytes; return Buffer.isBuffer(b) ? b : b instanceof Uint8Array ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : Buffer.from(b || []); };
+    const missing = Array.isArray(out.missing) ? out.missing.map(String) : [];
+    const list = [], bufs = [];
+    all.forEach((l, i) => {
+        const b = bufOf(l);
+        if (b.length) { list.push(l); bufs.push(b); return; }
+        if (i === 0) throw new Error("the split's base picture is empty");
+        missing.push(String(l && l.name ? l.name : `Layer ${i}`));
+    });
     let offset = 0;
     const layers = list.map((l, i) => {
         const row = {
@@ -215,11 +225,17 @@ function writeSplit(fd, out, extra = {}) {
         offset += bufs[i].length;
         return row;
     });
-    const head = Buffer.from(JSON.stringify({ version: 1, ...extra, info: out.info == null ? null : out.info, missing: Array.isArray(out.missing) ? out.missing.map(String) : [], layers }), "utf8");
+    const head = Buffer.from(JSON.stringify({ version: 1, ...extra, info: out.info == null ? null : out.info, missing, layers }), "utf8");
     if (head.length > SPLIT_HEAD_MAX) throw new Error("the split's head is too large to keep");
     const len = Buffer.alloc(4);
     len.writeUInt32LE(head.length, 0);
-    for (const b of [SPLIT_MAGIC, len, head, ...bufs]) fs.writeSync(fd, b, 0, b.length);
+    for (const b of [SPLIT_MAGIC, len, head, ...bufs]) {
+        for (let at = 0; at < b.length;) {
+            const { bytesWritten } = await fh.write(b, at, b.length - at, null);
+            if (!(bytesWritten > 0)) throw new Error("the split's file could not be written whole");
+            at += bytesWritten;
+        }
+    }
     return layers.length;
 }
 
