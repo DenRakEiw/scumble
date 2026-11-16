@@ -535,10 +535,15 @@ function withLoras(req, info) {
     if (!l || !Array.isArray(l.rows) || !l.rows.length || !req.options || !req.options.graph) return { req, applied: [], notes: [] };
     const m = lorasModule();
     const graph = JSON.parse(JSON.stringify(req.options.graph));
-    const got = m.spliceLoras(graph, { loras: l.declared, save: req.options.save }, l.rows, info || null);
+    const decl = { loras: l.declared, save: req.options.save };
+    const got = m.spliceLoras(graph, decl, l.rows, info || null);
+    if (!got.applied.length) {
+        // a route whose graph takes no rows (its LoRAs section is hidden, e.g. cloud_ideogram_4 after rows were stored on
+        // another variant): the plain line the local route gives (host loraPlan, HINT_NOTE), never the red one
+        const src = got.note ? m.modelSource(graph, decl, info || null) : null;
+        return { req, applied: [], notes: src && !("node" in src) ? [`The LoRA rows stored for this recipe stayed out: ${m.noSourceWords(src)}.`] : got.note ? [got.note] : [] };
+    }
     const notes = [];
-    if (got.note) notes.push(got.note);
-    if (!got.applied.length) return { req, applied: [], notes };
     notes.push(`LoRAs: ${m.loraWords(got.applied)}.`);
     // the chain's class joins the classes the node list must hold
     const added = Object.keys(graph).filter((id) => !Object.prototype.hasOwnProperty.call(req.options.graph, id)).map((id) => graph[id].class_type);
