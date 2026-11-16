@@ -524,11 +524,15 @@ async function flushAll(reason) {
     return r;
 }
 
-let askingToReload = false;
+let askingToReload = false, reloading = false;
+
+/** A close is saving or has saved: a reload now would end the page under that save (did-start-navigation answers it
+ *  "the window reloaded" and the close goes through without the edits). */
+const closeSaving = () => !!(quitGuard.flushing || quitGuard.done || quitting);
 
 /** View › Reload: asks first while provider runs are going, saves what a close would lose, then reloads. */
 async function reloadWindow(ignoreCache) {
-    if (!win || win.isDestroyed() || askingToReload) return;
+    if (!win || win.isDestroyed() || askingToReload || reloading || closeSaving()) return;
     const n = providers.runningCount();
     if (n > 0 && windowVisible()) {
         askingToReload = true;
@@ -546,13 +550,15 @@ async function reloadWindow(ignoreCache) {
         } finally {
             askingToReload = false;
         }
-        if (choice !== 1 || !win || win.isDestroyed()) return;
+        if (choice !== 1 || !win || win.isDestroyed() || closeSaving()) return;
     }
-    if (!quitGuard.flushing) {
-        mirror.localOnly = true;        // like a close: not waiting on a slow ComfyUI (files.js)
-        try { await flushAll("reload"); } finally { mirror.localOnly = false; }
+    reloading = true;
+    mirror.localOnly = true;            // like a close: not waiting on a slow ComfyUI (files.js)
+    try { await flushAll("reload"); } finally {
+        reloading = false;
+        if (!closeSaving()) mirror.localOnly = false;      // a close that began meanwhile keeps it, as it set it
     }
-    if (!win || win.isDestroyed()) return;
+    if (!win || win.isDestroyed() || closeSaving()) return;
     if (ignoreCache) win.webContents.reloadIgnoringCache(); else win.webContents.reload();
 }
 
