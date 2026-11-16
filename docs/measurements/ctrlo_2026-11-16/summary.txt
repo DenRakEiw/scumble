@@ -1,0 +1,88 @@
+Ctrl+O hands the window a token, not the file (docs/BUGS.md "Ctrl+O sends the whole file to the window in one message";
+lane D of docs/PLAN_0_1_57.md "Second round", 2026-11-16). On quick-wins b2922598: the hook e4fa0524 (before), the fix
+454dcc3f (after). Dev instances from the worktree, --no-comfy, tiles on, each run on a fresh profile, the window brought
+to the front (ctrlo.py). The card held 8.6-13.5 GB of another process's work during the runs (nvidia-smi); before and
+after ran in the same hour.
+
+The files (made by tools/native_test.py 15000x10000 add_the_paint_layer save_psd save_tiff save_png, kept in the
+session's scratchpad, not committed): n1.psd 970,190,730 bytes (the picture and a full-size paint layer), n1.tif
+255,796,890, n1.png 246,614,158.
+
+The routes (ctrlo.py)
+  ctrlo  File > Open's route without the dialog: the dev-only hook file:testOpen(path) runs main's openChosen
+  load   load_image over the command core (renderer/commands_util.js fileFrom)
+  drop   a disk-backed File (an <input type=file> given the path over CDP), handed to loadFile as the drop handler does
+
+The columns, ms on the window's thread, median [min-max] of three runs:
+  transfer  the route's start -> the editor's loadFile entered (what the route costs before any reader runs)
+  xblock    the longest heartbeat gap (setTimeout 0, gaps over 50 ms) inside the transfer: the window not answering
+  wall      the route's start -> loadFile returned (the picture in)
+  block     the longest heartbeat gap of the whole open
+
+before.json (main read the file whole and sent it in one IPC message; load_image's file.read answered the same way)
+  file    route  transfer              xblock                wall                  block
+  n1.psd  ctrlo    2392 [1949-2576]      1833 [1399-2048]      7658 [7608-7765]      1833 [1399-2048]
+  n1.psd  load     2346 [2107-2808]      1809 [1644-2090]      7382 [7251-9438]      1809 [1644-2090]
+  n1.psd  drop        0 [0-0]               0 [0-0]            4691 [4688-5263]       573 [556-711]
+  n1.tif  ctrlo     624 [608-645]         487 [484-495]        3668 [3616-3677]       529 [516-565]
+  n1.tif  load      651 [617-681]         476 [471-493]        4050 [3418-4074]       577 [570-716]
+  n1.tif  drop        0 [0-0]               0 [0-0]            3009 [2876-3104]       588 [566-600]
+  n1.png  ctrlo     538 [528-620]         429 [426-456]        2167 [2087-2172]       558 [481-676]
+  n1.png  load      532 [458-553]         404 [300-421]        1929 [1851-2390]       492 [491-701]
+  n1.png  drop        0 [0-0]               0 [0-0]            1359 [1282-1818]       501 [466-628]
+
+after.json (main grants a token, the window fetches scumble://app/file/<token> into a Blob-backed File)
+  file    route  transfer              xblock                wall                  block
+  n1.psd  ctrlo    1429 [1330-1572]         0 [0-0]            6892 [6536-7151]       619 [593-722]
+  n1.psd  load     1277 [1269-1368]         0 [0-0]            6777 [6581-7116]       631 [619-691]
+  n1.psd  drop        0 [0-0]               0 [0-0]            5353 [5349-5568]       617 [582-692]
+  n1.tif  ctrlo     358 [341-412]           0 [0-0]            3641 [3278-3738]       663 [602-690]
+  n1.tif  load      333 [330-342]           0 [0-0]            3559 [3338-3909]       656 [592-711]
+  n1.tif  drop        0 [0-0]               0 [0-0]            3211 [3142-3472]       603 [508-626]
+  n1.png  ctrlo     329 [303-367]           0 [0-0]            2165 [1917-2416]       661 [640-703]
+  n1.png  load      362 [335-436]           0 [0-0]            2214 [1991-2700]       637 [592-807]
+  n1.png  drop        0 [0-0]               0 [0-0]            1941 [1667-2029]       673 [580-760]
+
+  What it says: the window's block before the reader is gone on every file and both routes (PSD 1,833 -> 0 ms, TIFF
+  487 -> 0, PNG 429 -> 0); the longest block of a PSD open is now the drop's (1,833 -> 619 ms: what is left is the
+  reader's own, D0's band writes and the shader link). The transfer is now a wait, not a block: the fetch streams about
+  700 MB/s through the scheme (1.4 s for 925 MB), so a Ctrl+O PSD open still lands about 1.5 s after a drop of the
+  same file (6.9 s against 5.4 s; before 7.7 s). A drop from Explorer pays no read at all, before or after (transfer 0:
+  a disk-backed File is read by the readers as they slice it). The drop rows moved between the two sessions (PSD
+  4.7 -> 5.4 s) with the same code: the machine's state, so compare routes within one table.
+
+The ceiling of one main -> window message (ceiling_before.json / ceiling_after.json, ctrlo.py --ceiling: sparse files,
+each size on a fresh instance; before: window.scumble.file.read, whose answer is the same serialisation as
+file:opened's send; after: file:grant and the fetch)
+  MiB    before (one message)                                 after (token and fetch)
+  512    ok, 905 ms                                           ok, 703 ms
+  768    ok, 1,374 ms                                         ok, 1,058 ms
+  1024   ok, 1,782 ms                                         ok, 1,320 ms
+  1536   ok, 2,834 ms                                         ok, 2,113 ms
+  2047   lost: the answer arrives as null (1,540 ms)          ok, 2,811 ms
+  2600   refused by main: ERR_FS_FILE_TOO_LARGE (> 2 GiB)     ok, 3,255 ms
+  So main -> window takes up to 1.5 GiB in one message here (G2 found about 512 MiB window -> main) and loses a
+  message of 2047 MiB; the renderer lived on each time. After the fix no size limit of the route was met up to 2.6 GB.
+  A read piece of 8 MiB instead of 1 MiB (grantedfiles.js CHUNK) gave the same rate (1,193 against 1,320 ms at 1 GiB,
+  2,271 against 2,113 at 1.5 GiB): kept at 1 MiB.
+
+Byte identity at 15k (a one-off script in the session's scratchpad): each of the three files through file:grant and
+the fetch, SHA-256 in the window against hashlib's: n1.psd, n1.tif, n1.png all the same. The small fixtures go through
+the openfile gate (SHA-256 of the File by both routes, and every layer's, mask's and the base's bytes against a drop).
+
+tiffperf:15000x10000 (tools/tiff_test.py, the noise TIFF exported and opened through load_image), two runs each:
+  before (e4fa0524): openMs 5,808 / 6,121; the TIFF reader's own steps (total) 4,518 / 4,711; picMatch true
+  after  (454dcc3f): openMs 5,232 / 5,765; total 4,414 / 4,933; picMatch true
+
+Gates on 454dcc3f plus the openfile test's wait fix (--offline, port 9585):
+  tiles  (ctrlo-t): lint types document docux layered tiff export videoframe mcp commands PASS; openfile red once (its
+         .scumble step took the document before its layers were in: the test's wait, fixed to wait for the layers and
+         the end of the load), PASS on the rerun ctrlo-t2.
+  canvas (ctrlo-c): all PASS but videoframe's 25 fps step ("waiting for a frame callback (the window must be shown)",
+         after its File > Open step passed); PASS on the rerun ctrlo-c2.
+
+Mutation round (lean, the weekly limit): mutate_node.py applies the grantedfiles.js mutants of mutants.py (the token
+check, release, the cap, the checked grant, the words, the range handling) one at a time in the checkout and runs
+tools/grantedfiles_test.js alone: 19 of 20 killed, the survivor (range_start_past_end_served) equivalent (a start past
+the end is refused by end < start after the clamp); mutation_node.txt. The main.js and window-side mutants of
+mutants.py need the openfile gate on an app (tools/mutation_round.py) and were not run.

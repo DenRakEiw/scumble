@@ -226,7 +226,7 @@ class Gate:
             const n0 = host.editors().length;
             const r = await window.scumble.file.testOpen(path);
             if (r.document !== path.replace(/\\//g, '\\\\') && r.document !== path) throw new Error('not routed as a document: ' + JSON.stringify(r));
-            const ed = await until(() => host.editors().find((e) => e.docFile && /doc\\.scumble$/i.test(e.docFile.path || '') && e.base), 60000, 'the document');
+            const ed = await until(() => host.editors().find((e) => e.docFile && /doc\\.scumble$/i.test(e.docFile.path || '') && e.base && e.layers.length && !e._loading), 60000, 'the document with its layers');
             g.docs.push(ed);
             if (ed.layers.length < 1 || ed.width !== 96 || ed.height !== 64) throw new Error('document ' + ed.width + 'x' + ed.height + ', ' + ed.layers.length + ' layers');
             return { tabs: [n0, host.editors().length], size: [ed.width, ed.height], layers: ed.layers.map((l) => l.name) };
