@@ -395,7 +395,7 @@ export class DepthPart {
 
     /**
      * Store the maps mapsUnstored names (their packed files into the mirror / onto the server). `quiet` (syncLayersOnce:
-     * the autosave, a run): a failure is logged and the next pass tries again; otherwise (host.flushEditor, before a save
+     * the autosave, a run): a failure is logged and the next pass tries again; otherwise (the host's flushEditor, before a save
      * or a copy) it throws in plain words, so the file never goes without the map. -> the kinds still not stored (quiet)
      * @returns {Promise<string[]>}
      */
