@@ -32,6 +32,27 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Comfy Cloud: LoRA rows kept for a recipe whose route takes no LoRAs give a plain status line, not a red one.
 - An ORA saved over by another program while it opens says "<name> changed on disk while it was opened; open it again".
 - A cancelled save reads as a plain line again, not as an error.
+- A document with a depth map no longer carries the model's raw numbers in its saved state (about 11 MB of text per
+  autosave; after *Depth from layer* on a large picture a save could refuse); files saved before shrink on the next save.
+- A mask made on a filter layer after a resize, turn, crop or extend is the picture's size again (it was squashed,
+  offset or the wrong shape, in exports and paid runs too).
+- After a crop, resize or extend, a Deep paint layer's paint is stored at once, so a crash right after no longer loses it.
+- Opening a document and opening, dropping or pasting a picture no longer mix layers when one starts while the other
+  is still loading.
+- A document with a Deep paint or LUT file that could not be read saves again (the layer stays, without that file).
+- Undoing Bold, Italic or a text edit right after typing shows the right text on the canvas and in exports.
+- The mask row's Apply and Remove buttons: an applied mask on a text layer stays applied after the next text edit.
+- A result that lands while you type in a layer's field or hold a slider in the layer list no longer takes that edit
+  back when you undo the result.
+- Split into layers on a very large picture (above about 268 MP) no longer loses the paid answer, and at 15k the
+  layers land without a 600 MB canvas per layer.
+- fal.ai, Replicate and WaveSpeedAI: the API key goes only to https status and result links on the provider's own
+  host; WaveSpeedAI's upload link gets the picture only over https and never to this machine or its network.
+- BFL, Magnific and ToAPIs: a paid job is no longer given up when the machine slept past the run's time or the network
+  was gone for a few seconds; a Cancel during the download says the job had finished and is charged.
+- Select range in Add mode with a range nothing matches leaves the selection's box as it was.
+- A 3D object or mannequin edit that would write a locked layer is refused before anything changes.
+- *Parameters* in the ComfyUI window: a row you untick keeps the recipe's value instead of the node's default.
 
 - **Fixed: Comfy Cloud results opened as a new document instead of landing as a layer.** Comfy Cloud took the
   job, but it now answers with job links Scumble's Cloud client sent no key to, so the first status read was refused
