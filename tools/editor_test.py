@@ -14833,6 +14833,36 @@ try {
 }
 return out;
 """),
+    ("a_filter_layers_store_follows_the_canvas", """
+// review 2026-11-16 (canvas-tools/filter-layer-stale-empty-px-after-geometry): a plain filter layer's empty px is the
+// canvas size after a resize, a turn and an extend, so a mask made from the selection afterwards is the canvas size too
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    const bc = document.createElement("canvas"); bc.width = 200; bc.height = 120;
+    const bx = bc.getContext("2d"); bx.fillStyle = "#808080"; bx.fillRect(0, 0, 200, 120);
+    await ed.setBaseFromCanvas(bc);
+    const f = await run("add_filter", { type: "blur", params: { radius: 2 }, doc: d.id });
+    const L = () => ed.layers.find((l) => l.id === f.id);
+    const same = (what) => { const l = L(); if (l.px.width !== ed.width || l.px.height !== ed.height) throw new Error(what + ": px " + l.px.width + " x " + l.px.height + ", canvas " + ed.width + " x " + ed.height); };
+    await run("resize_image", { percent: 200, doc: d.id }); same("after the resize");
+    await run("rotate_canvas", { angle: 90, doc: d.id }); same("after the turn");
+    await run("set_layer", { layer: f.id, visible: false, doc: d.id });
+    await run("extend_canvas", { left: 20, top: 10, doc: d.id }); same("after the extend");
+    if (L().dirty) throw new Error("the extend marked the plain filter layer dirty (its empty px would be uploaded)");
+    await run("select_rect", { x: 10, y: 10, w: 50, h: 40, doc: d.id });
+    await run("set_mask", { layer: f.id, op: "from_selection", doc: d.id });
+    const m = L().maskPx;
+    if (!m || m.width !== ed.width || m.height !== ed.height) throw new Error("the mask is " + (m ? m.width + " x " + m.height : "missing") + ", the canvas " + ed.width + " x " + ed.height);
+    out.size = [ed.width, ed.height];
+} finally {
+    host.shell.activate(ednow(window.__t) || host.editor);
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

@@ -320,6 +320,8 @@ export class MasksPart {
                 // a filter layer's pixels are never drawn: its mask is all that limits the filter
                 if (layer.kind === "filter") { this.setStatus(`${layer.name} is a filter layer: it has no pixels to bake the mask into.`); return false; }
                 if (layer.kind === "text") {
+                    // the text edited on the canvas would be written back onto the layer when its editor closes
+                    if (this.textEdit && this.textEdit.layer === layer) { this.setStatus("Finish the text edit first (Enter / Escape)."); return false; }
                     // a text layer's pixels are rendered from its description, so the next text edit would bring the
                     // hidden parts back: the text becomes pixels first (one "layers" step: undo brings the text back)
                     this.pushUndo({ kind: "layers", label: "Apply mask" });

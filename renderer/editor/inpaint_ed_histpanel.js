@@ -182,9 +182,14 @@ export class HistoryPanelPart {
      * (hidden ones too), every other layer goes (26f). Returns { width, height, kept, dropped } (layers).
      */
     async setBaseFromCanvas(canvas, { keepLayers = false, keepRefs = false } = {}) {
+        // a document still restoring (setValue) goes on after each await: the new base (a paid answer, often) waits for it
+        // instead of being mixed into it, before the upload and again after it
+        const untilLoaded = async () => { while (this._loading && !this._destroyed) await new Promise((r) => setTimeout(r, 100)); };
+        await untilLoaded();
         if (this.pending) this.cancelPending();
         if (this.textEdit) this.endTextEdit(false);
         const { ref } = await uploadCanvas(canvas, `n${this.node.id}_base`);
+        await untilLoaded();
         // C6 (d): a copy of the caller's canvas (the canvas backend adopts a canvas it is given), not the upload decoded again
         const px = this.pixels.Layer.fromImage(canvas, canvas.width, canvas.height);
         const keep = keepRefs && !keepLayers ? this.layers.filter((l) => this.isReference(l)) : null;

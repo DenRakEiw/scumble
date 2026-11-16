@@ -207,6 +207,8 @@ export class HistoryPart {
                 // tiles: the "before" pixels themselves; canvases keep them as a PNG, so the text is drawn again when the record comes back
                 if (tb.px) c.px = tb.px.clone(); else c._textRedraw = true;
             }
+            // a text whose render is still on its way (typed, debounced): the record's pixels are older than its text
+            if (!tb && l.text && (l._textTimer || l._textRendering)) c._textRedraw = true;
             if (l._matchUndo && l._matchUndo.match) c.match = { ...l._matchUndo.match };
             const held = this.pointer && this.pointer.undoSnap;
             const g = !held ? null : held.kind === "transform" ? (held.id === l.id ? held : null) : held.kind === "transforms" ? held.items.find((i) => i.id === l.id) : null;
@@ -450,7 +452,7 @@ export class HistoryPart {
             return { kind: "filter", id: layer.id, filter: layer.filter, params: p, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name, _selectedLightId: layer._selectedLightId || null, _deselected: !!layer._deselected };
         }
         if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
-            behind: !!layer._textRendering };
+            behind: !!(layer._textRendering || layer._textTimer) };   // a render on its way, or a typed one still debounced
         if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             ...maskOf(layer.maskPx), mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0, maskOff: !!layer.maskOff };
         return null;
@@ -870,6 +872,7 @@ export class HistoryPart {
                 // description that is being undone on top of the restored one
                 layer._textToken = (layer._textToken || 0) + 1;
                 layer._textRendering = 0;
+                clearTimeout(layer._textTimer); layer._textTimer = null;   // the same for one still debounced (typing)
                 layer.px = snap.px || this.pixels.Layer.fromImage(needImage(images.url), snap.cw, snap.ch);   // replaced: rule 2
                 snap.px = null;   // the document's now (C4)
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
