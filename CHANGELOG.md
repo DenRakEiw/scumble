@@ -4,6 +4,35 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Florence-2 as a helper model** (Microsoft, MIT): download it in *Settings › Helpers* (277 MB, every file checked by
+  its sha256); it runs in the helpers' process, on the graphics card where it can. New results, pastes, cut-outs and
+  reference images get a short name from what it sees ("Woman sitting on the hood of a blue car" instead of "Result 3")
+  a moment after they land: only a name that says nothing (Result, Paste, IMG_1234, image) is replaced, never one you
+  typed meanwhile, and the name is no undo step (*Name new layers automatically* turns it off). *Image › Describe
+  Selection* (and *in Detail*) puts a caption of the selection or the picture in a note to copy or use as the prompt;
+  Shift+click puts it into the prompt field. MCP `describe`, 124 tools.
+- **A Generate result is one undo step of its own**: Ctrl+Z takes exactly that result back, also when it lands after
+  you went on working and for each area's result, and Ctrl+Y brings it back. Before, Ctrl+Z took back whatever came
+  before the result (after a layers step, the result too). Each result takes one of the history's steps (30 by default).
+- **Split into layers through OpenRouter** for Seedream 5.5 (up to 32 layers and a base, with the count and Text
+  recognition). Written from OpenRouter's endpoint list and Image API guide, not run live: how the layers come back
+  through OpenRouter is not documented, and an answer with the picture only says so in red.
+- **Fixed: a Split into layers run was lost when its window reloaded or crashed during the run**: Scumble keeps the
+  base and every layer and opens them as a document of its own (at the base's size), the layers in one group.
+- **File › Open and `load_image` no longer send the file to the window in one message**: the window reads it from a
+  link only it can use, so opening a large PSD, TIFF or PNG no longer freezes the window (a 15k PSD was 1.8 s), files
+  over 2 GB open, and a missing file or a folder is reported in plain words.
+- **Fixed: a save while a layer was still uploading** named the layer's old file; it now waits for the upload.
+- **Fixed: a filter layer with a limit and a blend mode or opacity** whose filter changed nothing (untouched Curves,
+  for example) was blended with itself outside the limit in exports and runs; the screen was right.
+- Relight on the surface maps uses the depth map's normals where MoGe-2 saw no surface (the sky), as Wrap does.
+- *Settings › Helpers*: a *Deep paint normals* select picks MoGe-2 ViT-B or ViT-S.
+- A surface or depth map whose upload failed is stored again; a save says so instead of leaving the map out.
+- The Limit row's and Select range's bar keep a colour, tolerance or Invert you just changed when you drag it.
+- Comfy Cloud: LoRA rows kept for a recipe whose route takes no LoRAs give a plain status line, not a red one.
+- An ORA saved over by another program while it opens says "<name> changed on disk while it was opened; open it again".
+- A cancelled save reads as a plain line again, not as an error.
+
 - **Fixed: Comfy Cloud results opened as a new document instead of landing as a layer.** Comfy Cloud took the
   job, but it now answers with job links Scumble's Cloud client sent no key to, so the first status read was refused
   ("Missing or invalid API key"); the run gave up and the finished picture came back later as a document of its own.
