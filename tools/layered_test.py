@@ -706,6 +706,51 @@ if (tiles) {
 await run("close_document", { doc: d.id, remember: false });
 return { tiles, ...out };
 """),
+    ("an_ora_changed_on_disk_while_it_opens_says_so", """
+// K20c keeps an ORA the file while it opens: another program saving over it meanwhile makes Chromium refuse the later
+// reads (NotReadableError). The open says so in plain words, through the parted reader and through the image decoder
+// (which only says it cannot decode such a slice), and when the file changed before the read began; a damaged file that
+// still reads keeps its own words. The file is a stand-in whose reads refuse from the first layer's decode on.
+const d = await run("new_document");
+window.__l.more.push(d.id);
+const ed = ednow(d.id);
+const real = new File([(await window.scumble.file.read(%(ORA)s)).data], "changing.ora");
+let broken = false;
+const gone = () => new DOMException("The requested file could not be read", "NotReadableError");
+const wrap = (b, name) => ({
+    name, size: b.size, type: b.type,
+    slice: (a, z, t) => wrap(b.slice(a, z, t), name),
+    arrayBuffer: () => (broken ? Promise.reject(gone()) : b.arrayBuffer()),
+    text: () => (broken ? Promise.reject(gone()) : b.text()),
+    stream: () => (broken ? new ReadableStream({ start(c) { c.error(gone()); } }) : b.stream()),
+});
+const want = "changing.ora changed on disk while it was opened; open it again.";
+const E = ed.constructor, was = E.oraParted, out = { tiles: !!ed.tileMode };
+try {
+    for (const parted of [true, false]) {
+        if (parted) delete E.oraParted; else E.oraParted = false;
+        broken = false;
+        const keep = ed.decodeOraLayer;
+        ed.decodeOraLayer = function (...a) { broken = true; return keep.apply(this, a); };
+        let msg = "";
+        try { await ed.readLayered(wrap(real, "changing.ora"), "ora"); } catch (e) { msg = String(e.message || e); } finally { delete ed.decodeOraLayer; }
+        if (msg !== want) throw new Error((parted ? "the parted reader" : "the image decoder") + ": " + (msg || "no error"));
+        out[parted ? "parted" : "decoder"] = "ok";
+    }
+    broken = true;
+    let msg = "";
+    try { await ed.readLayered(wrap(real, "changing.ora"), "ora"); } catch (e) { msg = String(e.message || e); }
+    if (msg !== want) throw new Error("changed before the read: " + (msg || "no error"));
+    broken = false;
+    const half = await real.slice(0, Math.floor(real.size / 2)).arrayBuffer();
+    msg = "";
+    try { await ed.readLayered(new File([half], "half.ora"), "ora"); } catch (e) { msg = String(e.message || e); }
+    if (!msg || /changed on disk/.test(msg)) throw new Error("a cut ORA that still reads: " + (msg || "no error"));
+    out.cut = msg.slice(0, 80);
+} finally { if (was === undefined) delete E.oraParted; else E.oraParted = was; }
+await run("close_document", { doc: d.id, remember: false });
+return out;
+"""),
     ("cleanup", """
 for (const k of ["psd", "ora", "src"]) { try { if (window.__l && window.__l[k]) await run("close_document", { doc: window.__l[k] }); } catch (_) { /* gone */ } }
 for (const id of (window.__l && window.__l.more) || []) { try { await run("close_document", { doc: id, force: true }); } catch (_) { /* gone */ } }
