@@ -8,7 +8,14 @@ import { hasTokens, referencesRule, referencesText } from "./reftokens.js";
 import { smallBoxes, smallNote } from "./boxes.js";
 import { areaState, runEachArea } from "./eacharea.js";
 import { runSplitLayers, landKeptSplit } from "./splitlayers.js";
+import { encodeTilePixels } from "./inpaint_encode.js";
 import { HINT_NOTE, SUBFOLDER, api, notesKind, promptMissing, providerEdit, runIdOf, textOptions, viaLine } from "./host_util.js";
+
+/** Tile pixels as a PNG Blob, written from their tiles by the pool; null without it (the layer is then uploaded at the next save). */
+async function pixelsPng(px) {
+    const r = await encodeTilePixels(px);
+    return r ? r.blob : null;
+}
 
 export const HostGeneratePart = {
     /**
@@ -349,7 +356,7 @@ export const HostGeneratePart = {
      * the picture), prompt, count, textRecognition, size }. The new layers land above everything, in one group, one undo step.
      */
     splitLayers(editor, opts = {}) {
-        return runSplitLayers(this, editor, opts, { providerEdit, canvasBytes, bytesToImage, viaLine, runIdOf });
+        return runSplitLayers(this, editor, opts, { providerEdit, canvasBytes, pixelsPng, bytesToImage, viaLine, runIdOf });
     },
 
     /**
@@ -357,7 +364,7 @@ export const HostGeneratePart = {
      * document `editor` as its picture and its layers in one group. Only the shell's recovery calls it.
      */
     landKeptSplit(editor, kept, name) {
-        return landKeptSplit(this, editor, kept, name, { canvasBytes, bytesToImage });
+        return landKeptSplit(this, editor, kept, name, { canvasBytes, pixelsPng, bytesToImage });
     },
 
     /** Why a run of recipe `r` with this prompt is refused before anything is made (promptRequired), or "" (Each area asks it before its question). */
