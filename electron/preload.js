@@ -99,6 +99,7 @@ contextBridge.exposeInMainWorld("scumble", {
         releaseVideo: (token) => ipcRenderer.invoke("file:releaseVideo", token),
         // the videoframe gate, dev builds only (main registers it unpackaged): File › Open's route for a fixture
         testOpenVideo: (name) => ipcRenderer.invoke("file:testOpenVideo", name),
+        testOpen: (file) => ipcRenderer.invoke("file:testOpen", file),
     },
     // .scumble documents (electron/main/documents.js): main writes and reads the file, streamed into the mirror
     documents: {

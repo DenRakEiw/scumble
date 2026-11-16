@@ -918,7 +918,11 @@ async function openImage() {
     needWindow("Open image");
     const r = await dialog.showOpenDialog(win, { title: "Open", properties: ["openFile"], filters: IMAGE_FILTERS });
     if (r.canceled || !r.filePaths.length) return null;
-    const file = r.filePaths[0];
+    return openChosen(r.filePaths[0]);
+}
+
+/** What File › Open does with the file the dialog returned (and the dev-only hook file:testOpen with a path). */
+async function openChosen(file) {
     // a document is not read here: the window opens it through documents:open, streamed into the mirror
     if (await isDocumentFile(file)) { send("documents:openRequest", [file]); return { document: file }; }
     // a video is not read here either: the window's frame picker plays it from scumble://app/video/<token>
@@ -1280,6 +1284,12 @@ function installIpc() {
     ipcMain.handle("file:releaseVideo", (_e, token) => videoFiles.release(token));
     // the videoframe gate, dev builds only: the File › Open route for a fixture of tools/fixtures/video (no other path)
     if (!app.isPackaged) {
+        // the open gate and the Ctrl+O measurement, dev builds only: File › Open's route for a path, without the dialog
+        ipcMain.handle("file:testOpen", async (_e, file) => {
+            const r = await openChosen(path.resolve(String(file || "")));
+            // what was sent, never the bytes a second time
+            return r && r.data ? { name: r.name, path: r.path, size: r.data.byteLength } : r;
+        });
         ipcMain.handle("file:testOpenVideo", async (_e, name) => {
             const dir = path.join(ROOT, "tools", "fixtures", "video");
             const file = path.join(dir, path.basename(String(name || "")));
