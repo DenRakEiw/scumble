@@ -1079,7 +1079,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 63: **Outpaint: generate after the extend** (the user, 2026-11-07): a checkbox in the Canvas tool, "Generate the new
   border on apply": after Extend the new border is selected already (today's behaviour), the checkbox starts the
   selected recipe on it; before an API run the usual cost question. Small. **Built 2026-11-15/16 on `quick-wins`** (a plain Generate has no cost question; this switch asks before a paid API run).
-- 64: **A harmonization model, as a test against colour match** (tested 2026-11-16: PCT-Net not clearly better, `docs/research/harmonize_2026-11-16/`) (the user, 2026-11-07: "harmonize als option mal in nen
+- 64: **A harmonization model, as a test against colour match** (tested 2026-11-16: PCT-Net not clearly better, `docs/research/harmonize_2026-11-16/`; **on hold**, stays on this list) (the user, 2026-11-07: "harmonize als option mal in nen
   plan aufnehmen und testen ob es besser ist als unser color match"): a small ONNX harmonization model (PCT-Net,
   CDTNet or another, licence checked first) set against the layer's Match on the same cut-outs and results, judged by
   eye by the user and by numbers; built only if it is clearly better. A plan with the candidates first.
@@ -1118,6 +1118,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   a wait step for ComfyUI's connect, a user's window that appears during a run.
 - 70: **`fitEdges` in Rust (K35 of `docs/PLAN_WASM_BUILD.md`)**: parked, someday maybe (the user, 2026-11-08: "in js belassen, auf die liste für vielleicht irgendwann einmal updates"). Measured at K34: 6-41 ms, 1-7 % of a stitch's wall and below its spread, but about 31 of 54 ms of a standalone *Match edges*, so 15-25 ms to win there (inferred). The plan's "K34" in §7.
 - 71: **Split into layers** (the user, 2026-11-10: "lass uns das einbauen in diesem update"): Seedream's `layer_decomposition` on BytePlus ModelArk (5.5 up to 100 layers, 5.0 pro up to 16), *Image > Split into Layers...* and MCP `split_layers` (119 tools): the layers land in one new group above the stack, one undo step, placed from `bounding_box`. **Built and merged 2026-11-10 (`a0fb74ed`), not run live** (no early access here). `docs/RECIPES.md`; `docs/BUGS.md` holds its known limit (the answer is lost when the window goes away during the run). Open: `split_layers` `source: "picture"` is taken for a layer's name by the assistant's `resolveLayer` (a one-liner, given to `fix-small`).
+- 73: **The rest of the whole-code review of 2026-11-16** (the user: "sollte auf liste zukünftiger updates"):
+  `docs/research/review_fable_2026-11-16/verified.json`, 138 confirmed. Fixed for 0.1.57: the 3 musts and the 19
+  shoulds on data loss, money and security (lanes X, Y, Z). **Left for a later update:** the other ~58 shoulds
+  (category bug and perf) and the 58 nice ones; pick them by file area, verify each against the code first.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
