@@ -15,7 +15,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { b64, fetchImage, readError, sleep, isAbort, num } = require("./util");
+const { b64, fetchImage, readError, sleep, isAbort, num, pollWatch, readTimedOut } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 
@@ -121,27 +121,36 @@ module.exports = {
         if (!submit.ok) throw new Error(`BFL ${endpoint}: ${await readError(submit)}`);
         const job = await submit.json();
         const pollUrl = pollUrlOf(job, base);
-        const t0 = Date.now();
+        const tag = job.id ? ` (task ${job.id})` : "";
+        const pause = ctx.sleep || sleep;
+        // the run's time counts after an answered read, reads without an answer go on for the gap window (util.pollWatch)
+        const watch = pollWatch(15 * 60 * 1000);
         let misses = 0;
         for (;;) {
-            if (Date.now() - t0 > 15 * 60 * 1000) throw new Error("BFL: timed out after 15 minutes");
-            await (ctx.sleep || sleep)(1000);
+            if (watch.late) throw Object.assign(new Error(`BFL: timed out after 15 minutes${tag}; the job may still finish and be charged.`), { timedOut: true });
+            await pause(1000);
+            watch.paused(1000);
             // the job is submitted and paid for: a dropped connection, a busy or broken gateway (429, 5xx) or a page that
-            // is no JSON is retried a few times before the run gives up
+            // is no JSON is read again until the gap window is over
             const retry = async (why) => {
-                if (++misses > 5) throw new Error(`BFL poll: ${why}`);
-                await (ctx.sleep || sleep)(1000 * misses);
+                const g = watch.missed();
+                if (g >= watch.gapMs) throw new Error(`BFL poll: ${why}${tag}; no answer for ${Math.round(g / 1000)} s, the job may still finish and be charged.`);
+                const w = watch.backoff(++misses);
+                await pause(w);
+                watch.paused(w);
             };
-            let r;
+            let r, text;
+            const sig = watch.read();
             try {
-                r = await ctx.fetch(pollUrl, { headers: { "x-key": ctx.key, accept: "application/json" } });
+                r = await ctx.fetch(pollUrl, { headers: { "x-key": ctx.key, accept: "application/json" }, signal: sig });
+                text = await r.text().catch(() => "");
+                if (readTimedOut(null, sig, ctx)) throw new Error("the status read timed out");
             } catch (e) {
-                if (isAbort(e, ctx)) throw e;
+                if (isAbort(e, ctx) && !readTimedOut(e, sig, ctx)) throw e;
                 await retry(String((e && e.message) || e));
                 continue;
             }
             let s = null;
-            const text = await r.text().catch(() => "");
             try { s = JSON.parse(text); } catch (_) { s = null; }
             if (!s || typeof s !== "object" || !s.status) {
                 // a failed task answers with a status body (HTTP 422, { status: "Error", details }), read below
@@ -150,10 +159,12 @@ module.exports = {
                 continue;
             }
             misses = 0;
+            watch.answered();
             const status = s.status || "";
             if (status === "Ready") {
                 const sample = s.result && s.result.sample;
                 if (!sample) throw new Error("BFL: result without sample");
+                ctx.jobDone = true;   // finished and charged: a Cancel during the download says so
                 let file = null;
                 for (let tries = 0; !file; tries++) {
                     try { file = await fetchImage(sample, ctx.fetch); } catch (e) { if (isAbort(e, ctx) || tries >= 2) throw e; await (ctx.sleep || sleep)(1500); }

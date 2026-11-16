@@ -96,6 +96,32 @@ function gapWatch() {
 function readSignal() {
     return AbortSignal.timeout(TIMES.readMs);
 }
+
+/**
+ * pollJob's rules for an adapter's own poll loop (bfl.js, toapis.js, magnific.js): the run's time counts only after a
+ * read that was answered (`late`), so a machine that slept past it reads once first; reads without an answer (a thrown
+ * fetch, a read past TIMES.readMs, a 429 / 5xx, a body that is no status) go on for the gap window in a row (`missed`
+ * gives the gap so far: at TIMES.gapMs or more the caller gives up), any answer starts that count again (`answered`).
+ * `paused(ms)` after every wait; `read()` the signal of one read; `backoff(n)` the wait after the n-th miss in a row.
+ */
+function pollWatch(waitMs, now = Date.now) {
+    const t0 = now(), gap = gapWatch();
+    let answered = true;
+    return {
+        get late() { return answered && now() - t0 > waitMs; },
+        answered() { answered = true; gap.answered(); },
+        missed() { answered = false; return gap.miss(); },
+        paused(ms) { if (!answered) gap.paused(ms); },
+        read: readSignal,
+        backoff: (n) => Math.min(1000 * n, TIMES.pauseMaxMs),
+        get gapMs() { return TIMES.gapMs; },
+    };
+}
+
+/** A read of a poll loop ended by its own time (`sig`, from pollWatch's read()), not by the run's Cancel. */
+function readTimedOut(err, sig, ctx) {
+    return !!(sig && sig.aborted) && !(ctx && ctx.signal && ctx.signal.aborted);
+}
 const STOP_WAIT_MS = 2000;
 const STOP_TIMEOUT_MS = 10000;
 
@@ -113,6 +139,34 @@ function allowedStopUrl(raw, host) {
         return u.href;
     } catch (_) {
         return null;
+    }
+}
+
+/**
+ * A link a provider's answer handed back that the key will go to (a job's status or result): its href when it is https
+ * on one of `hosts` (the host itself or a name under it), with no user or password in it; else `fallback` (the job's own
+ * path built on the host the request went to, or null). An http link or one to another host never gets the key.
+ */
+function keyedUrl(raw, hosts, fallback = null) {
+    if (!raw || typeof raw !== "string") return fallback;
+    try {
+        const u = new URL(raw);
+        const h = u.hostname.toLowerCase();
+        if (u.protocol === "https:" && !u.username && !u.password && hosts.some((x) => h === x || h.endsWith("." + x))) return u.href;
+    } catch (_) { /* not a URL: the fallback */ }
+    return fallback;
+}
+
+/** An upload link a provider hands back for the user's bytes (a presigned PUT): https, no user or password, not this machine or the local network. */
+function uploadUrlOk(raw) {
+    try {
+        const u = new URL(String(raw || ""));
+        if (u.protocol !== "https:" || u.username || u.password) return false;
+        const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+        if (h === "localhost" || h.endsWith(".localhost") || h === "::1" || h === "0.0.0.0" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || (h.includes(":") && /^(f[cd]|fe80)/.test(h))) return false;
+        return true;
+    } catch (_) {
+        return false;
     }
 }
 
@@ -556,4 +610,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, keyedUrl, uploadUrlOk, pollWatch, readTimedOut, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

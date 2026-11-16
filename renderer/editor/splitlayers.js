@@ -233,24 +233,47 @@ async function sourceBytes(editor, job, canvasBytes) {
         c.width = c.height = 0;
         return bytes;
     }
+    const l = job.layer;
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
     const x = c.getContext("2d");
     x.imageSmoothingEnabled = true;
     x.imageSmoothingQuality = "high";
-    x.drawImage(editor.layerPixels(job.layer), 0, 0, w, h);
+    if (scaled && editor.tileMode && !editor.liveStrokeOn(l) && (!editor.liveMask(l) || editor.tileMaskOf(l))) {
+        // a large layer on tiles from its own tiles at the level of the size it goes at, its mask from the mask's:
+        // layerPixels would make a layer-size canvas on the window (600 MB at 15000 x 10000, a throw above the canvas limit)
+        const sx = w / l.w, sy = h / l.h;
+        const vp = { x: l.x, y: l.y, w: l.w, h: l.h, sx, sy, sample: true };
+        x.setTransform(sx, 0, 0, sy, -l.x * sx, -l.y * sy);
+        editor.drawPixelsInto(x, l, l.px, vp);
+        if (editor.liveMask(l)) {
+            x.globalCompositeOperation = "destination-in";
+            editor.drawPixelsInto(x, l, l.maskPx, vp);
+        }
+    } else {
+        x.drawImage(editor.layerPixels(l), 0, 0, w, h);
+    }
     const bytes = await canvasBytes(c);
     c.width = c.height = 0;
     return bytes;
 }
 
-/** A row's pixels at its size in the document and the PNG that stores them: the answer's own bytes when no scale was needed. */
-async function readyRow(editor, row, bytes, img, deps) {
+/**
+ * A row's pixels at its size in the document and the PNG that stores them (bytes or a Blob; null: none, the layer is
+ * uploaded at the next save): the answer's own bytes when no scale was needed. On tiles a scaled row is drawn into its
+ * tiles in strips and its PNG written from them by the pool (`deps.pixelsPng`): a row-size canvas on the window would be
+ * 600 MB at 15000 x 10000, and above the canvas limit it holds nothing and its PNG is null, after the run was paid.
+ */
+export async function readyRow(editor, row, bytes, img, deps) {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     if (iw === row.w && ih === row.h) {
         const png = row.entry.mime === "image/png" ? bytes : await deps.canvasBytes(canvasOf(img, iw, ih));
         return { px: editor.pixels.Layer.fromImage(img), png };
+    }
+    if (editor.tileMode) {
+        const px = editor.pixels.Layer.fromImage(img, row.w, row.h);
+        return { px, png: deps.pixelsPng ? await deps.pixelsPng(px) : null };
     }
     const c = canvasOf(img, row.w, row.h);
     return { px: editor.pixels.Layer.fromCanvas(c), png: await deps.canvasBytes(c) };   // the canvas backend's layer keeps `c`
@@ -305,8 +328,10 @@ async function prepare(app, editor, res, job, gone, deps) {
         const { px, png } = await readyRow(editor, row, bytes, img, deps);
         // stored as a result is, so a save holds the layer; when the mirror fails, an unsaved layer, which a save uploads
         let ref = null;
-        try { ref = await app.uploadResult(new Blob([png], { type: "image/png" }), `n${editor.node.id}_split_${stamp}_${i}.png`); }
-        catch (err) { console.warn("a split layer stays unsaved until the next save", err); }
+        if (png) {
+            try { ref = await app.uploadResult(new Blob([png], { type: "image/png" }), `n${editor.node.id}_split_${stamp}_${i}.png`); }
+            catch (err) { console.warn("a split layer stays unsaved until the next save", err); }
+        }
         if (gone()) return null;
         made.push({ row, px, ref });
     }

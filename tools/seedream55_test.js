@@ -474,6 +474,21 @@ async function main() {
             tall.fitted && eq(tall.box, { x: 100 + Math.round((3000 - 1367) / 2), y: 50, w: 1367, h: 2000 }) && wide.fitted && eq(wide.box, { x: 100, y: 50 + Math.round((2000 - 1025) / 2), w: 3000, h: 1025 })
             && Math.abs(tall.box.w / tall.box.h - 1400 / 2048) < 0.002 && Math.abs(wide.box.w / wide.box.h - 2048 / 700) < 0.003, short([tall, wide]));
         check("a layer without a position covers the source like the base, is named by its place and listed in `whole`; a boxed one lands from its box", eq([plan.rows[1].x, plan.rows[1].y, plan.rows[1].w, plan.rows[1].h], [50, 40, 2000, 1000]) && plan.rows[1].name === "Layer 1" && eq(plan.whole, ["Layer 1"]) && eq([plan.rows[2].x, plan.rows[2].y, plan.rows[2].w, plan.rows[2].h], [250, 140, 400, 400]) && !plan.leftOut.length, short(plan));
+        // (split-landing-full-canvas) a 2K answer scaled up to a 20000 x 15000 document on tiles: drawn into its tiles at
+        // the row's size and its PNG written by the pool, never a row-size canvas (above the limit it holds nothing and
+        // its PNG was null after the run was paid). Node has no `document`: a canvas made here throws.
+        const asked = [];
+        const tiled = { tileMode: true, pixels: { Layer: { fromImage: (img, w, h) => (asked.push(["image", w, h]), { width: w, height: h }), fromCanvas: () => { throw new Error("a row-size canvas"); } } } };
+        const img2k = { naturalWidth: 2048, naturalHeight: 1536 };
+        const pngBlob = { blob: true };
+        let ready = null, err = null;
+        try { ready = await split.readyRow(tiled, { entry: { mime: "image/png" }, w: 20000, h: 15000 }, new Uint8Array(4), img2k, { canvasBytes: () => { throw new Error("canvasBytes"); }, pixelsPng: async (px) => (asked.push(["png", px.width, px.height]), pngBlob) }); }
+        catch (e) { err = e; }
+        check("a scaled split layer on tiles: its tiles from the answer at the row's size, its PNG from the pool, no canvas on the window", !err && ready && ready.px.width === 20000 && ready.px.height === 15000 && ready.png === pngBlob && eq(asked, [["image", 20000, 15000], ["png", 20000, 15000]]), err ? String(err.message) : short(asked));
+        let noPool = null;
+        try { noPool = await split.readyRow(tiled, { entry: { mime: "image/png" }, w: 20000, h: 15000 }, new Uint8Array(4), img2k, { canvasBytes: () => { throw new Error("canvasBytes"); }, pixelsPng: async () => null }); }
+        catch (e) { noPool = e; }
+        check("without the pool the layer still lands, without a PNG (it is uploaded at the next save)", noPool && !(noPool instanceof Error) && noPool.png === null && noPool.px.width === 20000, short(noPool && noPool.message || noPool));
     });
 
     const failed = results.filter((x) => !x).length;

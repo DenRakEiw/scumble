@@ -149,7 +149,7 @@ async function run(req, { verb = "edit", polls = [[200, READY]], pollingUrl = "h
     let out = null, err = null;
     try { out = await bfl[verb]({ ...req }, context); } catch (e) { err = String(e && e.message || e); }
     if (body && flux3.isFlux3(req, req.model) && !(req.options && req.options.images_field)) F3_BODIES.push(body);
-    return { out, err, calls, body };
+    return { out, err, calls, body, context };
 }
 const tagsOf = (list) => (Array.isArray(list) ? list.map(tagOfB64) : list);
 const polled = (x) => x.calls.filter((c) => c.url.includes("get_result")).length;
@@ -346,7 +346,8 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     x = await run(editReq(), { polls: [[503, { detail: "upstream" }], [429, { detail: "slow down" }], [200, READY]] });
     check("503 and 429 without a status body are retried (the job is paid for); then Ready", !x.err && x.out && polled(x) === 3, x.err || short(x.calls.map((c) => c.url)));
     x = await run(editReq(), { polls: [[503, { detail: "upstream" }]] });
-    check("a gateway that stays broken gives up after five retries with the status", x.err && /^BFL poll: HTTP 503/.test(x.err) && polled(x) === 6, x.err);
+    // (handrolled-pollers) a paid job's status reads without an answer go on for the gap window (util.pollWatch), not 5 tries
+    check("a gateway that stays broken gives up after the gap window (2 minutes, not five retries) with the status and the task", x.err && /^BFL poll: HTTP 503/.test(x.err) && /\(task t1\); no answer for \d+ s, the job may still finish and be charged/.test(x.err) && polled(x) > 6, x.err + " polls " + polled(x));
     x = await run(editReq(), { polls: [[404, { detail: [{ msg: "Field required" }] }]] });
     check("a 404 without a status body (a validation answer) is not retried", x.err && /^BFL poll: HTTP 404/.test(x.err) && polled(x) === 1, x.err);
     x = await run(editReq(), { polls: [[200, { status: "Request Moderated", details: { "Moderation Reasons": ["Derivative Works Filter"] } }]] });
@@ -362,7 +363,18 @@ const NEVER = ["mode", "seed", "width", "height", "reference_images", "mask", "i
     x = await run(editReq(), { polls: [[0, "THROW"], [200, "HTML"], [200, READY]] });
     check("a dropped connection and a gateway page that is no JSON are retried (the job is paid for); then Ready", !x.err && x.out && polled(x) === 3, x.err || short(x.calls.map((c) => c.url)));
     x = await run(editReq(), { polls: [[0, "THROW"]] });
-    check("a connection that stays down gives up after five retries", x.err && /^BFL poll: read ECONNRESET/.test(x.err) && polled(x) === 6, x.err);
+    check("a connection that stays down gives up after the gap window, naming the task", x.err && /^BFL poll: read ECONNRESET/.test(x.err) && x.err.includes("(task t1)") && polled(x) > 6, x.err + " polls " + polled(x));
+    {
+        // a machine that slept past the 15 minutes: the first read on waking fails (the Wi-Fi not back yet), the next one
+        // finds the finished job, and the job is marked done before its download
+        const realNow = Date.now;
+        let clock = realNow(), slept = false;
+        Date.now = () => clock;
+        try {
+            x = await run(editReq(), { polls: [[0, "THROW"], [200, READY]], ctx: { sleep: async () => { if (!slept) { slept = true; clock += 20 * 60 * 1000; } } } });
+        } finally { Date.now = realNow; }
+        check("a sleep past the run's time: a failed read on waking is read again, the finished job lands, marked done before the download", !x.err && x.out && polled(x) === 2 && x.context.jobDone === true, x.err || String(polled(x)));
+    }
     x = await run(editReq(), { downloadFails: 2 });
     check("a failed download of the result is tried again (twice)", !x.err && x.out && x.calls.filter((c) => c.url.includes("delivery")).length === 3, x.err);
     x = await run(editReq(), { downloadFails: 3 });

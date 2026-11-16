@@ -38,7 +38,7 @@
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { fetchImage, sleep: realSleep, closestAspect, pngSize, seedOf, tierFor, textShape, blackEditMask } = require("./util");
+const { fetchImage, sleep: realSleep, closestAspect, pngSize, seedOf, tierFor, textShape, blackEditMask, pollWatch, readTimedOut } = require("./util");
 const { picturesFor } = require("./comfyrouter")._shared;
 const { layoutOf, refRoles, instruction } = require("./refs");
 
@@ -570,32 +570,45 @@ async function submit(ctx, url, route, body) {
 
 /** Status reads every 3 s on <route>/<id> until the task is done; the finished task. */
 async function poll(ctx, url, route, id, task, waitMs) {
-    const t0 = ctx.now();
+    // the run's time counts after an answered read (a machine that slept past it reads first), and reads without an
+    // answer (a dropped connection, a 429 / 5xx, a body that is no task) go on for the gap window in a row (util.pollWatch)
+    const watch = pollWatch(waitMs, ctx.now);
     let failures = 0;
-    const tooMany = () => new Error(`Magnific ${route}: status reads failed ${POLL_FAILURES_MAX} times in a row; the task (${id}) may still finish and be billed on Magnific's side.`);
+    const missed = (why) => {
+        ctx.log(`status read failed (${why})`);
+        failures++;
+        const g = watch.missed();
+        if (failures >= POLL_FAILURES_MAX && g >= watch.gapMs) throw new Error(`Magnific ${route}: status reads failed ${failures} times in a row over ${Math.round(g / 1000)} s; the task (${id}) may still finish and be billed on Magnific's side.`);
+    };
     while (task.status !== "COMPLETED") {
         if (task.status === "FAILED") throw new Error(`Magnific ${route}: the task failed (${id}); Magnific names no reason (a safety filter, a picture it could not read, or a fault on its side).`);
-        if (ctx.now() - t0 > waitMs) throw new Error(`Magnific ${route}: no answer after ${Math.round(waitMs / 60000)} minutes (task ${id}); it may still finish and be billed on Magnific's side.`);
-        await ctx.sleep(POLL_MS);
-        let s;
+        if (watch.late) throw new Error(`Magnific ${route}: no answer after ${Math.round(waitMs / 60000)} minutes (task ${id}); it may still finish and be billed on Magnific's side.`);
+        const wait = failures ? Math.max(POLL_MS, watch.backoff(failures)) : POLL_MS;
+        await ctx.sleep(wait);
+        watch.paused(wait);
+        let s, j;
+        const sig = watch.read();
         try {
-            s = await send(ctx, `${url}/${id}`, { headers: { "x-magnific-api-key": ctx.key } });
+            s = await send(ctx, `${url}/${id}`, { headers: { "x-magnific-api-key": ctx.key }, signal: sig });
+            if (s.ok) j = await s.json().catch(() => null);
         } catch (err) {
-            ctx.log(`status read failed (${scrub((err && err.message) || err, ctx.key)})`);
-            if (++failures >= POLL_FAILURES_MAX) throw tooMany();
+            if (ctx.signal && ctx.signal.aborted) throw err;
+            missed(readTimedOut(err, sig, ctx) ? "the read timed out" : scrub((err && err.message) || err, ctx.key));
             continue;
         }
         if (s.status >= 500 || s.status === 429) {
             // a rate limit on a status read does not end a task that is already made (and billed); read again later
-            ctx.log(`status read answered ${s.status}`);
-            if (++failures >= POLL_FAILURES_MAX) throw tooMany();
+            missed(`answered ${s.status}`);
             continue;
         }
         if (!s.ok) throw new Error(scrub(`Magnific ${route} status: ${await readFailure(s, ctx.key)}`, ctx.key));
+        // a 200 that is no task (a gateway's page, a body cut short) is a read without an answer, not a task with no status
+        if (!j || typeof j !== "object" || !j.data || typeof j.data !== "object" || typeof j.data.status !== "string") { missed("a status that is no task"); continue; }
         failures = 0;
-        const j = (await s.json().catch(() => null)) || {};
-        task = j.data || {};
+        watch.answered();
+        task = j.data;
     }
+    if (ctx.caller) ctx.caller.jobDone = true;   // finished and charged: a Cancel during the download says so
     return task;
 }
 
@@ -652,8 +665,10 @@ function bodyFor(req, route) {
 // ---- runs ------------------------------------------------------------------------------------------------------
 
 async function run(req, ctx, kind) {
-    // ctx.sleep and ctx.now are injectable so the tests wait in milliseconds
-    ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}), now: ctx.now || Date.now };
+    // ctx.sleep and ctx.now are injectable so the tests wait in milliseconds; `caller` the context index.js reads the
+    // Cancel's words from (jobDone)
+    const caller = ctx;
+    ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}), now: ctx.now || Date.now, caller };
     const route = routeOf(req.model);
     const R = own(ROUTES, route) ? ROUTES[route] : null;
     if (kind === "upscale" && !(R && R.upscale)) throw new Error(`Magnific: no upscaler route "${route}" (${Object.keys(ROUTES).filter((k) => ROUTES[k].upscale).join(", ")}).`);
