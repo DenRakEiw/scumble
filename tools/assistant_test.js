@@ -4359,9 +4359,33 @@ async function main() {
         const marker = saved.history[1].content[0].content[0].source.data;   // "$image:<n>.jpg|<prefix>"
         fs.rmSync(path.join(store.folder("ctest1"), marker.slice("$image:".length).split("|")[0]));
         const gone = await store.load("ctest1");
+        const goneBlock = gone.history[1].content[0].content[0];
         check("a_missing_picture_becomes_a_line",
-            /no longer attached/.test(gone.history[1].content[0].content[0].source.data),
-            short(gone.history[1].content[0].content[0].source.data));
+            goneBlock.type === "text" && /no longer attached/.test(goneBlock.text) && !goneBlock.source,
+            short(goneBlock));
+
+        // review of 2026-11-16: long strings that only look like base64 come back as they were, and a lost Gemini
+        // picture leaves its functionResponse without the part (a text part there is refused), as prune does
+        {
+            const paths = Array.from({ length: 40 }, (_, i) => `foo/bar${i}`).join("\n");
+            const sig = "Ab9+/".repeat(61) + "Ab";                 // 307 characters, no padding: not canonical
+            const odd = { id: "codd", provider: "openai", family: "responses", created: 1, history: [
+                { type: "reasoning", encrypted_content: sig },
+                { role: "user", content: [{ type: "input_text", text: paths }] },
+                { role: "user", parts: [{ functionResponse: { id: "g1", name: "screenshot", response: { ok: true, screenshot: { $ref: "shot" } }, parts: [{ inlineData: { mimeType: "image/jpeg", data: big, displayName: "shot" } }] } }] },
+            ] };
+            await store.save(odd, { events: [] });
+            const kept = fs.readdirSync(store.folder("codd"));
+            const b1 = await store.load("codd");
+            const textsKept = b1.history[0].encrypted_content === sig && b1.history[1].content[0].text === paths && kept.length === 1;
+            fs.rmSync(path.join(store.folder("codd"), kept[0]));
+            const b2 = await store.load("codd");
+            const fr = b2.history[2].parts[0].functionResponse;
+            check("base64_lookalikes_round_trip_and_a_lost_gemini_picture_leaves_its_part",
+                textsKept && !fr.parts && !fr.response.screenshot && /no longer attached/.test(fr.response.screenshot_removed),
+                JSON.stringify({ textsKept, files: kept, fr: short(fr) }));
+            await store.remove("codd");
+        }
 
         // a file that does not parse is a row with a delete button
         fs.writeFileSync(path.join(store.chats, "cbroken.json"), "{not json");

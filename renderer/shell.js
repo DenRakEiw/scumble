@@ -969,10 +969,13 @@ ui.setTiles.addEventListener("change", async () => {
     await renderTileMode();
 });
 ui.setTilesRestart.addEventListener("click", async () => {
-    const working = host.editors().filter(busy);
+    // a render on the user's ComfyUI holds no busy flag while it runs: its result would be lost too
+    const working = host.editors().filter((ed) => busy(ed) || localRendering(ed));
     if (working.length && !(await dialogs.confirm(`${working.length === 1 ? "A document is" : working.length + " documents are"} still working. Restart anyway?`, { ok: "Restart", danger: true }))) return;
     ui.setTilesRestart.disabled = true;
     try {
+        // a .scumble save in flight first: main's relaunch quits without waiting on it, and that quit aborts it
+        await host.docSavesIdle();
         await saveBeforeRestart((text) => { ui.setTilesNote.textContent = text; });
         await window.scumble.relaunch();
     } catch (err) {
@@ -1450,22 +1453,41 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
         const ed = editorOf(args && args.doc);
         if (ed && docSummary(ed).busy) return reply({ ok: false, error: "the document is busy: a run is in progress; nothing was run" });
     }
+    let turnTaken = false, undoSnap = null, turnEd = null, mark = null;
     if (meta && meta.turn) {
         // the turn's snapshot of this document (A7), taken once per turn and document, and the
         // editor's own undo step for the calls the commands record none for. No await from here
-        // to commands.call: what they hold is the state the command is about to change.
-        snapshotTurn(meta, args && args.doc);
-        if (meta.undo && meta.undo.kind) {
-            const ed = editorOf(args && args.doc);
-            if (ed && typeof ed.pushUndo === "function") {
-                // labelled by the command, so the Undo history says what the assistant did
-                const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
-                try { ed.pushUndo(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id, label } : { kind: meta.undo.kind, label }); }
-                catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
-            }
+        // to commands.call: what they hold is the state the command is about to change. The step
+        // goes on the stack only once the call did something: one a command refused (a bad argument,
+        // a missing layer) would have thrown the redo steps away and left an empty step behind.
+        turnEd = editorOf(args && args.doc);
+        if (turnEd) mark = [turnEd.historyGen, turnEd.compositeVersion, turnEd.undo && turnEd.undo.length];
+        turnTaken = snapshotTurn(meta, args && args.doc) === "taken";
+        if (meta.undo && meta.undo.kind && turnEd && typeof turnEd.snapshot === "function" && turnEd.sel) {
+            // labelled by the command, so the Undo history says what the assistant did
+            const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
+            try { undoSnap = turnEd.snapshot(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id, label } : { kind: meta.undo.kind, label }); }
+            catch (err) { console.warn("assistant: the undo step could not be taken", err); }
         }
     }
-    reply(await commands.call(name, args || {}));
+    const res = await commands.call(name, args || {});
+    if (turnEd) {
+        const changed = !!(res && res.ok) || !mark
+            || turnEd.historyGen !== mark[0] || turnEd.compositeVersion !== mark[1] || (turnEd.undo && turnEd.undo.length) !== mark[2];
+        if (undoSnap) {
+            try {
+                if (changed) {
+                    // below any step the command pushed itself, where it would have been had it gone on first
+                    const own = Math.max(0, (turnEd.undo ? turnEd.undo.length : 0) - (mark ? mark[2] : 0));
+                    turnEd.pushUndoSnapshot(undoSnap);
+                    if (own > 0) { const s = turnEd.undo.pop(); turnEd.undo.splice(turnEd.undo.length - own, 0, s); turnEd.historyChanged(); }
+                } else turnEd.releaseSnapshot(undoSnap);
+            } catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
+        }
+        // a turn's first call that changed nothing keeps no snapshot: Undo this turn is for a turn that did something
+        if (turnTaken && !changed && turnEd.node) forgetDocument(turnEd.node.id);
+    }
+    reply(res);
 });
 
 // ---- start: the skin, plugins, restore the last session, then connect ----------------------
@@ -1673,17 +1695,29 @@ async function openCloudResults(pictures) {
         }
         await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
         if (!ed.base) {
-            ed.setStatus(!p.provider
+            // as a split that did not open: the empty tab goes (the autosave would bring it back at every start), and
+            // the words go where the user looks
+            const said = !p.provider
                 ? `${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`
-                : `${ed.status} This ${provLabel} result${earlier ? " of an earlier run" : ""} could not be opened; Scumble tries its kept file again at the next start.`, "error");
+                : `${ed.status} This ${provLabel} result${earlier ? " of an earlier run" : ""} could not be opened; Scumble tries its kept file again at the next start.`;
+            await closeDocument(ed, { force: true, remember: false });
+            if (host.editor) host.editor.setStatus(said, "error");
             continue;
         }
+        // the kept file stays the durable copy until the document is: its picture stored, then the session saved
+        let durable = false;
+        try {
+            await host.flushEditor(ed);
+            durable = !!(ed.base && ed.base.ref);
+            if (durable) await window.scumble.state.save(JSON.stringify(host.bundle()));
+        } catch (err) { durable = false; console.warn("a kept result's document could not be stored yet", err); }
         const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
         const model = p.model || provLabel;
         ed.setStatus(earlier
             ? `${article} ${provLabel} result ${isComfy ? "that came in after Scumble closed" : "kept from an earlier session"} (${model}, started ${when}): opened as a document of its own.`
-            : `${article} ${provLabel} result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`);
-        try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ }
+            : `${article} ${provLabel} result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`
+            + (durable ? "" : " It could not be stored yet: the kept file stays, so the next start opens it again."), durable ? "info" : "warn");
+        if (durable) { try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ } }
         opened.push(ed);
         labels.add(provLabel);
         if (!earlier) allEarlier = false;

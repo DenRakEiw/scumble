@@ -246,14 +246,18 @@ function generations(dir) {
 function walkRefs(v, keys) {
     if (!v || typeof v !== "object") return;
     if (Array.isArray(v)) { for (const x of v) walkRefs(x, keys); return; }
-    if (typeof v.filename === "string") keys.add(`${v.type || "input"}/${v.subfolder || ""}/${v.filename}`);
+    // the subfolder as the mirror's own walk joins it (files.js mirrorPath, prune): backslashes and empty parts away
+    const sub = String(v.subfolder || "").replace(/\\/g, "/").split("/").filter((s) => s && s !== "." && s !== "..").join("/");
+    if (typeof v.filename === "string") keys.add(`${v.type || "input"}/${sub}/${v.filename}`);
     for (const x of Object.values(v)) walkRefs(x, keys);
 }
 
-/** The mirror keys the earlier generations name, which pruning the mirror must keep. */
+/** The mirror keys the autosave and its earlier generations name, which pruning the mirror must keep. The current
+ *  file counts too: when the window did not restore it (it could not be read at the start), it is still the session
+ *  the next start opens, and one that cannot be read now stops the clean-up as a generation's does. */
 function referencedKeys(dir) {
     const keys = new Set();
-    for (const g of GENERATIONS) {
+    for (const g of [{ file: FILE }, ...GENERATIONS]) {
         const r = readState(path.join(dir, g.file));
         if (r.status === "error") throw r.error;
         const s = r.data;

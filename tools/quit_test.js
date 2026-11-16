@@ -128,7 +128,15 @@ function bundle(tag, pics, empty = 0) {
         await check("the_generations_name_their_mirror_files", () => {
             const keys = autosave.referencedKeys(dir);
             for (const k of ["input/inpaint_canvas/a_layer_1.png", "input/inpaint_canvas/b_base_0.png", "input/inpaint_canvas/d_layer_0.png", "input/inpaint_canvas/f_layer_0.png"]) assert(keys.includes(k), "missing " + k + ": " + keys.join(", "));
-            assert(!keys.some((k) => /^input\/inpaint_canvas\/c_/.test(k)), "the current autosave's files are counted as a generation's");
+            assert(!keys.some((k) => /^input\/inpaint_canvas\/c_/.test(k)), "a state no file holds any more is counted");
+            // review of 2026-11-16: the current autosave counts too (a session the window did not restore), and a
+            // subfolder written with backslashes or doubled slashes names the mirror's own key
+            const cur = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-refs-"));
+            const ref = { filename: "z.png", subfolder: "inpaint_canvas\\sub//", type: "input" };
+            autosave.save(cur, JSON.stringify({ version: 2, active: 1, nextId: 2, docs: [{ id: 1, state: JSON.stringify({ base: { ref } }) }] }));
+            const curKeys = autosave.referencedKeys(cur);
+            fs.rmSync(cur, { recursive: true, force: true });
+            assert(curKeys.includes("input/inpaint_canvas/sub/z.png"), "the current autosave's files are not kept as the mirror names them: " + curKeys.join(", "));
             return `${keys.length} keys`;
         });
         await check("stores_fsync_retry_busy_and_keep_damaged_files", () => {
@@ -460,8 +468,9 @@ function bundle(tag, pics, empty = 0) {
             assert(run >= 0 && install > run, "the install does not come after the awaited save");
             const io = bodyAfter(main, /function installOrReset\(\) /);
             assert(io && /const ok = updater\.install\(\);/.test(io) && /if \(!ok\) \{[^}]*quitGuard\.reset\(\)/.test(io) && /if \(!quitting\) \{[^}]*quitGuard\.reset\(\)/.test(io), "an install that does not quit leaves the guard latched");
-            const r = bodyAfter(main, /ipcMain\.handle\("app:relaunch", \(\) => /);
+            const r = bodyAfter(main, /ipcMain\.handle\("app:relaunch", async \(\) => /);
             assert(r && r.indexOf("quitGuard.release()") >= 0 && r.indexOf("quitGuard.release()") < r.indexOf("installOrReset()"), "a restart does not release the guard before it installs");
+            assert(r.indexOf("await documents.idle()") >= 0 && r.indexOf("await documents.idle()") < r.indexOf("quitGuard.release()"), "a restart does not wait for a .scumble save before it quits");
             return "save, then install";
         });
         await check("a_crashed_window_is_reloaded_and_a_windowed_start_rotates", () => {

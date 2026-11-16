@@ -7,6 +7,7 @@ import { refusal } from "./inpaint_status.js";
 import { promptPayload } from "./boxes_model.js";
 import { syncAreaButton } from "./eacharea.js";
 import { CLOSED_MAX, api, plainObject } from "./host_util.js";
+import { settleMark } from "./host_documents.js";
 
 export const HostSetupPart = {
     toolChanged(editor, tool, prev) {
@@ -225,6 +226,7 @@ export const HostSetupPart = {
         if (bundle && Array.isArray(bundle.closed)) this.closed = bundle.closed.filter((c) => c && typeof c.state === "string" && c.state.length > 2).slice(-CLOSED_MAX);
         let any = false;
         const settle = [];
+        if (this.watchUserInput) this.watchUserInput();
         this._restoring++;
         try {
             for (const doc of docs) {
@@ -238,7 +240,8 @@ export const HostSetupPart = {
                 ed.pluginData = plainObject(doc.plugins) ? JSON.parse(JSON.stringify(doc.plugins)) : {};
                 ed.docExtra = plainObject(doc.extra) ? { ...doc.extra } : {};
                 try { await ed.setValue(doc.state); this.keepRecipeMode(ed); } catch (err) { console.warn("restore from the mirror failed", err); }
-                if (ed.base && ed.docFile) settle.push(ed);
+                // the tab is live from here while later tabs load: settleKey compares against this mark
+                if (ed.base && ed.docFile) { ed._settleFrom = settleMark(ed); settle.push(ed); }
                 if (ed.base) { ed.setStatus("Last session restored."); any = true; }
                 else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store).", "warn"); }
             }

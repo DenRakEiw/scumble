@@ -134,15 +134,17 @@ export class Document {
     /**
      * Write ImageData into a layer (its own pixels; the size must match, or the pixels are
      * replaced and the layer keeps its placement). One undo step. Filter and locked layers
-     * refuse.
+     * refuse, but a Deep paint layer, whose pixels are its paint (at its own size).
      */
     setPixels(layerKey, imageData, { undo = true } = {}) {
         this._need();
         const l = findLayer(this.editor, layerKey);
-        if (l.kind === "filter") throw new Error(`${l.name} is a filter layer`);
+        // a Deep paint layer's px is its paint (hasOwnPixels): written as a pixel layer's
+        if (l.kind === "filter" && !(typeof this.editor.hasOwnPixels === "function" && this.editor.hasOwnPixels(l))) throw new Error(`${l.name} is a filter layer`);
         if (l.locked) throw new Error(`${l.name} is locked`);
         if (!imageData || !imageData.width || !imageData.data) throw new Error("setPixels needs an ImageData");
         const same = l.px.width === imageData.width && l.px.height === imageData.height;
+        if (l.kind === "filter" && !same) throw new Error(`${l.name} takes pixels of its own size, ${l.px.width} x ${l.px.height}`);
         if (undo) this.editor.pushUndo({ kind: same ? "layer" : "layerfull", id: l.id, label: "Plugin" });
         // another size replaces the pixels with a new object (the layerfull step holds the old one)
         if (same) l.px.writeRect(imageData, 0, 0);
@@ -251,15 +253,17 @@ export class Document {
         if (layerKey != null && layerKey !== "") {
             const ed = this.editor;
             const l = findLayer(ed, layerKey);
+            const own = l.kind === "filter" && typeof ed.hasOwnPixels === "function" && ed.hasOwnPixels(l);
             if (l.kind === "filter") ed.markFilterChanged(l);
-            else {
+            // a Deep paint layer's px is its paint: stored and uploaded as a pixel layer's
+            if (l.kind !== "filter" || own) {
                 l.ref = null; l._fcache = null;
                 ed.markLayerChanged(l);
-                // also with no mask: a mask removed through rawLayer (maskPx = null) drops its
-                // upload ref here, as the editor's removeMask does
-                if (!l.maskPx) l.maskEdit = false;
-                ed.markMaskChanged(l);
             }
+            // also with no mask: a mask removed through rawLayer (maskPx = null) drops its upload ref
+            // here, as the editor's removeMask does; a filter layer's mask too
+            if (!l.maskPx) l.maskEdit = false;
+            ed.markMaskChanged(l);
         }
         // a raw change may have hidden, shown or re-roled a reference: the prompt's @img tokens follow (docs/PLAN_REFS.md C2)
         if (this.editor.refsMutated) this.editor.refsMutated();

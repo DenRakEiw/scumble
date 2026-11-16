@@ -5231,6 +5231,18 @@ async function pngCases(ref, label, js) {
 async function pngPartCases(px, label, js) {
     const zlib = require("node:zlib");
     const png = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_png.js")).href);
+    {   // a PLTE / tRNS header claiming gigabytes is refused before anything is allocated for it
+        let said = "";
+        for (const [code, kind] of [[[80, 76, 84, 69], "PLTE"], [[116, 82, 78, 83], "tRNS"]]) {
+            const b = new Uint8Array(41), dv = new DataView(b.buffer);
+            b.set([137, 80, 78, 71, 13, 10, 26, 10]); dv.setUint32(8, 13); b.set([73, 72, 68, 82], 12);
+            dv.setUint32(16, 20000); dv.setUint32(20, 20000); b[24] = 8; b[25] = 3;
+            dv.setUint32(33, 0x70000000); b.set(code, 37);
+            try { await png.readPng(new Blob([b]), { onRows: async () => {} }); said += `${kind}: read; `; }
+            catch (e) { if (!/damaged/.test(e.message)) said += `${kind}: ${e.message}; `; }
+        }
+        check(`${label} readPng refuses a PLTE / tRNS chunk longer than the spec allows`, !said, said);
+    }
     const w = 700, rows = [5, 1, 64, 30];
     const total = rows.reduce((a, b) => a + b, 0);
     const src = randomRGBA(w, total, 21);

@@ -10,7 +10,7 @@ import { refName, trimSlots } from "./comfyrefs.js";
 import { loraWords, spliceLoras } from "./loras.js";
 import { markStep } from "./inpaint_jobs.js";
 import { areaHint, areasSoon, sameRecipe } from "./eacharea.js";
-import { API_SIZES, AREA_RECIPE_CHANGED, AREA_STOPPED, CLOSED_MAX, RUN_GOING, SAVE_PIECE, api, aspectOf, boxesSchema, docMeta, hashString, kleinRun, listWords, notesKind, promptMissing, sentTexts, viaLine } from "./host_util.js";
+import { API_SIZES, AREA_RECIPE_CHANGED, AREA_STOPPED, CLOSED_MAX, RUN_GOING, SAVE_PIECE, api, aspectOf, boxesSchema, docMeta, kleinRun, stateKey, listWords, notesKind, promptMissing, sentTexts, viaLine } from "./host_util.js";
 
 export const HostQueuePart = {
     /**
@@ -525,7 +525,7 @@ export const HostQueuePart = {
             if (raw != null && ed.base) this._rawStates.delete(ed);        // it holds a picture of its own now
             else if (raw != null) { docs.push({ id: ed.node.id, state: raw, ...docMeta(ed, !!(ed.docFile && ed.docFile.clean)) }); continue; }
             try { state = ed.getValue(); } catch (err) { console.warn("getValue", err); }
-            if (ed.base) ed._stateKey = hashString(state);      // the dirty marker compares it with the file's (documentDirty)
+            if (ed.base) ed._stateKey = stateKey(ed, state);      // the dirty marker compares it with the file's (documentDirty)
             docs.push({ id: ed.node.id, state, ...docMeta(ed, !this.documentDirty(ed)) });
         }
         return { version: 2, active: this.editor ? this.editor.node.id : null, nextId: this.nextId, docs, closed: this.closed.slice(-CLOSED_MAX) };

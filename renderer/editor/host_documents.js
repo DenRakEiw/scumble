@@ -3,7 +3,12 @@
 
 import * as dialogs from "../dialogs.js";
 import { refusal } from "./inpaint_status.js";
-import { CLOSED_MAX, STATE_KEYS, docMeta, documentQuestion, fmtMB, hashString, normPath } from "./host_util.js";
+import { CLOSED_MAX, STATE_KEYS, docMeta, documentQuestion, fmtMB, normPath, stateKey } from "./host_util.js";
+
+/** What settleKey compares before and after its flush: the history and the user's own input on the tab. */
+export function settleMark(e) {
+    return [e.historyGen, e.undo && e.undo.length, e.undo && e.undo[e.undo.length - 1], e.redo && e.redo.length, e._userInputs || 0];
+}
 
 export const HostDocumentsPart = {
     // ---- .scumble documents (docs/PLAN_DOCUMENTS.md; the file is written and read in main, documents.js) -----------
@@ -89,21 +94,38 @@ export const HostDocumentsPart = {
      * one, so the tab starts clean even where the restored state serialises a little differently.
      */
     async settleKey(ed) {
+        this.watchUserInput();
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        // a restore marks each tab when its setValue is done (host_setup.js restore): a stroke on a restored tab while
+        // later tabs still load is after that mark
+        const before = ed._settleFrom || settleMark(ed);
+        delete ed._settleFrom;
         for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
         // the tab is live while the flush waits (seconds for a large selection's encode): an edit the user makes in that
         // time is in the state hashed below but not in the file, so its key is taken as the saved one only when the
-        // history did not move
-        const mark = (e) => [e.historyGen, e.undo && e.undo.length, e.undo && e.undo[e.undo.length - 1], e.redo && e.redo.length];
-        const before = mark(ed);
+        // history did not move and the user gave the tab no input (a prompt typed, a layer's switch, a guide dragged:
+        // edits that push no undo step)
         await this.flushEditor(ed, () => {}, "saving");
         if (!ed.base || !ed.docFile || !this._editors.includes(ed)) return;
-        const key = hashString(ed.getValue());
+        const key = stateKey(ed, ed.getValue());
         ed._stateKey = key;
-        const edited = mark(ed).some((v, i) => v !== before[i]);
+        const edited = settleMark(ed).some((v, i) => v !== before[i]);
         if (!edited && (!ed.docFile.key || ed.docFile.clean)) ed.docFile.key = key;
         delete ed.docFile.clean;
         if (this.onDocsChanged) this.onDocsChanged();
+    },
+
+    /** Count the user's own input (trusted pointer, key, typing, paste, drop) per tab, for settleKey; installed once. */
+    watchUserInput() {
+        if (this._inputWatched || typeof document === "undefined") return;
+        this._inputWatched = true;
+        const count = (e) => {
+            if (!e.isTrusted) return;
+            for (const ed of this._editors) {
+                if (ed.root && ed.root.contains(e.target)) { ed._userInputs = (ed._userInputs || 0) + 1; return; }
+            }
+        };
+        for (const type of ["pointerdown", "keydown", "input", "paste", "drop"]) document.addEventListener(type, count, true);
     },
 
     /**
@@ -243,13 +265,14 @@ export const HostDocumentsPart = {
                 if (ed._docCancel) throw Object.assign(new Error("the save was cancelled"), { kind: "cancelled" });
                 const r = this.recipe;
                 ed._docProgress.reqId = reqId;
+                const fileKey = stateKey(ed, state);   // with the plugin data as sent: a change during the write stays a change
                 const res = await window.scumble.documents.write({
                     reqId, path: target, document: state, plugins: ed.pluginData || {}, extra: ed.docExtra || {}, thumbnail, history: keep, recent: !copy,
                     summary: { name: name.replace(/\.scumble$/i, ""), width: ed.width, height: ed.height, layers: ed.layers.length },
                     recipe: r ? { id: r.id || null, provider: r.provider || null } : null,
                 });
                 if (!copy) {
-                    ed.docFile = { path: res.path, name: res.name, key: hashString(state), mtime: res.mtime, size: res.size, ...(keep ? {} : { history: false }) };
+                    ed.docFile = { path: res.path, name: res.name, key: fileKey, mtime: res.mtime, size: res.size, ...(keep ? {} : { history: false }) };
                     this.saveAll();                // the session keeps the tab's file (and bundle() the state's key)
                 }
                 ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s)${keep ? "" : ", without the result history"}.${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`, "info");
@@ -336,7 +359,7 @@ export const HostDocumentsPart = {
         const capture = () => {
             let state = null;
             try { state = ed.getValue(); } catch (err) { console.warn("closed tab", err); }
-            if (ed.base) ed._stateKey = state ? hashString(state) : null;
+            if (ed.base) ed._stateKey = state ? stateKey(ed, state) : null;
             return { id: ed.node.id, name: this.documentName(ed), time: Date.now(), state, ...docMeta(ed, !this.documentDirty(ed)) };
         };
         let entry = capture();
