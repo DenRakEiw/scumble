@@ -84,6 +84,20 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **0.1.57 is out (2026-11-16; the user: "ja").** main / wasm-kernels / surface-paint fast-forwarded to `quick-wins`
+  (`049ca536`), tag v0.1.57 on `62892954`, published 2026-11-16T13:52:27Z, title "Scumble 0.1.57: outpainting in one
+  step, layers that name themselves, and one Ctrl+Z per result"; the tag build green, the eight assets checked (the zip's
+  layout, the `.mcpb` 0.1.57 with 124 tools, `latest.yml`); the post `v0-1-57` live with the manual sync and hub 0.1.57
+  (`Portfolio_vercel` `44581d9`, Vercel success); the node's editor pushed from a clone (`ComfyUI-InpaintCanvas`
+  `41b4e8f..f7f278f`, no pyproject bump), `INPAINT_CANVAS_REF` moved (`3b3ab2f1`), `server.json` 0.1.57 (`049ca536`).
+  Before it: the whole review of 2026-11-16 (`docs/research/review_fable_2026-11-16/`, 138 confirmed) fixed for its 3
+  musts and the 19 shoulds on data, money and security (lanes X, Y, Z), the rest is item 73; exe gates `rel57-exe-*`
+  green but `openfile` (dev builds only) and four flakes green on the serial reruns `rel57-exe-r*`. **Open:** the MCP
+  Registry publish (`mcp-publisher validate` passed; three device codes timed out unconfirmed on 2026-11-16: run `login
+  github` with the user ready, then `publish`; the CLI is in session `2d41a0a1`'s scratchpad `mcppub/`, 1.8.1); the
+  Store update (`dist/Scumble-0.1.57.msix`, `dist/store-listing/whats-new-0.1.57.txt`, the user's upload); the three
+  locked agent worktrees under `.claude/worktrees/agent-*` (merged; remove after this session ends, their junctions
+  are gone already) and the branches `worktree-agent-*` (all merged). Branch `quick-wins` equals `main`.
 - **2026-11-16, the second round of 0.1.57 on `quick-wins` (the user: no hotfix, "direkt release wenn fertig"), all
   merged, `7dd83c44`, not pushed:** the morning's two live fixes (`9e6a125c` Seedream's seed on OpenRouter, `e723cf9f`
   Comfy Cloud's job links on another origin: every Cloud result had opened as a new document), the cancelled save's line
