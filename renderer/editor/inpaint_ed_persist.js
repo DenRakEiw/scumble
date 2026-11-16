@@ -114,6 +114,8 @@ export class PersistPart {
         this.lastValueString = raw;
         const token = (this._loadToken = (this._loadToken || 0) + 1);
         const stale = () => this._loadToken !== token;
+        // an open still under way (a large file decoding, an SVG's size dialog) is over: it would land over this document
+        this._openToken = (this._openToken || 0) + 1;
         this._loading = true;
         try {
             // E5: the files of a document larger than any canvas are PNGs the browser's decoder has nowhere to put; they

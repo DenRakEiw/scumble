@@ -44,6 +44,10 @@ export class OpenPart {
      * goes with the old one, as in loadFile (Generate new's own base, setBaseFromCanvas, keeps it: the run writes it).
      */
     async setBaseFromRef(ref) {
+        // a document still restoring would put its remaining layers over this picture (loadFile refuses the same way)
+        if (this._loading) throw new Error("The document is still loading: load the picture when it is in.");
+        // an open still decoding must not land over this one: the last picture asked for is the base
+        this._openToken = (this._openToken || 0) + 1;
         const before = this.base;
         try {
             if (TIFF_EXT.test(ref.filename || "")) {
@@ -171,6 +175,7 @@ export class OpenPart {
             if (await isTiffFile(file)) { await this.loadTiff(file, later); return; }
             if (isSvgFile(file)) {
                 const target = await this.svgTarget(file, { size, ask });
+                if (later()) return;   // a document opened into this tab while the size dialog was up
                 if (!target) { this.setStatus("Import cancelled."); return; }
                 this.setStatus(`Rasterising ${file.name || "the SVG"} at ${target.width} × ${target.height} ...`);
                 file = await rasterizeSvg(file, target);

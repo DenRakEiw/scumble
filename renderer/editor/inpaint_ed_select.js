@@ -1350,6 +1350,7 @@ export class SelectPart {
 
     /** Paste the clipboard as a new layer at the place it was copied from. */
     pasteClipboard() {
+        if (this._loading) { this.setStatus("The document is still loading: paste when it is in.", "info"); return null; }
         if (!this.clipboard) { this.setStatus("Nothing copied yet: Ctrl+C copies the selection, or the whole layer when nothing is selected."); return null; }
         if (!this.width) { this.setStatus("Load an image first."); return null; }
         this.pasteCounter = (this.pasteCounter || 0) + 1;

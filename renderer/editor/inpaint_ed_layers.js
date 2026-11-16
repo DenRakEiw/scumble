@@ -24,6 +24,8 @@ export class LayersPart {
     async addImageLayers(files, role = "reference", { place = "cascade", at = null, blank = false } = {}) {
         files = Array.from(files || []).filter((f) => f && ((f.type && f.type.startsWith("image/")) || LAYERED_EXT.test(f.name || "") || TIFF_EXT.test(f.name || "")));
         if (!files.length) return;
+        // a document still restoring (setValue) would put its remaining layers around these (loadFile refuses the same way)
+        if (this._loading) { this.setStatus("The document is still loading: add the pictures when it is in.", "info"); return; }
         if (!this.width && blank && role === "reference" && host.refTokens) {
             await this.newCanvas("1024x1024");
             if (!this.width) return;
