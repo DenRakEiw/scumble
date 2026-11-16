@@ -84,6 +84,19 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **2026-11-16 evening: the public texts brought up to 0.1.57, and a workflow clip for Lighthouse Academy's article.**
+  The clip (the user's key visual `Result.psd`, its 17 layers landing one by one in the Lighthouse Academy skin, a
+  motion composition around the app take): `dist/lighthouse/scumble_workflow.gif` (720 x 405, 17.2 s, 8.5 MB, for
+  Adam at Lighthouse), `scumble_workflow_1440.mp4`, and its sources in `dist/lighthouse/src` (`record.py` on
+  `docs/images/video/rec/recorder.py`, `comp.html`, `render_main.js` rendering frames in an offscreen Electron
+  window, `plan.json` the timing, `take/` the app take). The README's hero is its 680 x 383 encode
+  (`docs/images/readme/workflow.gif`, 5.6 MB; the old `hero.gif` stays in the repo, not shown). README, manual and
+  the GitHub Pages page follow 0.1.57 (`ce39fbf2`, gh-pages `52e557e7`); Seedream 5.5 has run live on Comfy Router
+  and OpenRouter (the user, `2722a0a4`); macOS reads "coming soon" (the user, `c2bf28d3`, gh-pages `d233e1e0`).
+  The merged branches `quick-wins`, `surface-paint` and `wasm-kernels` are deleted on GitHub and here (the user:
+  "räume auch die nicht genutzten branches auf"); GitHub keeps `main` and `gh-pages`, the checkout is on `main`.
+  **Open:** the website's copy of the manual is not synced (asked, no answer yet); short loops of the clip for
+  GIF sites (Klipy, GIPHY) are offered, the accounts would be the user's.
 - **0.1.57 is out (2026-11-16; the user: "ja").** main / wasm-kernels / surface-paint fast-forwarded to `quick-wins`
   (`049ca536`), tag v0.1.57 on `62892954`, published 2026-11-16T13:52:27Z, title "Scumble 0.1.57: outpainting in one
   step, layers that name themselves, and one Ctrl+Z per result"; the tag build green, the eight assets checked (the zip's
