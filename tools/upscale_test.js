@@ -287,7 +287,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("the key goes to fal's queue only, never to the file host", s.calls.filter((c) => c.headers.Authorization).every((c) => c.url.startsWith("https://queue.fal.run/")) && !s.calls.find((c) => c.url.startsWith("https://v3.fal.media")).headers.Authorization);
         check("the status was polled until COMPLETED", s.calls.filter((c) => c.url.endsWith("/status")).length === 3 && waits.length === 3, `${waits.length} waits`);
         const slow = scripted([
-            { match: (c) => c.method === "POST", answer: () => ({ status: "IN_QUEUE", status_url: "https://q/s", response_url: "https://q/r" }) },
+            { match: (c) => c.method === "POST", answer: () => ({ request_id: "r9", status: "IN_QUEUE", status_url: "https://queue.fal.run/x/requests/r9/status", response_url: "https://queue.fal.run/x/requests/r9" }) },
             { match: () => true, answer: () => ({ status: "IN_QUEUE" }) },
         ]);
         let clock = 0;
@@ -298,7 +298,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
             check("an upscale waits 30 minutes in fal's queue, not the edit's 15", t.ok, t.msg);
         } finally { Date.now = realNow; }
         const failed = scripted([
-            { match: (c) => c.method === "POST", answer: () => ({ status: "IN_QUEUE", status_url: "https://q/s", response_url: "https://q/r" }) },
+            { match: (c) => c.method === "POST", answer: () => ({ request_id: "r9", status: "IN_QUEUE", status_url: "https://queue.fal.run/x/requests/r9/status", response_url: "https://queue.fal.run/x/requests/r9" }) },
             { match: () => true, answer: () => ({ status: "FAILED", error: "image too large" }) },
         ]);
         const f = await throwsWith(() => fal.upscale(reqOf("topaz_precision", "fal"), { key: "k", fetch: failed.fetch, log: () => {}, sleep: async () => {} }), /image too large/);

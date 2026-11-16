@@ -39,11 +39,13 @@
 // upscale waits up to 30 minutes in the queue, not 15.
 "use strict";
 
-const { dataUri, downloadImage, pollJob, askStop, isAbort, scrub, readError, num, fitPixels, closestAspect, pngSize } = require("./util");
+const { dataUri, downloadImage, pollJob, askStop, keyedUrl, isAbort, scrub, readError, num, fitPixels, closestAspect, pngSize } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 
 const QUEUE = "https://queue.fal.run/";
+// where fal's job links may point (the key goes with every read of them)
+const FAL_HOSTS = ["fal.run", "fal.ai"];
 /** The routes that take an image list besides the text route (FLUX 3 names its own ".../edit-image"). */
 const EDIT_ROUTE = /\/edit(-image)?$/;
 
@@ -251,9 +253,14 @@ async function queued(model, input, ctx, waitMs) {
     const submit = await ctx.fetch(QUEUE + model, { method: "POST", headers, body: JSON.stringify(input) });
     if (!submit.ok) throw new Error(scrub(`fal.ai ${model}: ${await readError(submit, ctx.key)}`, ctx.key));
     const job = await submit.json();
-    const statusUrl = job.status_url, resultUrl = job.response_url, cancelUrl = job.cancel_url;
-    if (!statusUrl || !resultUrl) throw new Error("fal.ai answered without status_url / response_url: " + scrub(JSON.stringify(job), ctx.key).slice(0, 200));
-    const id = String(job.request_id || (/\/requests\/([^/?#]+)/.exec(String(statusUrl)) || [])[1] || statusUrl);
+    const cancelUrl = job.cancel_url;
+    if (!job.status_url || !job.response_url) throw new Error("fal.ai answered without status_url / response_url: " + scrub(JSON.stringify(job), ctx.key).slice(0, 200));
+    const id = String(job.request_id || (/\/requests\/([^/?#]+)/.exec(String(job.status_url)) || [])[1] || job.status_url);
+    // the key goes with every read: only to an https link on fal's own hosts, else the job's path on the queue it went to
+    // (fal's queue keeps a job under its app, the model's first two parts)
+    const own = job.request_id ? `${QUEUE}${String(model).split("/").slice(0, 2).join("/")}/requests/${encodeURIComponent(String(job.request_id))}` : null;
+    const statusUrl = keyedUrl(job.status_url, FAL_HOSTS, own && own + "/status"), resultUrl = keyedUrl(job.response_url, FAL_HOSTS, own);
+    if (!statusUrl || !resultUrl) throw new Error(`fal.ai answered with a status link off its own https hosts for request ${id}: Scumble does not send the key there.`);
     let ended = false, completed = false;
     let out;
     try {

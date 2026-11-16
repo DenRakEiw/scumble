@@ -1240,6 +1240,60 @@ async function main() {
         }
     });
 
+    await section("job links from the answer: the key only to https on the provider's own host (provider-refusals/unvalidated-poll-and-result-urls-leak-auth)", async () => {
+        check("keyedUrl: https on the host or a name under it passes; http, another host, a look-alike, user info and junk fall back",
+            util.keyedUrl("https://queue.fal.run/a/requests/1", ["fal.run"]) === "https://queue.fal.run/a/requests/1"
+            && util.keyedUrl("https://fal.run/x", ["fal.run"]) === "https://fal.run/x"
+            && util.keyedUrl("http://queue.fal.run/a", ["fal.run"], "FB") === "FB"
+            && util.keyedUrl("https://evil.example/a", ["fal.run"], "FB") === "FB"
+            && util.keyedUrl("https://evilfal.run/a", ["fal.run"], "FB") === "FB"
+            && util.keyedUrl("https://u:p@queue.fal.run/a", ["fal.run"], "FB") === "FB"
+            && util.keyedUrl("not a url", ["fal.run"], "FB") === "FB" && util.keyedUrl(null, ["fal.run"]) === null);
+        check("uploadUrlOk: https elsewhere passes; http, loopback, the local network and user info are refused",
+            util.uploadUrlOk("https://put.wavespeed.test/in.png") && util.uploadUrlOk("https://fcdn.example.com/x")
+            && !util.uploadUrlOk("http://put.wavespeed.test/in.png") && !util.uploadUrlOk("https://127.0.0.1/x") && !util.uploadUrlOk("https://localhost/x")
+            && !util.uploadUrlOk("https://192.168.1.5/x") && !util.uploadUrlOk("https://[::1]/x") && !util.uploadUrlOk("https://[fd00::1]/x") && !util.uploadUrlOk("https://a:b@put.wavespeed.test/x"));
+        const keyedTo = (log, key) => log.filter((c) => JSON.stringify(c.headers || {}).includes(key)).map((c) => c.url);
+        const recording = (inner, log, over) => async (url, init = {}) => {
+            log.push({ url: String(url), method: String(init.method || "GET").toUpperCase(), headers: init.headers });
+            const r = over && over(String(url), init);
+            return r || inner(url, init);
+        };
+        {
+            const g = makeFalRig({ submit: () => json(200, { request_id: "rq1", status: "IN_QUEUE", status_url: "http://queue.fal.run/m/requests/rq1/status", response_url: "https://evil.example/m/requests/rq1" }) });
+            const log = [];
+            g.ctx.fetch = recording(g.ctx.fetch, log);
+            const out = await fal.edit(g.req, g.ctx);
+            const sent = keyedTo(log, g.KEY);
+            check("fal.js: an http status link and an off-host result link are read on fal's queue under the app (fal-ai/flux-2), the key never leaves https://queue.fal.run",
+                Buffer.compare(out.bytes, PNG) === 0 && sent.every((u) => u.startsWith("https://queue.fal.run/")) && sent.includes("https://queue.fal.run/fal-ai/flux-2/requests/rq1/status") && sent.includes("https://queue.fal.run/fal-ai/flux-2/requests/rq1"), JSON.stringify(sent));
+        }
+        {
+            const g = makeReplicateRig({ submit: () => json(201, { id: "pred-rep-88", status: "starting", urls: { get: "http://api.replicate.com/v1/predictions/pred-rep-88" } }) });
+            const log = [];
+            g.ctx.fetch = recording(g.ctx.fetch, log);
+            await replicate.edit(g.req, g.ctx);
+            const sent = keyedTo(log, g.KEY);
+            check("replicate.js: an http get link is not used: the prediction is read at https://api.replicate.com/v1/predictions/<id>",
+                sent.length >= 2 && sent.every((u) => u.startsWith("https://api.replicate.com/")) && sent.includes("https://api.replicate.com/v1/predictions/pred-rep-88"), JSON.stringify(sent));
+        }
+        {
+            const g = makeWaveSpeedRig({ submit: () => json(200, { code: 200, data: { id: "ws-job-99", status: "processing", urls: { get: "https://evil.example/predictions/ws-job-99/result" } } }) });
+            const log = [];
+            let binary = 0;
+            g.ctx.fetch = recording(g.ctx.fetch, log, (u, init) => {
+                if (u.endsWith("/media/uploads")) return json(200, { code: 200, data: { download_url: "https://cdn.wavespeed.test/in.png", upload: { url: "http://put.wavespeed.test/in.png", method: "PUT" } } });
+                if (u.endsWith("/media/upload/binary")) { binary++; return json(200, { code: 200, data: { download_url: "https://cdn.wavespeed.test/in.png" } }); }
+                return null;
+            });
+            await wavespeed.edit(g.req, g.ctx);
+            const sent = keyedTo(log, g.KEY);
+            check("wavespeed.js: an off-host get link is not used (the result read at api.wavespeed.ai), and an http upload link gets no picture (the binary upload instead)",
+                sent.every((u) => u.startsWith("https://api.wavespeed.ai/")) && sent.includes("https://api.wavespeed.ai/api/v3/predictions/ws-job-99/result")
+                && !log.some((c) => c.url.startsWith("http://put.wavespeed.test")) && binary >= 1, JSON.stringify({ sent, binary }));
+        }
+    });
+
     await section("no key leaked in any error", async () => {
         const leaked = allErrors.filter((e) => KEYS.some((k) => e.includes(k)));
         check(`none of the ${allErrors.length} errors across all adapters contains an API key`, leaked.length === 0, leaked.join(" | "));

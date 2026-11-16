@@ -117,6 +117,34 @@ function allowedStopUrl(raw, host) {
 }
 
 /**
+ * A link a provider's answer handed back that the key will go to (a job's status or result): its href when it is https
+ * on one of `hosts` (the host itself or a name under it), with no user or password in it; else `fallback` (the job's own
+ * path built on the host the request went to, or null). An http link or one to another host never gets the key.
+ */
+function keyedUrl(raw, hosts, fallback = null) {
+    if (!raw || typeof raw !== "string") return fallback;
+    try {
+        const u = new URL(raw);
+        const h = u.hostname.toLowerCase();
+        if (u.protocol === "https:" && !u.username && !u.password && hosts.some((x) => h === x || h.endsWith("." + x))) return u.href;
+    } catch (_) { /* not a URL: the fallback */ }
+    return fallback;
+}
+
+/** An upload link a provider hands back for the user's bytes (a presigned PUT): https, no user or password, not this machine or the local network. */
+function uploadUrlOk(raw) {
+    try {
+        const u = new URL(String(raw || ""));
+        if (u.protocol !== "https:" || u.username || u.password) return false;
+        const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+        if (h === "localhost" || h.endsWith(".localhost") || h === "::1" || h === "0.0.0.0" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || (h.includes(":") && /^(f[cd]|fe80)/.test(h))) return false;
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
  * Asks a provider (fal.ai or Replicate) to stop an in-flight queued job via `globalThis.fetch` (read at call time,
  * since `ctx.fetch` refuses requests after Cancel). Sends the key only to `https://<host>`, with `redirect: "error"`,
  * `AbortSignal.timeout(10000)` and a `.catch` so a late or failed stop never becomes an unhandled rejection; waits at
@@ -556,4 +584,4 @@ function noKeyText(label, stale) {
         : `No API key for ${label}. Add it under Settings › API providers.`;
 }
 
-module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };
+module.exports = { dataUri, b64, fetchImage, downloadImage, pollJob, _times: TIMES, askStop, keyedUrl, uploadUrlOk, isAbort, retryAfterMs, scrub, readError, errorText, sleep, closestSize, closestAspect, editAspect, fitPixels, num, pngSize, seedOf, tierFor, checkRatio, withinBytes, textShape, blackEditMask, ideogramMask, noKeyText };

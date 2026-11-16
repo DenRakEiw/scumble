@@ -30,7 +30,7 @@
 // layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
-const { dataUri, downloadImage, pollJob, askStop, isAbort, scrub, readError, num, closestAspect, closestSize, editAspect, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
+const { dataUri, downloadImage, pollJob, askStop, keyedUrl, isAbort, scrub, readError, num, closestAspect, closestSize, editAspect, seedOf, textShape, ideogramMask, checkRatio, withinBytes } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
@@ -218,7 +218,8 @@ module.exports = {
                 id,
                 waitMs: 15 * 60 * 1000,
                 initial: pred,
-                url: (p) => (p.urls && p.urls.get ? p.urls.get : `${BASE}/predictions/${p.id}`),
+                // the key goes with every read: a get link only when it is https on api.replicate.com, else the prediction's own path
+                url: (p) => keyedUrl(p.urls && p.urls.get, ["api.replicate.com"], `${BASE}/predictions/${encodeURIComponent(String(p.id || id))}`),
                 headers: { Authorization: headers.Authorization },
                 delay: (p) => (p.status === "starting" ? 2000 : 1000),
                 parse: (j, prev) => {

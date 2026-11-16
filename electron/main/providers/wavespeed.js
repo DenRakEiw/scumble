@@ -57,7 +57,7 @@
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
-const { downloadImage, pollJob, scrub, readError, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask, pngSize } = require("./util");
+const { downloadImage, pollJob, keyedUrl, uploadUrlOk, scrub, readError, num, closestAspect, tierFor, checkRatio, withinBytes, ideogramMask, pngSize } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 const flux3 = require("./flux3");
 const openrouter = require("./openrouter");
@@ -85,12 +85,17 @@ async function upload(ctx, bytes, name, mime = "image/png") {
     if (ticket.ok) {
         const t = ((await ticket.json()) || {}).data || {};
         const up = t.upload || {};
-        if (t.download_url && up.url) {
-            const put = await ctx.fetch(up.url, { method: up.method || "PUT", headers: up.headers || { "Content-Type": mime }, body: bytes });
+        // the user's picture goes to the presigned link only over https and never to this machine or its network, as a PUT
+        // with plain string headers and no credentials of ours
+        const method = String(up.method || "PUT").toUpperCase();
+        if (t.download_url && up.url && uploadUrlOk(up.url) && method === "PUT") {
+            const given = up.headers && typeof up.headers === "object" && !Array.isArray(up.headers) ? up.headers : null;
+            const h = given ? Object.fromEntries(Object.entries(given).filter(([k, v]) => typeof v === "string" && !/^(authorization|cookie|proxy-authorization)$/i.test(k))) : { "Content-Type": mime };
+            const put = await ctx.fetch(up.url, { method: "PUT", headers: h, body: bytes });
             if (!put.ok) throw new Error(scrub(`WaveSpeed upload (${name}): ${await readError(put, ctx.key)}`, ctx.key));
             return t.download_url;
         }
-        ctx.log("upload ticket without download_url / upload.url, using the binary upload:", JSON.stringify(t).slice(0, 200));
+        ctx.log("upload ticket without a usable download_url / https upload.url (PUT), using the binary upload:", JSON.stringify(t).slice(0, 200));
     } else {
         ctx.log("upload ticket answered", ticket.status, "- using the binary upload");
     }
@@ -374,7 +379,8 @@ async function submitAndWait(ctx, model, input) {
     let data = first.data || {};
     if (!data.id) throw new Error("WaveSpeed answered without a prediction id: " + scrub(JSON.stringify(first), ctx.key).slice(0, 200));
     const id = String(data.id);
-    const resultUrl = (data.urls && data.urls.get) || `${BASE}predictions/${data.id}/result`;
+    // the key goes with every read: a get link only when it is https on api.wavespeed.ai, else the prediction's own path
+    const resultUrl = keyedUrl(data.urls && data.urls.get, ["api.wavespeed.ai"], `${BASE}predictions/${encodeURIComponent(id)}/result`);
     const done = new Set(["completed", "failed", "cancelled", "timeout", "deleted"]);
     data = await pollJob(ctx, {
         who: `WaveSpeed ${model}`,
