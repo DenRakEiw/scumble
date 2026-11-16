@@ -1538,9 +1538,11 @@ function installIpc() {
     // quit and start again (a backend change needs a new window), electron/main/restart.js: the command line
     // without --mcp / --headless / --cmd, or through the installer while an update is downloaded; refused
     // while an agent drives the app, whose session would end with it
-    ipcMain.handle("app:relaunch", () => {
+    ipcMain.handle("app:relaunch", async () => {
         if (agentMode || local.clients.size) throw new Error("An agent is connected to Scumble; restart it after the agent is done.");
         if (assistant && assistant.busy()) throw new Error("The assistant is working; stop it first.");
+        // a .scumble save in flight ends first: the quit below skips flushAll, and will-quit aborts what still runs
+        await documents.idle();
         // a skipped version stays out of a restart too (renderer/shell.js skipUpdate)
         const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.skipped() ? "skipped" : updater.status.state });
         quitGuard.release();   // the window saved before it asked (renderer/shell.js saveBeforeRestart)

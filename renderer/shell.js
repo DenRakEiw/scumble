@@ -969,10 +969,13 @@ ui.setTiles.addEventListener("change", async () => {
     await renderTileMode();
 });
 ui.setTilesRestart.addEventListener("click", async () => {
-    const working = host.editors().filter(busy);
+    // a render on the user's ComfyUI holds no busy flag while it runs: its result would be lost too
+    const working = host.editors().filter((ed) => busy(ed) || localRendering(ed));
     if (working.length && !(await dialogs.confirm(`${working.length === 1 ? "A document is" : working.length + " documents are"} still working. Restart anyway?`, { ok: "Restart", danger: true }))) return;
     ui.setTilesRestart.disabled = true;
     try {
+        // a .scumble save in flight first: main's relaunch quits without waiting on it, and that quit aborts it
+        await host.docSavesIdle();
         await saveBeforeRestart((text) => { ui.setTilesNote.textContent = text; });
         await window.scumble.relaunch();
     } catch (err) {

@@ -468,8 +468,9 @@ function bundle(tag, pics, empty = 0) {
             assert(run >= 0 && install > run, "the install does not come after the awaited save");
             const io = bodyAfter(main, /function installOrReset\(\) /);
             assert(io && /const ok = updater\.install\(\);/.test(io) && /if \(!ok\) \{[^}]*quitGuard\.reset\(\)/.test(io) && /if \(!quitting\) \{[^}]*quitGuard\.reset\(\)/.test(io), "an install that does not quit leaves the guard latched");
-            const r = bodyAfter(main, /ipcMain\.handle\("app:relaunch", \(\) => /);
+            const r = bodyAfter(main, /ipcMain\.handle\("app:relaunch", async \(\) => /);
             assert(r && r.indexOf("quitGuard.release()") >= 0 && r.indexOf("quitGuard.release()") < r.indexOf("installOrReset()"), "a restart does not release the guard before it installs");
+            assert(r.indexOf("await documents.idle()") >= 0 && r.indexOf("await documents.idle()") < r.indexOf("quitGuard.release()"), "a restart does not wait for a .scumble save before it quits");
             return "save, then install";
         });
         await check("a_crashed_window_is_reloaded_and_a_windowed_start_rotates", () => {
