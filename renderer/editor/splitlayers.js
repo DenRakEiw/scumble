@@ -1,5 +1,5 @@
 // Split into layers (Seedream's layer decomposition: Seedream 5.5 and 5.0 pro on BytePlus ModelArk, Seedream 5.5 on
-// WaveSpeedAI and Oxen.ai too): the visible picture or one layer goes out as the one input, and the answer (a base
+// WaveSpeedAI, Oxen.ai and OpenRouter too): the visible picture or one layer goes out as the one input, and the answer (a base
 // picture and the model's layers, each a PNG with alpha, with a box in the base's pixels where the host gives one, a
 // stacking order and a name) lands as new layers above everything that is there, in one group, as one undo step.
 // docs/RECIPES.md "Split into layers".

@@ -249,7 +249,13 @@
           "2K": 2048
         },
         "max_images": 10,
-        "max_ratio": 16
+        "max_ratio": 16,
+        "layers": {
+          "max": 32,
+          "options": true,
+          "slug": "seed",
+          "price": "OpenRouter lists 0.02 USD per picture made (0.035 at high resolution) and 0.008 for the picture sent; whether every layer counts as a picture made is not stated. Never run through OpenRouter: how the layers come back there is not documented."
+        }
       },
       "settings": [
         {
@@ -295,7 +301,7 @@
         ],
         "refs": {}
       },
-      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet (written from OpenRouter's image model list, GET /api/v1/images/models and its endpoints, read 2026-11-13: one host, ByteDance's Seed; 0.02 USD an image, 0.035 at high resolution, 0.008 per picture sent). The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier (1K, 1.5K, 2K) that covers the crop. Background Transparent asks for a cut-out on a transparent ground, as PNG: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. A picture steeper than 16:1 is refused before anything is sent. At most ten pictures go in (the crop, Original and the reference layers), as OpenRouter lists for this model.",
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet (written from OpenRouter's image model list, GET /api/v1/images/models and its endpoints, read 2026-11-13: one host, ByteDance's Seed; 0.02 USD an image, 0.035 at high resolution, 0.008 per picture sent). The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier (1K, 1.5K, 2K) that covers the crop. Background Transparent asks for a cut-out on a transparent ground, as PNG: the result layer keeps the answer's alpha inside the selection; say it in the prompt as well. A picture steeper than 16:1 is refused before anything is sent. At most ten pictures go in (the crop, Original and the reference layers), as OpenRouter lists for this model. Image > Split into Layers... splits the picture into layers through OpenRouter too (up to 32 and a base, the count and Text recognition passed on to ByteDance's Seed); never run there, and how the layers come back through OpenRouter is not documented: a layer without a position lands over the whole picture.",
       "fixed": {
         "output_format": "png"
       }

@@ -315,6 +315,79 @@ async function main() {
         check("a split that hears nothing says the split's own wait (1800 s + 30 s: 31 minutes)", !!et && /no answer within 31 minutes/.test(et), et);
     });
 
+    await section("Split into layers on OpenRouter", async () => {
+        const openrouter = P("openrouter");
+        openrouter._resetHosts();
+        const v = V("openrouter");
+        const MOCK = "http://127.0.0.1:5557";
+        check("the variant's layer mode: up to 32 (base64 only: OpenRouter has no URL answers), the count and Text recognition, the tiers, the host slug seed", v.options.layers.max === 32 && v.options.layers.options === true && v.options.layers.tiers === undefined && v.options.layers.slug === "seed" && typeof v.options.layers.price === "string", short(v.options.layers));
+        // the endpoint record of 2026-11-16 (GET /api/v1/images/models/bytedance-seed/seedream-5-5/endpoints)
+        const ENDPOINT = { provider_slug: "seed", supported_parameters: { resolution: { values: ["1K", "1.5K", "2K"] }, output_format: { values: ["png", "jpeg"] }, input_references: { min: 0, max: 10 } }, allowed_passthrough_parameters: ["layer_decomposition", "layer_decomposition_options"] };
+        const b64 = (b) => b.toString("base64");
+        const DEFAULT_DATA = [
+            { b64_json: b64(pngOf(1024, 683, "BASE")), media_type: "image/png" },
+            { b64_json: b64(pngOf(400, 400, "DOG")), media_type: "image/png", z_index: 2, name: "dog", description: "a dog", bounding_box: { absolute: [10, 20, 410, 420], normalized: [10, 29, 400, 615] } },
+            { b64_json: b64(pngOf(1024, 683, "SKY")), media_type: "image/png", z_index: 1 },
+        ];
+        const run = async (req, opts = {}) => {
+            const posts = [], calls = [];
+            const fetch = async (url, init = {}) => {
+                const u = new URL(String(url)), method = String(init.method || "GET").toUpperCase();
+                calls.push(`${method} ${u.origin}${u.pathname}`);
+                if (u.pathname === "/api/v1/providers") return json(200, { data: [{ slug: "seed", headquarters: "SG" }, { slug: "tencent", headquarters: "CN" }] });
+                if (method === "POST" && u.pathname === "/api/v1/images") {
+                    posts.push({ headers: init.headers, body: JSON.parse(init.body), dispatcher: !!init.dispatcher });
+                    if (opts.answer) return opts.answer(posts[posts.length - 1].body);
+                    return json(200, { created: 1789000000, data: opts.data || DEFAULT_DATA, usage: { cost: 0.068 } });
+                }
+                return json(404, { error: { code: 404, message: "no route " + u.pathname } });
+            };
+            const ctx = { key: "test-or-0123456789", base: MOCK, fetch, log() {}, sleep: async () => {} };
+            const out = await openrouter.layers(req, ctx);
+            return { out, posts, post: posts[0], calls, ctx };
+        };
+        const a = await run(layerReq("openrouter", { prompt: "  the dog  ", params: { count: 5, size: "2K", text_recognition: true } }));
+        const b = a.post.body;
+        check("one POST to <base>/api/v1/images with the test key, the host list read first, the split's own request limits", a.posts.length === 1 && eq(a.calls, [`GET ${MOCK}/api/v1/providers`, `POST ${MOCK}/api/v1/images`]) && a.post.headers.Authorization === "Bearer test-or-0123456789" && a.post.dispatcher === true, short(a.calls));
+        check("the body: the model, the prompt trimmed, the tier as resolution, png, the one picture inline, no n, no seed, no size, no aspect", eq(Object.keys(b).sort(), ["input_references", "model", "output_format", "prompt", "provider", "resolution"]) && b.model === "bytedance-seed/seedream-5-5" && b.prompt === "the dog" && b.resolution === "2K" && b.output_format === "png" && b.input_references.length === 1 && b.input_references[0].type === "image_url" && b.input_references[0].image_url.url.startsWith("data:image/png;base64,") && tagOf(Buffer.from(b.input_references[0].image_url.url.split(",")[1], "base64")) === "PICTURE", short({ ...b, input_references: b.input_references.length }));
+        const opt = b.provider && b.provider.options && b.provider.options.seed;
+        check("the layer switch as a passthrough under provider.options.seed: layer_decomposition, max_images the count and the base (6), Text recognition; only keys the endpoint allows", !!opt && eq(opt, { layer_decomposition: true, layer_decomposition_options: { max_images: 6, text_recognition: true } }) && Object.keys(opt).every((k) => ENDPOINT.allowed_passthrough_parameters.includes(k)) && eq(Object.keys(b.provider.options), [ENDPOINT.provider_slug]), short(b.provider));
+        check("the hosts in China left out as on an edit (the live list and the dated one), seed not among them", Array.isArray(b.provider.ignore) && b.provider.ignore.includes("tencent") && b.provider.ignore.includes("alibaba") && !b.provider.ignore.includes("seed"), short(b.provider.ignore));
+        check("every body field but provider is one the endpoint lists (or the model and prompt)", Object.keys(b).filter((k) => !["model", "prompt", "provider"].includes(k)).every((k) => k in ENDPOINT.supported_parameters) && ENDPOINT.supported_parameters.resolution.values.includes(b.resolution), short(Object.keys(b)));
+        check("the answer: the base first, then the layers by z_index (sky, dog)", eq(a.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "SKY", "DOG"]) && a.out.layers[0].base === true && a.out.bytes.equals(a.out.layers[0].bytes) && eq(a.out.layers.map((l) => l.z_index), [0, 1, 2]), short(a.out.layers.map((l) => [tagOf(l.bytes), l.z_index])));
+        check("a box and a name where an entry carries them; one without a box lands over the whole picture (full), named by its place", eq(a.out.layers[2].bounding_box, { absolute: [10, 20, 410, 420], normalized: [10, 29, 400, 615] }) && a.out.layers[2].name === "dog" && a.out.layers[2].description === "a dog" && a.out.layers[2].full === false && a.out.layers[1].full === true && a.out.layers[1].bounding_box === null && a.out.layers[1].name === "Layer 1", short(a.out.layers.slice(1).map((l) => ({ box: l.bounding_box, full: l.full, name: l.name }))));
+        check("info: what was asked, the cost, how many came without a position; the job is marked done", a.out.info.asked === 5 && a.out.info.max_images === 6 && a.out.info.text_recognition === true && a.out.info.layers === 2 && a.out.info.unplaced === 1 && a.out.info.cost === 0.068 && a.out.info.resolution === "2K" && a.ctx.jobDone === true && eq(a.out.missing, []), short(a.out.info));
+        const plan = split.planLanding(a.out.layers, { x: 0, y: 0, w: 1200, h: 800 }, 1024, 683, new Set());
+        check("the landing: the base and the boxless sky over the whole picture, the dog at its box scaled to the document", plan.rows.length === 3 && eq(plan.rows.map((r) => r.name), ["Base", "Layer 1", "dog"]) && plan.rows[1].w === 1200 && plan.rows[2].x === 12 && plan.rows[2].y === 23 && plan.rows[2].w === 468, short(plan.rows.map((r) => [r.name, r.x, r.y, r.w, r.h])));
+        // the answer as OpenRouter's schema documents it: bare { b64_json, media_type } entries, nothing else
+        const bare = await run(layerReq("openrouter"), { data: DEFAULT_DATA.map((d) => ({ b64_json: d.b64_json, media_type: d.media_type })) });
+        check("entries without z_index or box (the documented answer schema): the base first, the rest in order, each over the whole picture", eq(bare.out.layers.map((l) => tagOf(l.bytes)), ["BASE", "DOG", "SKY"]) && bare.out.layers.slice(1).every((l) => l.full) && eq(bare.out.layers.map((l) => l.name), ["", "Layer 1", "Layer 2"]), short(bare.out.layers.map((l) => [tagOf(l.bytes), l.full, l.name])));
+        const d = await run(layerReq("openrouter"));
+        check("no count, no tier, no prompt: 16 layers (max_images 17), Text recognition off, no resolution (the host's own), the plain prompt OpenRouter requires", d.post.body.provider.options.seed.layer_decomposition_options.max_images === 17 && d.post.body.provider.options.seed.layer_decomposition_options.text_recognition === false && !("resolution" in d.post.body) && d.post.body.prompt === "Split this picture into layers of its main elements.", short(d.post.body));
+        const one = await run(layerReq("openrouter"), { data: [DEFAULT_DATA[0]] });
+        check("an answer with the base alone lands the base (the landing says no separate elements came)", one.out.layers.length === 1 && one.out.info.layers === 0 && one.out.layers[0].base === true, short(one.out.info));
+        const empty = await thrown(() => run(layerReq("openrouter"), { data: [DEFAULT_DATA[0], { media_type: "image/png" }] }));
+        check("an answer with an empty slot is refused in words that say the job is charged", !!empty && /OpenRouter bytedance-seed\/seedream-5-5: an answer without its pictures \(1 of 2\); the job is charged, nothing landed\./.test(empty), empty);
+        const refused = await thrown(() => run(layerReq("openrouter"), { answer: () => json(400, { error: { code: 400, message: "Unknown parameter: layer_decomposition for provider seed" } }) }));
+        check("a refusal by OpenRouter is worded: request refused, its own message, the key never in it", !!refused && /^OpenRouter bytedance-seed\/seedream-5-5: request refused/.test(refused) && /layer_decomposition/.test(refused) && !refused.includes("test-or-0123456789"), refused);
+        const inErr = await thrown(() => run(layerReq("openrouter"), { answer: () => json(200, { error: { code: 502, message: "upstream failed" } }) }));
+        check("an error inside a 200 answer is worded and fails the run", !!inErr && /^OpenRouter bytedance-seed\/seedream-5-5: /.test(inErr) && /upstream failed/.test(inErr), inErr);
+        const no = async (extra, re, what, key = "test-or-0123456789", base = MOCK) => {
+            let calls = 0;
+            const err = await thrown(() => openrouter.layers(layerReq("openrouter", extra), { key, base, fetch: async () => { calls++; return json(500, {}); }, log() {}, sleep: async () => {} }));
+            check(`${what} is refused before any call`, !!err && re.test(err) && calls === 0, err);
+        };
+        await no({ params: { count: 33 } }, /1 to 32/, "a count of 33 (past base64's limit)");
+        await no({ params: { size: "4K" } }, /a tier/, "a size of 4K");
+        await no({ references: [r1] }, /exactly one picture/, "a second picture");
+        await no({ image: pngOf(400, 400, "SMALL") }, /512 × 512 to 6000 × 6000/, "a picture under 512 x 512");
+        await no({ options: { ...V("openrouter").options, layers: undefined } }, /has no layer mode/, "a variant without a layer mode");
+        await no({}, /a test key is never sent to openrouter\.ai/, "a test key to openrouter.ai", "test-or-0123456789", null);
+        await no({}, /only a test key goes there/, "a real key to the mock", "sk-or-v1-REAL", MOCK);
+        check("5.5 chosen on OpenRouter splits on OpenRouter, its spec the count, Text recognition and the tiers", split.splitProviderOf(raw, "openrouter") === "openrouter" && (() => { const s = split.layerSpecOf(raw, "openrouter"); return s.max === 32 && s.count && s.text && s.tiers; })(), short(split.layerSpecOf(raw, "openrouter")));
+        openrouter._resetHosts();
+    });
+
     await section("which host a split runs on (renderer/editor/splitlayers.js)", async () => {
         const pro = JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", "seedream_5_pro.json"), "utf8"));
         // (split-on-chosen-provider) the bug: a split that reads providers.ark alone, whatever the user picked

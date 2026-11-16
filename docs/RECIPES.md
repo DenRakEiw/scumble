@@ -2893,8 +2893,8 @@ the single input of a `POST /api/v3/images/generations` with `layer_decompositio
 layers above every existing layer. `recipes/seedream_5_5.json` and `seedream_5_pro.json` declare it in the ark variant's
 `options.layers`: `{ max: 99, options: true, price }` and `{ max: 16, price }` (`max` the layers besides the base,
 `price` the dialog's words). Adapter `ark.js` `layers` (kind `"layers"`), landing `renderer/editor/splitlayers.js`. Never
-run against the live API. Seedream 5.5 splits on WaveSpeedAI and Oxen.ai too ("Split into layers on WaveSpeedAI and
-Oxen.ai" below).
+run against the live API. Seedream 5.5 splits on WaveSpeedAI, Oxen.ai and OpenRouter too ("Split into layers on
+WaveSpeedAI, Oxen.ai and OpenRouter" below).
 
 **Which host splits.** `splitlayers.js` `splitProviderOf`: the recipe's chosen provider (the user's pick, the one
 `resolveRecipe` takes without a forced host) when its variant declares `options.layers`, else `ark` when its variant
@@ -3131,13 +3131,13 @@ Replicate, OpenRouter or Magnific on that day; **OpenRouter listed it on 2026-11
   variant with `options.background` (ModelArk's rule: Auto sends nothing).
 - **Oxen.ai**: the 5.5 schema has an `auto` aspect, so an edit asks `auto` (`edit_aspect`), not the closest preset.
 - **OpenRouter**: 0.02 USD an image, 0.035 at high resolution and 0.008 per picture sent (the endpoint's list). Its
-  endpoint also passes `layer_decomposition` and `layer_decomposition_options` through: *Split into layers* could run
-  there too, but its answer's shape through OpenRouter is not documented, so the variant has no `layers` yet.
+  endpoint also passes `layer_decomposition` and `layer_decomposition_options` through, so *Split into layers* runs
+  there too since 2026-11-16 ("Split into layers on WaveSpeedAI, Oxen.ai and OpenRouter" below).
 
 `tools/seedream55_test.js` holds the WaveSpeedAI and Comfy Cloud requests; `tools/comfyrouter_test.js`,
 `tools/oxen_test.js` and `tools/toapis_test.js` hold theirs to the saved schemas and pages.
 
-**Split into layers on WaveSpeedAI and Oxen.ai.** Both 5.5 variants declare `options.layers` with the host's own route
+**Split into layers on WaveSpeedAI, Oxen.ai and OpenRouter.** The three 5.5 variants declare `options.layers` with the host's own route
 in `model` (`electron/main/providers/layersplit.js` reads it, as `splitlayers.js` does; "Which host splits" above). The
 input rule is ModelArk's (512 x 512 to 6000 x 6000 in area, 16:1), since neither host states one. Never run live.
 
@@ -3164,7 +3164,23 @@ input rule is ModelArk's (512 x 512 to 6000 x 6000 in area, 16:1), since neither
   bottom }`, `name`, `description`; a layer without a box lands over the whole picture. The ZIP and its manifest are not
   read (no field name is documented).
 
-`tools/seedream55_test.js` holds both splits against canned answers (two layers, one without a box), their refusals,
+- **OpenRouter** (`openrouter.js` `layers`, `bytedance-seed/seedream-5-5`; the endpoint record
+  `GET /api/v1/images/models/bytedance-seed/seedream-5-5/endpoints` and the Image API guide's "Provider-Specific
+  Options", both read 2026-11-16): the endpoint lists `layer_decomposition` and `layer_decomposition_options` in
+  `allowed_passthrough_parameters`, and such keys go as `provider.options[<slug>]` (the one host's slug `seed`,
+  `options.layers.slug`). So `POST /api/v1/images` with `{ model, prompt, input_references: [one data URL],
+  resolution (a tier; none on Auto, the host's own), output_format: "png", provider: { ignore (the hosts in China, as
+  an edit's), options: { seed: { layer_decomposition: true, layer_decomposition_options: { max_images: count + 1,
+  text_recognition } } } } }`. **Inferred, not documented:** OpenRouter marks `prompt` required, so a split without
+  one sends "Split this picture into layers of its main elements."; `n` is left out (the endpoint lists 1..1, and an
+  "upper bound on images to generate" could cut a split to its base); and the answer: OpenRouter's schema names only
+  `data: [{ b64_json, media_type }]`, read here with `layersplit.collect` as ModelArk's shape (the base first, then
+  each layer with `z_index`, a box, `name`, `description` where an entry carries them), a layer without a box laid
+  over the whole picture. OpenRouter has no URL answers, so the most is 32 layers (ModelArk's base64 limit). An answer
+  of the base alone lands the base (the status line says no separate elements came). Never run live: the first run must
+  settle whether the layers come back at all, with boxes and names, and what each costs.
+
+`tools/seedream55_test.js` holds the three splits against canned answers (two layers, one without a box), their refusals,
 and the host choice (`splitProviderOf`, `splitJob`, the request `runSplitLayers` sends).
 
 ### MiniMax (`minimax`)

@@ -54,8 +54,10 @@
 // other key never to it (so a real key cannot reach a local listener that a setting points at).
 "use strict";
 
-const { sleep: realSleep, closestAspect, editAspect, seedOf } = require("./util");
+const { sleep: realSleep, closestAspect, editAspect, seedOf, fetchImage } = require("./util");
 const { layoutOf, refRoles, instruction } = require("./refs");
+const ark = require("./ark");             // _layerPostInit: a split's one request outlasts undici's 300 s
+const split = require("./layersplit");   // a split's ask and its answer's order (kind "layers")
 
 const DEFAULT_BASE = "https://openrouter.ai";
 const ALLOWED_HOSTS = new Set(["https://openrouter.ai"]);
@@ -417,9 +419,9 @@ function bodyFor(req, pics, ignore) {
     return body;
 }
 
-async function post(ctx, body) {
+async function post(ctx, body, init = {}) {
     const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
-    const send = () => ctx.fetch(root(ctx) + "/api/v1/images", { method: "POST", headers, body: JSON.stringify(body) });
+    const send = () => ctx.fetch(root(ctx) + "/api/v1/images", { ...init, method: "POST", headers, body: JSON.stringify(body) });
     let r = await send();
     // a 429, a 529, a 503 with Retry-After (an overloaded host) or a 402 of the in-flight budget means nothing was
     // generated and nothing charged, so one retry is safe, never before the time the server set; a network error
@@ -504,12 +506,95 @@ async function run(req, ctx) {
     };
 }
 
+// ---- Split into layers (kind "layers") ----------------------------------------------------------------------------
+// Seedream 5.5's endpoint on OpenRouter (bytedance-seed/seedream-5-5, one host: ByteDance's Seed, slug "seed") lists
+// `layer_decomposition` and `layer_decomposition_options` in `allowed_passthrough_parameters`
+// (GET /api/v1/images/models/bytedance-seed/seedream-5-5/endpoints, read 2026-11-16), and OpenRouter's Image API passes
+// such keys as `provider.options[<slug>]` (openrouter.ai/docs/guides/overview/multimodal/image-generation.md,
+// "Provider-Specific Options", read 2026-11-16). What is documented, then: the request
+//   POST /api/v1/images { model, prompt, input_references: [the one picture], resolution?, output_format: "png",
+//     provider: { ignore, options: { seed: { layer_decomposition: true,
+//       layer_decomposition_options: { max_images (the base and the layers, ModelArk's rule), text_recognition } } } } }
+// What is NOT documented and is inferred here (no live run, no key here): how the layers come back through OpenRouter.
+// Its answer schema names only `data: [{ b64_json, media_type }]`; ModelArk's own answer puts the base first and then
+// each layer with z_index, bounding_box, name and description, so `data` is read with layersplit.collect: the base
+// first (or the entry that says so), entries with a z_index by it, a box where an entry carries one in any form
+// layersplit.boxOf reads, and an entry without one laid over the whole picture (`full`), as WaveSpeedAI's URL strings
+// are. Also inferred: `n` is left out (the endpoint lists n 1..1, and OpenRouter calls n "an upper bound on images to
+// generate", which could cut a split to its base), `resolution` goes only for a tier (OpenRouter's enum has no auto;
+// without it the host's own default holds), and a split without a prompt sends a plain one, since OpenRouter's schema
+// marks `prompt` required. OpenRouter has no `response_format` (no URLs), so the variant's `max` stays at ModelArk's
+// base64 limit of 32 layers: more pictures inline would pass what one JSON string may hold. The first live run must
+// settle whether the layers arrive at all, with their boxes and names, and what each costs.
+const LAYER_PROMPT = "Split this picture into layers of its main elements.";
+const LAYER_SLUG = "seed";
+
+/** Split one picture into layers through OpenRouter. -> layersplit.js's answer shape. */
+async function layers(req, ctx) {
+    const caller = ctx;   // the job's state is read on the object providers/index.js holds
+    ctx = { ...ctx, sleep: ctx.sleep || realSleep, log: ctx.log || (() => {}) };
+    const model = String(req.model || "");
+    const who = `OpenRouter ${model}`;
+    const o = req.options || {};
+    const spec = split.specOf(o);
+    if (!model || !spec) throw new Error(`${who} has no layer mode.`);
+    const slug = typeof (o.layers || {}).slug === "string" && /^[a-z0-9][a-z0-9-]*$/.test(o.layers.slug) ? o.layers.slug : LAYER_SLUG;
+    const base = root(ctx);
+    checkKey(base, ctx.key);
+    const ask = split.askOf(req, who, spec);
+    const pics = await picturesFor({ ...req, kind: "edit", references: [] }, { max_images: 1, max_ratio: 16 }, ctx, model);
+    const body = { model, prompt: ask.prompt || LAYER_PROMPT };
+    if (spec.tiers && ask.tier !== "auto") body.resolution = ask.tier;
+    body.output_format = "png";
+    body.input_references = pics.map((x) => ({ type: "image_url", image_url: { url: `data:${x.mime};base64,${x.bytes.toString("base64")}` } }));
+    const options = { layer_decomposition: true };
+    // ModelArk's layer_decomposition_options: max_images counts the base and the layers (docs/RECIPES.md)
+    if (spec.count || spec.text) {
+        options.layer_decomposition_options = {};
+        if (spec.count) options.layer_decomposition_options.max_images = (ask.count != null ? ask.count : spec.max) + 1;
+        if (spec.text) options.layer_decomposition_options.text_recognition = ask.textRecognition;
+    }
+    const provider = { options: { [slug]: options } };
+    // the same hosts left out as on an edit: a split never goes to a host OpenRouter lists in China
+    const ignore = await chinaHosts(ctx);
+    if (ignore.length) provider.ignore = ignore;
+    body.provider = provider;
+    const r = await post(ctx, body, ark._layerPostInit(req.timeoutMs));
+    if (!r.ok) throw new Error(`${who}: ${await failure(r, ctx.key)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`);
+    let j;
+    try { j = (await r.json()) || {}; } catch (_) { throw new Error(`${who}: the answer is not JSON.`); }
+    if (j.error) throw new Error(`${who}: ${scrub(explain(+j.error.code || 0, j.error.message || "error", j.error.metadata), ctx.key)}`);
+    caller.jobDone = true;   // answered: generated and charged, so a Cancel during the downloads says that
+    const list = Array.isArray(j.data) ? j.data : [];
+    const items = list.filter((x) => x && typeof x === "object" && ((typeof x.b64_json === "string" && x.b64_json) || (typeof x.url === "string" && /^https:\/\//i.test(x.url))));
+    if (!items.length || items.length !== list.length) throw new Error(scrub(`${who}: an answer without its pictures (${items.length} of ${list.length}); the job is charged, nothing landed.`, ctx.key));
+    const get = async (d) => {
+        if (d.b64_json) {
+            const bytes = Buffer.from(d.b64_json, "base64");
+            return { bytes, mime: d.media_type || (bytes[0] === 0xff && bytes[1] === 0xd8 ? "image/jpeg" : "image/png") };
+        }
+        return await fetchImage(d.url, ctx.fetch);   // never with the key: a picture's link is the host's own
+    };
+    const { out, missing } = await split.collect(items, get, ctx, who);
+    const usage = j.usage || {};
+    if (out.length === 1) ctx.log("the answer holds the base alone: no layer came back through OpenRouter");
+    return {
+        bytes: out[0].bytes, mime: out[0].mime, seed: undefined, layers: out, missing,
+        info: {
+            model, resolution: body.resolution || null, asked: ask.count, max_images: options.layer_decomposition_options ? options.layer_decomposition_options.max_images : null,
+            text_recognition: spec.text ? ask.textRecognition : null, layers: out.length - 1, unplaced: out.filter((l) => l.full).length,
+            picture: pics[0].mime === "image/jpeg" ? "jpeg" : "png", cost: usage.cost != null ? usage.cost : null,
+        },
+    };
+}
+
 module.exports = {
     label: "OpenRouter",
     keyUrl: "https://openrouter.ai/settings/keys",
     keyHint: "sk-or-v1-... from openrouter.ai › Settings › API keys",
     edit: run,
     generate: run,   // kind "text": the same endpoint, input_references the references alone (none without)
+    layers,          // kind "layers": Split into layers, where a variant declares options.layers (Seedream 5.5)
     layout,
     textLayout,
 
