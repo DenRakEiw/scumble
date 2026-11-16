@@ -571,7 +571,8 @@ export class SelectPart {
             if (mode === "replace") {
                 hint = unionBounds;
             } else if (mode === "add") {
-                hint = this.boundsAfter("add", unionBounds || [0, 0, W, H]);
+                // nothing matched (unionBounds null, as replace reads it): the old box stays as it is known
+                hint = this.boundsAfter("add", unionBounds || [0, 0, 0, 0]);
             } else {
                 hint = oldBounds ? { within: oldBounds } : null;
             }

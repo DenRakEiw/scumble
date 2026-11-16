@@ -10,7 +10,7 @@ const path = require("node:path");
 const fsp = require("node:fs/promises");
 const { list, normalize, remove, save, slug, userDir, userFileStems } = require("./recipes_store");
 const { fromWorkflow } = require("./recipes_workflow");
-const { cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, promotedOf, toPrompt } = require("./recipes_graph");
+const { cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, promotedOf, rowValues, toPrompt } = require("./recipes_graph");
 
 // ---- the shape of a recipe -------------------------------------------------------------
 //
@@ -314,4 +314,4 @@ async function importFile(file, objectInfo, opts) {
     return out;
 }
 
-module.exports = { list, remove, save, userFileStems, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, detach, userDir, _normalize: normalize };
+module.exports = { list, remove, save, userFileStems, importFile, fromWorkflow, fromPrompt, toPrompt, fromGraph, fromCloudGraph, cloudMark, detectRoles, promotedOf, rowValues, detach, userDir, _normalize: normalize };

@@ -152,7 +152,15 @@ function loadScript(recipe, token) {
     const call = recipe.workflow
         ? `await window.app.loadGraphData(${JSON.stringify(recipe.workflow)}, true, true, ${name}); const laidOut = false;`
         : `await window.app.loadApiJson(${JSON.stringify(recipe.prompt)}, ${name}); let laidOut = false; try { laidOut = ${LAYOUT_JS}; } catch (_) { /* left as the page laid it out */ }`;
-    return `(async () => { try { ${call} return { ok: true, laidOut, tab: ${tagTabJs(token)} }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
+    // the Settings rows' own values into their widgets (the wired inputs' widgets hold the nodes' defaults), so a row
+    // unticked later keeps the recipe's value; best effort: a node or widget the page does not have is left alone
+    const rows = JSON.stringify(recipe.rowValues && typeof recipe.rowValues === "object" ? recipe.rowValues : {});
+    const setRows = `try { const g = window.app.graph, rv = ${rows};
+        for (const k of Object.keys(rv)) { const i = k.lastIndexOf("|"), id = k.slice(0, i), name = k.slice(i + 1);
+            const n = g && typeof g.getNodeById === "function" ? (g.getNodeById(Number(id)) || g.getNodeById(id)) : null;
+            const w = n && Array.isArray(n.widgets) ? n.widgets.find((x) => x && x.name === name) : null;
+            if (w) w.value = rv[k]; } } catch (_) { /* the rows keep the page's values */ }`;
+    return `(async () => { try { ${call} ${setRows} return { ok: true, laidOut, tab: ${tagTabJs(token)} }; } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; } })()`;
 }
 
 /** The origin of an http(s) URL, or "" for anything else. */

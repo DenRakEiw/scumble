@@ -171,6 +171,12 @@ export function activate(scumble) {
         // a control layer the user locked is not taken away: refused before any change, as remove_layer refuses it
         const lockedCtl = gone.map((id) => doc.rawLayer(id)).find((l) => l && ed.isLocked(l));
         if (lockedCtl) throw new Error(`${lockedCtl.name} is locked: unlock it to switch that layer off`);
+        // every layer the placement writes (the object layer, each control layer that stays on), locked by itself or by
+        // its group: refused here, before the undo step and any pixel (else the edit stopped halfway)
+        const writes = [existing ? layerId : null, ...CONTROLS.map((c, i) => (r[c.key] && prevCtl[i] ? prevCtl[i].id : null))]
+            .filter(Boolean).map((id) => doc.rawLayer(id)).filter(Boolean);
+        const lockedW = writes.find((l) => ed.isLocked(l));
+        if (lockedW) throw new Error(`${lockedW.name} is locked: unlock it to update that layer`);
         const topStep = () => (ed.undo && ed.undo.length ? ed.undo[ed.undo.length - 1] : null);
         let stepTaken = false;
         if (gone.length) {

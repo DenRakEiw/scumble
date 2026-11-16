@@ -39,6 +39,23 @@ function toPrompt(recipe) {
 }
 
 /**
+ * The recipe's own values of its Settings rows' inputs, `{ "<node>|<input>": value }` (toPrompt wires those inputs to the
+ * canvas node, so the page's widgets would hold the nodes' defaults; the ComfyUI window sets them back after the load,
+ * so an unticked row keeps the recipe's value: the Fable review of 2026-11-16, untick-row-falls-to-comfy-default).
+ * @param {Recipe} recipe
+ */
+function rowValues(recipe) {
+    const out = {};
+    for (const s of (recipe && recipe.settings) || []) {
+        const node = s && recipe.prompt && recipe.prompt[s.node];
+        const v = node && node.inputs ? node.inputs[s.input] : undefined;
+        if (v === undefined || Array.isArray(v) || (v !== null && typeof v === "object")) continue;
+        out[`${s.node}|${s.input}`] = v;
+    }
+    return out;
+}
+
+/**
  * A value the page's widget held for a node input (`values` from the ComfyUI window's read, untrusted): a finite number,
  * a boolean or a string of at most 10,000 characters; anything else is undefined.
  * @param {Record<string, any> | null} values
@@ -737,4 +754,4 @@ function looksLikePrompt(obj) {
     return vals.length > 0 && vals.every((v) => v && typeof v === "object" && typeof v.class_type === "string");
 }
 
-module.exports = { canvasOutputNames, cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, pageValue, promotedOf, toPrompt };
+module.exports = { canvasOutputNames, cloudMark, detach, detectRoles, fromCloudGraph, fromGraph, fromPrompt, holdsCanvas, looksLikePrompt, pageValue, promotedOf, rowValues, toPrompt };

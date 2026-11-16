@@ -1147,7 +1147,7 @@ async function comfyRecipe(id) {
         const wf = v.options.workflow;
         return { id: r.id, name: r.name || r.id, source: r.source, cloud: true, prompt: v.options.graph, workflow: wf && Array.isArray(wf.nodes) ? wf : null };
     }
-    return { id: r.id, name: r.name || r.id, source: r.source, prompt: recipes.toPrompt(r), workflow: r.workflow && Array.isArray(r.workflow.nodes) ? r.workflow : null };
+    return { id: r.id, name: r.name || r.id, source: r.source, prompt: recipes.toPrompt(r), rowValues: recipes.rowValues(r), workflow: r.workflow && Array.isArray(r.workflow.nodes) ? r.workflow : null };
 }
 
 /**
@@ -1188,7 +1188,7 @@ async function saveComfyGraph({ output, workflow, objectInfo, heldId, name, valu
         + (shadows ? ": your copy stands in for the shipped recipe, and removing it under Settings › Recipes brings the shipped one back" : "")
         + (missing.length ? `. Nodes the server does not list: ${missing.join(", ")}` : "") + ".";
     send("comfyview:saved", { id: recipe.id, message, from: base ? base.id : null });
-    return { recipe: { id: recipe.id, name: recipe.name || recipe.id, prompt: recipes.toPrompt(recipe), workflow: recipe.workflow || null }, message };
+    return { recipe: { id: recipe.id, name: recipe.name || recipe.id, prompt: recipes.toPrompt(recipe), rowValues: recipes.rowValues(recipe), workflow: recipe.workflow || null }, message };
 }
 
 /** The ComfyUI window, or nothing when no editor window was ever made (an agent's headless start has no button for it). */
