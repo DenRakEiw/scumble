@@ -593,7 +593,7 @@ async function main() {
         // of waits, util.pollWatch), not five tries (15 s)
         x = await runEdit(v, editReq(v), {}, { poll: Array.from({ length: 100 }, () => e500) });
         check("failed status reads in a row end the run after the gap window, not after five", /status reads failed \d+ times in a row over \d+ s; the task \(.*\) may still finish/.test(x.err || "") && x.s.polls.length > 5 && x.s.polls.length < 100, (x.err || "") + " polls " + x.s.polls.length);
-        x = await runEdit(v, editReq(v), {}, { poll: [() => html(200, "<html>gateway</html>"), () => json(200, {})] });
+        x = await runEdit(v, editReq(v), {}, { poll: [() => new Response("<html>gateway</html>", { status: 200, headers: { "content-type": "text/html" } }), () => json(200, {})] });
         check("a 200 that is no task (a gateway page, an empty object) is read again, not taken as a task (then the fake's IN_PROGRESS, COMPLETED)", !x.err && x.s.polls.length === 4, x.err || String(x.s.polls.length));
         {
             // a machine that slept past the 15 minutes: the first read on waking fails, the next one finds the finished task
