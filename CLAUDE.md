@@ -84,6 +84,20 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **2026-11-16, the second round of 0.1.57 on `quick-wins` (the user: no hotfix, "direkt release wenn fertig"), all
+  merged, `7dd83c44`, not pushed:** the morning's two live fixes (`9e6a125c` Seedream's seed on OpenRouter, `e723cf9f`
+  Comfy Cloud's job links on another origin: every Cloud result had opened as a new document), the cancelled save's line
+  (`3a4d184a`), and lanes A-E of `docs/PLAN_0_1_57.md` "Second round", each reviewed by a fresh agent and fixed:
+  A a landed result is one undo step, B a split kept across a reload plus Split on OpenRouter (inferred answer shape,
+  not run live), C six small fixes, D Ctrl+O by a token route (`grantedfiles.js`, gate `openfile`), E Florence-2 (item
+  62, 277 MB download, MCP `describe`, **124 tools**). Item 64 (PCT-Net) tested: not clearly better
+  (`docs/research/harmonize_2026-11-16/`); item 53 (Mirage) spiked and on hold. **The Fable 5.2 review**
+  (`docs/REVIEW_FABLE_PROMPT.md`) was stopped by the user at 12 of 23 slices (weekly limit; partial result
+  `docs/research/review_fable_2026-11-16/`, its run `wf_50226343-c9b` can resume); its two musts fixed (`46ff8b0f`),
+  its four confirmed shoulds open; the rest of the slices go to a Gemini review by the user. Gates on the merged
+  state green on both backends. **Next:** the Gemini review's findings checked against the code, the open shoulds,
+  the hand test, then the 0.1.57 release on the user's word. Three agent worktrees stay locked by this session's
+  process (merged; remove them later).
 - **Later the same night: items 66 (Parameters in the ComfyUI window's bar, never run on a real ComfyUI page: its
   checklist is in `docs/PLAN_COMFY_VIEW.md`) and 67 (a posable mannequin in the glb plugin; undo steps can now carry
   one plugin's data) built, reviewed and merged into `quick-wins` too; `docs/PLAN_0_1_57.md` "as built".**
@@ -1058,14 +1072,14 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 61: **A contact shadow under a cut-out** (the user, 2026-11-07, from another agent's idea list): from a layer's alpha
   (a cutout, a key, a pasted reference) and the picture's depth map, a soft shadow layer of its own under it (where it
   touches the ground, falling off with the depth), procedural, no model. Small to medium. **Built 2026-11-15/16 on `quick-wins`** (`docs/PLAN_0_1_57.md`).
-- 62: **A local mini VLM** (Florence-2, MIT, about 250 MB ONNX; the user, 2026-11-07): automatic names for new cutout,
+- 62: **A local mini VLM** (built 2026-11-16 on `quick-wins`, lane E: names and Describe; Florence-2, MIT, about 250 MB ONNX; the user, 2026-11-07): automatic names for new cutout,
   result and reference layers (which the `@img1` prompting shows), "describe the selection" and an offline prompt draft
   without a key or a local LLM server. Planned after U1 (it runs in the helpers process), weighed then against and with
   item 53 (Mirage), which also names objects.
 - 63: **Outpaint: generate after the extend** (the user, 2026-11-07): a checkbox in the Canvas tool, "Generate the new
   border on apply": after Extend the new border is selected already (today's behaviour), the checkbox starts the
   selected recipe on it; before an API run the usual cost question. Small. **Built 2026-11-15/16 on `quick-wins`** (a plain Generate has no cost question; this switch asks before a paid API run).
-- 64: **A harmonization model, as a test against colour match** (the user, 2026-11-07: "harmonize als option mal in nen
+- 64: **A harmonization model, as a test against colour match** (tested 2026-11-16: PCT-Net not clearly better, `docs/research/harmonize_2026-11-16/`) (the user, 2026-11-07: "harmonize als option mal in nen
   plan aufnehmen und testen ob es besser ist als unser color match"): a small ONNX harmonization model (PCT-Net,
   CDTNet or another, licence checked first) set against the layer's Match on the same cut-outs and results, judged by
   eye by the user and by numbers; built only if it is clearly better. A plan with the candidates first.
