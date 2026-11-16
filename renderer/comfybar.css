@@ -27,6 +27,6 @@ button.cb-on { background: var(--sc-btn-hover, #3a3a3a); }
 .cb-pnode { margin: 0 0 8px; }
 .cb-pnode h2 { font-size: 13px; font-weight: 600; color: var(--sc-fg-strong, #fff); margin: 6px 0 2px; }
 .cb-prow { display: grid; grid-template-columns: 18px minmax(120px, 220px) 70px minmax(0, 1fr); gap: 6px; align-items: center; padding: 1px 0 1px 4px; cursor: pointer; }
-.cb-prow:hover { background: var(--sc-hover, rgba(255, 255, 255, 0.04)); }
+.cb-prow:hover { background: var(--sc-btn-hover, rgba(255, 255, 255, 0.04)); }
 .cb-pname, .cb-pval { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
