@@ -17,6 +17,11 @@ function ownPx(l) { return !!(l && l.kind === "filter" && FILTERS[l.filter] && F
 /** A plain filter layer's px is an empty store of the canvas size (its mask is made at that size): a geometry op gives it a
  *  new one of the new size (the undo step holds the old one by reference). */
 function plainFilterPx(ed, l, nw, nh) { if (l.kind === "filter" && !ownPx(l) && l.px) l.px = ed.pixels.Layer.empty(nw, nh); }
+/** Layers whose pixels the op replaced (Deep paint's paint, an extend's kept layers) are stored at once, as a turn's are: the
+ *  session written 1.5 s later holds the new size, and a crash before the next edit would put the old files into it. */
+function storeGeometryFiles(ed, what) {
+    if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx))) ed.syncLayers().catch((err) => console.warn(`Inpaint Canvas: the ${what} layers could not be stored`, err));
+}
 
 export class GeometryPart {
     setTransformMode(mode) {
@@ -1408,6 +1413,7 @@ export class GeometryPart {
             this.selectionDataUrl = null; this.selectionEncoded = false;
             this.followGeometry("crop", xfTranslate(-left, -top), { width: W, height: H }, { width: nw, height: nh });
             this.renderLayers(); this.renderHistory(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
+            storeGeometryFiles(this, "cropped");
             this.setStatus(`Canvas cropped to ${nw} × ${nh}; the layers keep their pixels (Ctrl+Z takes it back).`);
         } catch (err) {
             if (!pushed) this.releaseSnapshot(before);
@@ -1495,6 +1501,7 @@ export class GeometryPart {
             this.selectionDataUrl = null; this.selectionEncoded = false;
             this.followGeometry("resize", xfScale(sx, sy), { width: W, height: H }, { width: nw, height: nh });
             this.renderLayers(); this.renderHistory(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
+            storeGeometryFiles(this, "resized");
             let scaledNote = scaledFilters ? ` The sizes in pixels of ${scaledFilters} filter layer${scaledFilters === 1 ? "" : "s"} scaled along.` : "";
             if (keptFilters) scaledNote += keptFilters === 1 ? " 1 filter layer of a plugin that is off kept its sizes." : ` ${keptFilters} filter layers of plugins that are off kept their sizes.`;
             this.setStatus(`Image ${base ? "upscaled" : "resized"} to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.${scaledNote}`);
@@ -1686,6 +1693,7 @@ export class GeometryPart {
             this.fitView();
             this.drawThumb();
             this.notifyChanged();
+            storeGeometryFiles(this, "extended");
             const hiddenNote = hiddenKept ? ` ${hiddenKept} hidden layer${hiddenKept === 1 ? " stays a layer" : "s stay layers"}, moved with the picture.` : "";
             this.setStatus(`Canvas is ${nw} × ${nh}. The new border is selected; press Generate to outpaint it (Ctrl+Z takes the extension back).${hiddenNote}`);
         } catch (err) {

@@ -335,6 +335,8 @@ export class LayersPart {
         this.uploaded.controlHash = null;
         this.refsMutated();
         this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
+        // the copy has no file yet (its pixels were dirty, or Deep paint's own): stored like an edit, not only at the next one
+        if (copy.dirty || copy.maskDirty) this.scheduleAutosave();
         const label = below ? this.refLabels().get(copy.id) : null;
         this.setStatus(below ? `${copy.name} added${label ? ` as @img${label}` : ""}, below the other references.` : `${copy.name} added above ${layer.name}.`);
         return copy;
