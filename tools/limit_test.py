@@ -723,6 +723,36 @@ JS = r"""
         check("Row group: list_layers shows no limit", flAfterOff && (!flAfterOff.params || !flAfterOff.params.limit), flAfterOff);
     }
 
+    // 6. A colour limit: the swatch and the Tolerance field change the limit, then a drag of the bar (begin, preview,
+    // commit, as its pointer handlers call them) keeps the new colour and tolerance (the bar's copy taken at mount used
+    // to bring the old ones back, BUGS.md "The Limit row's range bar keeps an old colour")
+    rawFl.params = { ...rawFl.params, limit: { source: "color", lo: 0, hi: 0.7, fLo: 0.05, fHi: 0.05, invert: false, color: "#ffffff", tol: 30 } };
+    const fxCol = edRow.buildFilterControls(rawFl);
+    const colBlock = fxCol.querySelector(".ipc-limit-block");
+    const colBar = colBlock ? (colBlock.rangeBar || rawFl._rangeBar) : null;
+    const swatch = colBlock ? colBlock.querySelector("input[type=color]") : null;
+    const tolField = colBlock ? colBlock.querySelector(".ipc-limit-color-row input[type=number]") : null;
+    check("Row group: a colour limit has its swatch, tolerance and bar", !!(colBar && swatch && tolField));
+    if (colBar && swatch && tolField) {
+        swatch.value = "#ff0000";
+        swatch.dispatchEvent(new Event("input"));
+        swatch.dispatchEvent(new Event("change"));
+        tolField.value = "55";
+        tolField.dispatchEvent(new Event("input"));
+        tolField.dispatchEvent(new Event("change"));
+        const afterSwatch = { ...rawFl.params.limit };
+        colBar.begin();
+        colBar.preview({ lo: 0.1 });
+        const mid = { ...rawFl.params.limit };
+        colBar.commit({ lo: 0.1 });
+        const done = rawFl.params.limit;
+        check("Row group: a drag of the bar after the swatch keeps the swatch's colour and the new tolerance",
+            afterSwatch.color === "#ff0000" && afterSwatch.tol === 55 && mid.color === "#ff0000" && mid.tol === 55
+            && done.color === "#ff0000" && done.tol === 55 && done.lo === 0.1,
+            { afterSwatch, mid, done });
+        check("Row group: the colour limit's drag is still one undo step on the layer", edRow.filterPreview === null);
+    }
+
     shell.closeDocument && shell.closeDocument(edRow, { force: true });
 
     // -------------------------------------------------------------------------
