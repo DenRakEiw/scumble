@@ -23,7 +23,7 @@ Microsoft signs the Store copy, so it installs without a warning. The installer 
 
 There is also a portable copy for Windows, Scumble-\<version\>-portable-win-x64.zip in the same release. Unpack it into a plain folder you can write to, such as C:\\Tools (not Program Files, and not a folder OneDrive syncs): the zip holds one folder, Scumble, and you start the Scumble.exe in it. The file portable.txt beside it makes Scumble keep everything it stores — settings, keys, autosave, the local files, plugins, recipes, helper models, logs — in a data folder next to it, so nothing lands in %APPDATA%\\Scumble and it runs beside an installed Scumble. The Store copy and the installer stay the recommended ways.
 
-On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. macOS is planned, but not started yet.
+On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. A macOS build is coming soon.
 
 The app alone can do a great deal — open, paint, select, layer, filter, save, export — but it generates nothing until it has somewhere to render. That is the next chapter.
 

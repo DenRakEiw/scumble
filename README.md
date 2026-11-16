@@ -34,7 +34,7 @@
 | **Windows** | [Installer](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-Setup-<version>.exe` | Updates itself; not code-signed yet, so SmartScreen asks once |
 | **Windows, portable** | [Zip](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-<version>-portable-win-x64.zip` | No install; keeps its data in a folder beside it |
 | **Linux** (x64) | [AppImage or .deb](https://github.com/DenRakEiw/scumble/releases/latest) | Early builds made by CI, not run by the author yet; reports welcome |
-| **macOS** | not yet | Planned, not started |
+| **macOS** | coming soon | In the works |
 
 Scumble is free and needs no account of its own. The details, and what it needs to render, are under
 [Installation](#installation).
@@ -142,7 +142,7 @@ have not been run by the author yet; reports are welcome** in the
 
 ### macOS
 
-Planned, not started yet.
+Coming soon.
 
 ### What you need to render
 
