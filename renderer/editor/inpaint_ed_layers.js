@@ -1042,10 +1042,10 @@ export class LayersPart {
         const editBtn = miniButton("maskEdit", "Edit the mask with the paint (reveal) and erase (hide) tools", () => this.toggleMaskEdit(layer), layer.maskEdit ? "ipc-on" : "");
         editBtn.disabled = !layer.maskPx;
         maskRow.appendChild(editBtn);
-        const applyBtn = miniButton("check", "Apply the mask to the pixels", () => this.applyMask(layer));
+        const applyBtn = miniButton("check", "Apply the mask to the pixels", () => this.maskOp(layer, "apply"));   // maskOp: a text layer becomes pixels first, a pending transform refuses
         applyBtn.disabled = !layer.maskPx || isFx;
         maskRow.appendChild(applyBtn);
-        const delMask = miniButton("trash", "Remove the mask (the pixels stay)", () => this.removeMask(layer), "ipc-del");
+        const delMask = miniButton("trash", "Remove the mask (the pixels stay)", () => this.maskOp(layer, "remove"), "ipc-del");
         delMask.disabled = !layer.maskPx;
         maskRow.appendChild(delMask);
         return maskRow;
