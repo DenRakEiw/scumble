@@ -31,7 +31,7 @@ export const HostDocumentsPart = {
         for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
         if (ed.heldEdit) await ed.heldEdit();   // a heal or a Remove still landing (its stroke is drawn until it has)
         for (const until = Date.now() + 10000; ed.pointer && Date.now() < until;) await sleep(50);   // a stroke still down
-        const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
+        const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx) || l._uploading || l._maskUploading);
         if (edited()) say(`Saving the edited layers before ${when}...`);
         for (let round = 0; round < 3 && edited(); round++) await ed.syncLayers();
         const pending = () => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
@@ -70,7 +70,7 @@ export const HostDocumentsPart = {
         if (!ed || !ed.base) return false;
         if (ed.pointer && ed.pointer.healing) return true;   // a heal stroke blending in a worker is an edit on its way
         if (!ed.docFile || !ed.docFile.key) return true;
-        if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx))) return true;
+        if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx) || l._uploading || l._maskUploading)) return true;
         if (ed.sel && !ed.selectionEncoded) return true;
         if (ed._stateKey == null) return true;
         return ed._stateKey !== ed.docFile.key;
