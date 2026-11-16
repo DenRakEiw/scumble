@@ -19,7 +19,7 @@ import { failKind } from "./editor/inpaint_status.js";
 
 /** failKind for an error that came over IPC (its fields stay behind): a cancelled or busy save or open is plain. */
 function ipcKind(err) {
-    return /(?:was cancell?ed|is already being saved|is already being opened)/i.test(String((err && err.message) || err)) ? "info" : failKind(err);
+    return /\b(?:was cancell?ed|is already being saved|is already being opened)\b/i.test(String((err && err.message) || err)) ? "info" : failKind(err);
 }
 import { getSecretGreeting, getScumbleWord, getScumbleLogo, runBrainfuck } from "./easteregg.js";
 import { shellState } from "./shell_state.js";
