@@ -538,6 +538,31 @@ JS = r"""
                     const b2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
                     check("MoGe normals: the CPU twin within 2 levels of the GPU", diff(b1, b2).max <= 2, diff(b1, b2));
                 } else check("MoGe normals: the GPU path ran", false);
+                // where MoGe's mask is 0 (the sky) the depth map's normals light it, as Wrap does: the tilted left half
+                // with its mask off is lit as with no normals map at all; the right half (mask on) stays MoGe's
+                await ed.setMaps({ normals: null });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const depthLit = await all();
+                const sky = new Uint8Array(tilt);
+                for (let y = 0; y < mh; y++) for (let x = 0; x < mw / 2; x++) sky[4 * (y * mw + x) + 3] = 0;
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, sky, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
+                const skyLit = await all();
+                const area = (d, x0, x1) => { const o = []; for (let y = 20; y < H - 20; y += 2) for (let x = x0; x < x1; x += 2) for (let k = 0; k < 3; k++) o.push(d[4 * (y * W + x) + k]); return o; };
+                check("MoGe normals: where the mask is 0 the depth's normals light it (as with no normals map)", diff(area(skyLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)).max <= 1 && diff(area(tiltLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)).max > 3,
+                    [diff(area(skyLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40)), diff(area(tiltLit, 20, W / 2 - 40), area(depthLit, 20, W / 2 - 40))]);
+                check("MoGe normals: where the mask is on, MoGe's normals as before", diff(area(skyLit, W / 2 + 40, W - 20), area(tiltLit, W / 2 + 40, W - 20)).max <= 1, diff(area(skyLit, W / 2 + 40, W - 20), area(tiltLit, W / 2 + 40, W - 20)));
+                const g3 = applyFilterGL("relight", rb2, RL.params, ri2());
+                if (g3) {
+                    const b1 = glToCanvas(g3).getContext("2d").getImageData(0, 0, W, H).data;
+                    const b2 = applyFilter("relight", rb2, RL.params, { ...ri2(), cpu: true }).getContext("2d").getImageData(0, 0, W, H).data;
+                    check("MoGe normals with a mask: the CPU twin within 2 levels of the GPU", diff(b1, b2).max <= 2, diff(b1, b2));
+                }
+                await ed.setMaps({ normals: makeMap("normals", mw, mh, tilt, xf, { fp: "t" }, null, "rgba8") });
+                if (ed.relightSettled) await ed.relightSettled();
+                await settle(ed);
                 await shell.commands.call("set_filter", { doc, layer: RL.id, params: { surface: false } });
                 if (ed.relightSettled) await ed.relightSettled();
                 await settle(ed);
