@@ -1453,22 +1453,41 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
         const ed = editorOf(args && args.doc);
         if (ed && docSummary(ed).busy) return reply({ ok: false, error: "the document is busy: a run is in progress; nothing was run" });
     }
+    let turnTaken = false, undoSnap = null, turnEd = null, mark = null;
     if (meta && meta.turn) {
         // the turn's snapshot of this document (A7), taken once per turn and document, and the
         // editor's own undo step for the calls the commands record none for. No await from here
-        // to commands.call: what they hold is the state the command is about to change.
-        snapshotTurn(meta, args && args.doc);
-        if (meta.undo && meta.undo.kind) {
-            const ed = editorOf(args && args.doc);
-            if (ed && typeof ed.pushUndo === "function") {
-                // labelled by the command, so the Undo history says what the assistant did
-                const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
-                try { ed.pushUndo(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id, label } : { kind: meta.undo.kind, label }); }
-                catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
-            }
+        // to commands.call: what they hold is the state the command is about to change. The step
+        // goes on the stack only once the call did something: one a command refused (a bad argument,
+        // a missing layer) would have thrown the redo steps away and left an empty step behind.
+        turnEd = editorOf(args && args.doc);
+        if (turnEd) mark = [turnEd.historyGen, turnEd.compositeVersion, turnEd.undo && turnEd.undo.length];
+        turnTaken = snapshotTurn(meta, args && args.doc) === "taken";
+        if (meta.undo && meta.undo.kind && turnEd && typeof turnEd.snapshot === "function" && turnEd.sel) {
+            // labelled by the command, so the Undo history says what the assistant did
+            const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
+            try { undoSnap = turnEd.snapshot(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id, label } : { kind: meta.undo.kind, label }); }
+            catch (err) { console.warn("assistant: the undo step could not be taken", err); }
         }
     }
-    reply(await commands.call(name, args || {}));
+    const res = await commands.call(name, args || {});
+    if (turnEd) {
+        const changed = !!(res && res.ok) || !mark
+            || turnEd.historyGen !== mark[0] || turnEd.compositeVersion !== mark[1] || (turnEd.undo && turnEd.undo.length) !== mark[2];
+        if (undoSnap) {
+            try {
+                if (changed) {
+                    // below any step the command pushed itself, where it would have been had it gone on first
+                    const own = Math.max(0, (turnEd.undo ? turnEd.undo.length : 0) - (mark ? mark[2] : 0));
+                    turnEd.pushUndoSnapshot(undoSnap);
+                    if (own > 0) { const s = turnEd.undo.pop(); turnEd.undo.splice(turnEd.undo.length - own, 0, s); turnEd.historyChanged(); }
+                } else turnEd.releaseSnapshot(undoSnap);
+            } catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
+        }
+        // a turn's first call that changed nothing keeps no snapshot: Undo this turn is for a turn that did something
+        if (turnTaken && !changed && turnEd.node) forgetDocument(turnEd.node.id);
+    }
+    reply(res);
 });
 
 // ---- start: the skin, plugins, restore the last session, then connect ----------------------
