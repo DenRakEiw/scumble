@@ -69,6 +69,7 @@ const { Documents, isDocumentPath, pathKey, documentArgs } = require("./document
 const docfile = require("./docfile");
 const { FileSaves } = require("./filesaves");
 const { VideoFiles, isVideoPath } = require("./videofiles");
+const { GrantedFiles } = require("./grantedfiles");
 const registration = require("./mcp/registration");
 const { ComfyView } = require("./comfyview");
 const { openHttp, appPage } = require("./links");
@@ -164,6 +165,9 @@ const documents = new Documents({
 // temporary file of the same temp list
 // File › Open's videos (videofiles.js): one token per file chosen, served to the frame picker with ranges
 const videoFiles = new VideoFiles();
+// File › Open's pictures, PSD / ORA / TIFF files and load_image's paths (grantedfiles.js): a token per open, served to
+// the window with ranges and released by it once its File is made; never the bytes in one IPC message
+const openFiles = new GrantedFiles({ types: { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff", ".svg": "image/svg+xml" } });
 const fileSaves = new FileSaves({ registry: documents.registry, choose: (name, filters) => chooseSavePath(name, filters) });
 const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
 let flushSeq = 0;
@@ -237,6 +241,8 @@ async function serveScheme(request) {
     }
     // a video the user chose in File › Open (videofiles.js): its token, never a path
     if (url.pathname.startsWith("/video/")) return videoFiles.serve(url.pathname.slice("/video/".length), { method: request.method, range: request.headers.get("range") });
+    // a picture or layered file opened (File › Open, load_image): its token, never a path
+    if (url.pathname.startsWith("/file/")) return openFiles.serve(url.pathname.slice("/file/".length), { method: request.method, range: request.headers.get("range") });
     if (url.pathname.startsWith("/comfy/")) {
         const rel = url.pathname.slice("/comfy".length);
         try {
@@ -931,10 +937,22 @@ async function openChosen(file) {
         send("file:openedVideo", payload);
         return { video: file, name: payload.name };
     }
-    const data = await fsp.readFile(file);
-    const payload = { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
+    // nor a picture: the window fetches it from scumble://app/file/<token> into a File (renderer/grantfile.js); one
+    // message of the bytes blocked the window while it was copied in and ends the renderer at about 512 MiB
+    let payload;
+    try {
+        payload = await filePayload(file);
+    } catch (err) {
+        payload = { name: path.basename(file), path: file, error: err.message };
+    }
     send("file:opened", payload);
     return payload;
+}
+
+/** A token for a file to open (grantedfiles.js), checked readable: what the window needs to fetch it. */
+async function filePayload(file) {
+    const g = await openFiles.grantReadable(file);
+    return { name: g.name, path: g.path, size: g.size, token: g.token, url: `${SCHEME}://app/file/${g.token}` };
 }
 
 /** A token for a video the user chose (videofiles.js) and what the window's frame picker needs to play it. */
@@ -943,7 +961,7 @@ function videoPayload(file) {
     return { name: path.basename(file), path: file, token, url: `${SCHEME}://app/video/${token}` };
 }
 
-/** Read a file for the renderer (commands with a `path` argument: load_image, add_image_layer). */
+/** Read a file for the renderer, whole in the answer (tests and plugins for small files; load_image goes by file:grant). */
 async function readFile(file) {
     const data = await fsp.readFile(file);
     return { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
@@ -1280,15 +1298,16 @@ function installIpc() {
     ipcMain.handle("file:saveFinish", (e, args) => fileSaves.finish(e.sender.id, args));
     ipcMain.handle("file:saveAbort", (e, args) => fileSaves.abort(e.sender.id, args));
     ipcMain.handle("file:read", (_e, file) => readFile(String(file)));
+    // a path a command names (load_image, add_image_layer): a token as File › Open's, released by the window after its fetch
+    ipcMain.handle("file:grant", (_e, file) => filePayload(String(file || "")));
+    ipcMain.handle("file:release", (_e, token) => openFiles.release(token));
     // the frame picker closed: its video's token is no longer served
     ipcMain.handle("file:releaseVideo", (_e, token) => videoFiles.release(token));
     // the videoframe gate, dev builds only: the File › Open route for a fixture of tools/fixtures/video (no other path)
     if (!app.isPackaged) {
         // the open gate and the Ctrl+O measurement, dev builds only: File › Open's route for a path, without the dialog
         ipcMain.handle("file:testOpen", async (_e, file) => {
-            const r = await openChosen(path.resolve(String(file || "")));
-            // what was sent, never the bytes a second time
-            return r && r.data ? { name: r.name, path: r.path, size: r.data.byteLength } : r;
+            return openChosen(path.resolve(String(file || "")));
         });
         ipcMain.handle("file:testOpenVideo", async (_e, name) => {
             const dir = path.join(ROOT, "tools", "fixtures", "video");

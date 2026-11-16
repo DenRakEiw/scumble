@@ -866,6 +866,22 @@ press, no end search fails the length step);
 `file:testOpenVideo`, an IPC handler main registers only unpackaged and only for a file of that fixture folder, so with
 `--exe` it is skipped and says so; the native file dialog itself is not driven.
 
+`tools/openfile_test.py` (gate `openfile`, File › Open and `load_image` hand the window a token, not the file; full tier,
+both backends; about 15 s) runs `node tools/grantedfiles_test.js` (main's token route `electron/main/grantedfiles.js`:
+the checked grant of a missing file and a folder, a whole file across many 1 MiB read pieces, ranges across a piece's
+border, HEAD, 416, 405, unknown, path-like, released and capped tokens, a file gone since its grant, the words) and
+`tools/videofiles_test.js` first, then in the window: a two-layer document (a noise base, a half-transparent layer
+placed off the origin) exported as PSD, ORA, TIFF and PNG, saved as `.scumble`, and a JPEG, a lossless WebP and an LZW
+TIFF from Pillow; each through File › Open's route (`file:testOpen`, main's `openChosen` without the dialog, unpackaged
+builds only) and `load_image` arrives as a File with the file's name, the old type, size and SHA-256; each opens the
+same size, stack and bytes (every layer, mask and the base) by those two routes as by a disk-backed File (an
+`<input type=file>` given the path over CDP: the drop route, untouched); after an open the token's URL answers 404, a
+grant serves ranges until it is released; an open while the active tab holds a picture goes to a new tab and leaves it
+as it was; a `.scumble` through File › Open's route still opens as a document; a missing file and a folder are refused
+in words (File › Open's in the status line, red; `load_image`'s as its error), a file deleted after its grant is refused
+in words and its token gone, one grown after its grant is refused as changed. With `--exe` the hook steps are skipped
+and say so. The 15k numbers are in `docs/measurements/ctrlo_2026-11-16/`.
+
 ## Faster runs without less coverage
 
 Added 2026-11-07 (the user: "Tests auslassen: nein. Schneller machen: ja, deutlich"). Nothing here leaves a check out

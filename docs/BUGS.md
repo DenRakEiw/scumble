@@ -15,6 +15,22 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Ctrl+O sends the whole file to the window in one message (found 2026-11-06, read and measured once, D0; measured and fixed 2026-11-16, lane D of `docs/PLAN_0_1_57.md`)
+
+Was: `electron/main/main.js` `openImage` read the chosen file whole (`fsp.readFile`) and sent it in one `file:opened`
+IPC message, and `load_image` / `add_image_layer` read a `path` the same way through `window.scumble.file.read`. The
+window took the message whole: a 15k PSD of 925 MB blocked it 1.8 s (median of three; 0.5 s for a 15k TIFF or PNG of
+about 240 MB) before any reader ran, a message of 2047 MiB was lost (main -> window works up to 1.5 GiB here, G2 found
+about 512 MiB window -> main), and above 2 GiB `readFile` refuses. A drop from Explorer (a disk-backed `File`) paid no
+read at all. **Fixed:** main grants the file a token (`electron/main/grantedfiles.js`, the token route of item 68's
+videos generalised: `videofiles.js` is a subclass of it now) and sends `{ name, path, size, token, url }`; the window
+fetches `scumble://app/file/<token>` into a Blob-backed `File` (`renderer/grantfile.js`) and releases the token, so
+the readers get the same bytes and slice them as a dropped file. The window's block before the reader is 0 for all
+three files (the fetch takes 1.4 s for the PSD, about 0.35 s for the others, without blocking); files of 2.6 GB arrive.
+A file gone, a folder or no permission is refused in words (File › Open's in the status line). Numbers:
+`docs/measurements/ctrlo_2026-11-16/summary.txt`; gate `openfile`. Left: `window.scumble.file.read` (the tests' and
+the glb plugin's whole-file read) still answers in one message.
+
 ### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`; fixed 2026-11-12)
 
 `renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
@@ -120,18 +136,6 @@ next frame at 15000 x 10000 (`perf_test.py` row `whole_1to1_lights`, 383 before 
 `docs/measurements/k12_2026-11-06/after/summary.txt`). There since relight shipped in 0.1.47, not a regression. A fix
 changes where the light's stats come from (say the behaviour first); the user places it (`docs/PLAN_WASM_BUILD.md` §7
 "Stop 5").
-
-### Ctrl+O sends the whole file to the window in one message (found 2026-11-06, read and measured once, D0)
-
-`electron/main/main.js` `openImage` (`:833-842` at `bbff117`) reads the chosen file whole (`fsp.readFile`) and sends
-it in one `file:opened` IPC message; `renderer/shell.js` (`:2943-2946`) makes a `File` of it and opens that. For a
-15k PSD of 925 MB that is the one block D0 leaves in the open: 1.0-1.8 s of the window in native_test's row (the 1.71 s gap before
-`layered_open` `start` in `docs/measurements/d0_2026-11-06/after/longtasks_first_open.json` is the same transfer
-through `load_image`'s `window.scumble.file.read`). To be measured before code: the block of a Ctrl+O open apart from
-the reader; the ceiling of a main -> window message (G2 found about 512 MiB a message for window -> main, while 925 MB
-came through main -> window here; a PSD v1 of 30k x 30k is larger still); whether a drop from Explorer (a disk-backed
-`File`) pays any read. A fix would hand the window a path and let the worker read the file in pieces. The user places
-it at a later Stop of `docs/PLAN_WASM_BUILD.md`.
 
 ### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
 
