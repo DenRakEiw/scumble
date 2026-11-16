@@ -207,6 +207,8 @@ export class HistoryPart {
                 // tiles: the "before" pixels themselves; canvases keep them as a PNG, so the text is drawn again when the record comes back
                 if (tb.px) c.px = tb.px.clone(); else c._textRedraw = true;
             }
+            // a text whose render is still on its way (typed, debounced): the record's pixels are older than its text
+            if (!tb && l.text && (l._textTimer || l._textRendering)) c._textRedraw = true;
             if (l._matchUndo && l._matchUndo.match) c.match = { ...l._matchUndo.match };
             const held = this.pointer && this.pointer.undoSnap;
             const g = !held ? null : held.kind === "transform" ? (held.id === l.id ? held : null) : held.kind === "transforms" ? held.items.find((i) => i.id === l.id) : null;

@@ -645,6 +645,30 @@ export class LayersPart {
         return true;
     }
 
+    /**
+     * An edit of the layer list still in progress becomes its own undo step now: a text typed in a row (its field has the
+     * focus), a colour match slider held, a filter slider held (its row has the focus). A result landing rebuilds the list,
+     * which ends such an edit without its change event; the result's step would hold the edit's "before", and its undo
+     * would take the edit back with the result.
+     */
+    settlePanelEdits() {
+        const act = typeof document !== "undefined" ? document.activeElement : null;
+        const focused = (l) => {
+            const row = act && this.layerList ? this.layerList.querySelector(`[data-layer="${l.id}"]`) : null;
+            return !!(row && row !== act && row.contains(act));
+        };
+        for (const l of this.layers || []) {
+            if (l._textUndo && l._textUndo.kind === "text" && focused(l)) this.settleTextUndo(l);
+            if (l._matchUndo) { this.pushUndoSnapshot(l._matchUndo, { label: "Colour match strength" }); l._matchUndo = null; }
+            if (l.kind === "filter" && this.previewShown(l) && !l._hoverSnap && focused(l)) {
+                this.pushUndoSnapshot(l._undoPending, { label: "Filter" });
+                l._undoPending = null;
+                this.filterPreview = null;
+                this.markFilterChanged(l);
+            }
+        }
+    }
+
     async addResults(results) {
         for (const r of results || []) {
             if (!r || !r.filename) continue;
@@ -663,6 +687,7 @@ export class LayersPart {
                 // the landing is an undo step of its own (docs/PLAN_VARIANTS.md Q19), taken now: a run that lands late is
                 // pushed on top of whatever was done while it ran, so one Ctrl+Z takes exactly this result back and
                 // nothing before it, and Ctrl+Y brings it back (each area's result is a step of its own the same way)
+                this.settlePanelEdits();
                 this.pushUndo({ kind: "layers", label: "Result " + n });
                 const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px, x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
                 // a provider run says which seed the model got (null: none went, FLUX 3 Image); a local result is the editor's
