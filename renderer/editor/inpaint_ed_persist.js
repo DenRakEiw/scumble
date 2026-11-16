@@ -188,7 +188,7 @@ export class PersistPart {
                     if (l.kind === "filter") {
                         try {
                             // a filter whose own pixels are an input (Deep paint) has them in its file; every other one an empty layer
-                            let pixels = null;
+                            let pixels = null, paintLost = false;
                             if (l.ref && l.ref.filename && FILTERS[l.filter] && FILTERS[l.filter].ownPixels) {
                                 try {
                                     const got = await streamed(l.ref, this.pixels.Layer);
@@ -203,7 +203,7 @@ export class PersistPart {
                                 } catch (err) {
                                     console.warn("Inpaint Canvas: Deep paint pixels missing", l.ref, err);
                                     if (pixels && pixels.release) pixels.release();
-                                    pixels = null;
+                                    pixels = null; paintLost = true;
                                     missing.push(String(l.name || l.id || "layer") + " (its paint)");
                                 }
                             }
@@ -226,11 +226,13 @@ export class PersistPart {
                             // an id that is not installed here (a plugin switched off, a document from elsewhere) is kept with
                             // its params: applyFilter passes the picture through, and the next save writes it back unchanged
                             const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
+                            // a paint or LUT file that could not be read is not kept as the layer's file (as a mask or a plate
+                            // is not): the next save would refuse the whole document over it
                             this.layers.push(installLayerAliases({
-                                id: l.id, name: l.name, kind: "filter", role: "none", blend: normalBlend(l.blend), ref: l.ref || null, px: pixels,
+                                id: l.id, name: l.name, kind: "filter", role: "none", blend: normalBlend(l.blend), ref: paintLost ? null : l.ref || null, px: pixels,
                                 x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip, group: l.group || null,
                                 maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
-                                filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
+                                filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut && l.lut.ref && !lutData ? null : l.lut || null, _lutData: lutData,
                                 plate: plateImg ? l.plate : null, _plateImg: plateImg,
                                 // a wrap's link to its source (Deep paint), checked: numbers and a source id, else none
                                 wrap: wrapLink(l.wrap),
