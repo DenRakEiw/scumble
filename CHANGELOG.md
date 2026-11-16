@@ -53,6 +53,19 @@ the section for its version; `docs/` and the commit history hold the technical d
 - Select range in Add mode with a range nothing matches leaves the selection's box as it was.
 - A 3D object or mannequin edit that would write a locked layer is refused before anything changes.
 - *Parameters* in the ComfyUI window: a row you untick keeps the recipe's value instead of the node's default.
+- A change made while a document was still settling after an open or a restore keeps the tab marked as changed, and
+  edits to plugin data alone (Boxes rows, 3D placements) mark it too, so closing it asks to save.
+- *View › Reload* pressed while the window is saving before closing no longer cuts that save short; *Settings ›
+  Rendering*'s Restart waits for a document save and asks first while a render on your ComfyUI runs.
+- *Clean up* in *Settings › Local files* keeps the files of an autosave the window could not restore, and stops when it
+  cannot read it.
+- A paid result brought back from an earlier session is deleted from its kept place only after its document is stored.
+- An assistant call that is refused no longer throws away your redo steps or leaves an empty undo step;
+  `add_surface_layer` is an undo step of its own.
+- Plugins: refreshing a filter layer after changing its mask, or a Deep paint layer after changing its pixels, stores it.
+- Saved assistant chats no longer change long text that only looks like a picture, and a chat whose screenshot file
+  is gone can go on.
+- A crafted PNG or ORA with an oversized palette or transparency chunk is refused instead of exhausting memory.
 
 - **Fixed: Comfy Cloud results opened as a new document instead of landing as a layer.** Comfy Cloud took the
   job, but it now answers with job links Scumble's Cloud client sent no key to, so the first status read was refused
