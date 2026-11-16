@@ -15,6 +15,27 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Deep paint: three small points of the 0.1.56 release review (fixed 2026-11-16 on `quick-wins`, lane C)
+
+Was: relight with `surface` on used MoGe-2's normals where MoGe's mask is 0 (the sky); MoGe-2 ViT-S could not be chosen while ViT-B was downloaded; a map whose upload failed kept `ref: null` and was left out of the next save. **Fixed:** relight takes the depth map's normals where the mask is 0 and mixes the two on its soft edge (`inpaint_relight.js` `relightNormalOnMask`, the shader's `u_mnOn` branch the same); *Settings › Helpers* has a *Deep paint normals* select; a map without its file is stored again on every layer pass (`storeMaps` from `syncLayersOnce`), counts as unsaved, and a save's flush refuses in words while its upload keeps failing (`host.flushEditor`). Gate steps in `deeppaint`.
+
+### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review; fixed 2026-11-16 on `quick-wins`, lane C)
+
+Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directory, each layer and the base upload as slices of the `File` (as D0's PSD route does), where it used to read the whole file into memory first. A file dropped from Explorer is a snapshot on disk: if another program saves over it during the seconds a 15k ORA takes to open, Chromium refuses the later reads (`NotReadableError`) and the open ends with a decode or upload error instead of a plain message. Opening again works. **Fixed:** a `NotReadableError` from the slices, or a read that fails while the file no longer reads, says "<name> changed on disk while it was opened; open it again" (`inpaint_ed_open.js` `changedOnDisk`; the stream route no longer falls back to the image decoder on it). Gate step `an_ora_changed_on_disk_while_it_opens_says_so` in `layered`.
+
+### The Limit row's range bar keeps an old colour after the swatch changed it (found 2026-11-09, read by K23's review; fixed 2026-11-16 on `quick-wins`, lane C)
+
+`buildRangeBar` copies the stored limit into `curRange` at mount (`inpaint_rangebar.js`), its `preview` and `commit` merge that copy over the layer's limit (`inpaint_canvas.js` `normalizeStoredLimit({ ...cur, ...r })`), and neither the swatch's handlers nor `refresh()` update it: a new colour from the swatch followed by a drag of the bar brings the old colour back until the row is rebuilt. The bar's own Pick updates the copy. **Fixed:** the bar hands preview and commit only its own fields (lo, hi, feathers, invert), the colour only with its own Pick, so the swatch's colour and the Tolerance stay (the Limit row and Select range). Gate step in `limit`.
+
+### A Comfy Cloud recipe with no LoRA section still says its stored rows stayed out in red (found 2026-11-07, the 0.1.52 release review, read; fixed 2026-11-16 on `quick-wins`, lane C)
+
+Seen in the code only: rows stored for a Comfy Cloud recipe whose LoRAs section is hidden (its routes declare no LoRA
+source, e.g. `cloud_ideogram_4`, after rows were stored on another of its variants) reach main, and
+`electron/main/providers/comfycloud.js` `withLoras` answers with its red "The LoRAs stayed out: ..." on every run. The
+local route got the plain line and the clear by `set_generation` `loras: []` in the review's fixes (`docs/PLAN_LORAS.md`
+LR1 deviation 4); the Comfy Cloud side needs the same rule in main (the plain line when the route takes no rows). **Fixed:** `withLoras` gives the plain "The LoRA rows stored for this recipe stayed out: ..." line when the route has no model source. Test: `tools/comfycloud_v2_test.js`.
+
+
 ### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`; fixed 2026-11-12)
 
 `renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
@@ -50,17 +71,11 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 Three review agents read `e0ff04cd..` (Deep paint, Seedream 5.5 on OpenRouter, Gemini 4 Hydrogen). Fixed before the
 release: relight on the surface maps above the maps' size, a re-wrap over hand paint, a wrap link after a turn or crop,
 a wrap within a selection followed later, a stale points map after a Recompute, Wrap's box on the points route, Deep
-paint over a transparent picture (`docs/PLAN_SURFACE_PAINT.md` §6, "The release review"). Left, none of them losing data:
+paint over a transparent picture (`docs/PLAN_SURFACE_PAINT.md` §6, "The release review"); the sky normals, the ViT-S choice and a
+map whose upload failed on 2026-11-16 (above). Left, none of them losing data:
 - Wrap takes the source's pixels only: its opacity, layer mask and blend mode are not in the wrap (`wrapPixels`).
-- Relight's MoGe-2 normals are used where MoGe's mask is 0 (the sky); Wrap keeps the depth's way there, relight does not.
-- MoGe-2 ViT-S cannot be chosen while ViT-B is downloaded (no select in *Settings › Helpers*, `DEFAULTS.normals`).
 - An autosave of 0.1.56 restored in 0.1.55 or older loses a Deep paint layer's paint and stores a colour map as `u16rg`
   (the `.scumble` is guarded by `minReader`, the autosave is not; true of every new layer kind before too).
-- A map whose upload fails keeps `ref: null` and is not in the next save (as `setMap` before).
-
-### An ORA saved over by another program while Scumble still opens it fails with a decoder error (found 2026-11-11, read; K20c's review)
-
-Since K20c an ORA stays the file while it opens: `readOraBlob` reads the directory, each layer and the base upload as slices of the `File` (as D0's PSD route does), where it used to read the whole file into memory first. A file dropped from Explorer is a snapshot on disk: if another program saves over it during the seconds a 15k ORA takes to open, Chromium refuses the later reads (`NotReadableError`) and the open ends with a decode or upload error instead of a plain message. Opening again works. Suggested when it is next touched: map a `NotReadableError` from the slices to "<name> changed on disk while it was opened; open it again".
 
 ### A *Split into layers* run is lost if its window reloads or crashes during the run (found 2026-11-10, read)
 
@@ -74,10 +89,6 @@ At 15,000 x 10,000 `pan (60 frames)` went from about 2.8 ms to about 5.8 ms, and
 
 On screen the snap weighs the guide's pixels against the colour of the picture below (`inpaint_limit.js` `LIMIT_SHADER` `i.rgb`, `limitStageCPU` `iR`, `iG`, `iB`); `limitAlphaRows` passes the fill's own colour (`rgba[ptr]`), so the soft edge of the exported layer does not follow the picture as it does on screen. K25: the reference colour from `map.guide`, the layer's own pixels only without a guide. It then matches the screen, within the limit at the end of this entry, as long as the picture below is still the one the depth map was made from. Only depth limits are concerned: a fill layer takes no other. Up to 4096 px on the long side the export and the screen agree exactly; above it (the depth map stops at 4096, about 3.66 picture pixels per map texel at 15,000) a hard colour edge can differ within a band one map texel wide, because `map.guide` is a downscale and is read at `floor(mx), floor(my)` while the screen reads the full picture for the centre pixel (`docs/measurements/k25_2026-11-09/summary.txt`).
 
-### The Limit row's range bar keeps an old colour after the swatch changed it (found 2026-11-09, read by K23's review, not run; in 0.1.52 too)
-
-`buildRangeBar` copies the stored limit into `curRange` at mount (`inpaint_rangebar.js`), its `preview` and `commit` merge that copy over the layer's limit (`inpaint_canvas.js` `normalizeStoredLimit({ ...cur, ...r })`), and neither the swatch's handlers nor `refresh()` update it: a new colour from the swatch followed by a drag of the bar brings the old colour back until the row is rebuilt. The bar's own Pick updates the copy. Fix: update `curRange` when the swatch changes the colour, or hand `color` to preview and commit only after a Pick.
-
 ### A landed Generate result may not be one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read, not run; item 60's plan)
 
 Seen in the code only (`docs/PLAN_VARIANTS.md` §10 Q19): `addLayer` (`renderer/editor/inpaint_canvas.js`, the result's
@@ -87,15 +98,6 @@ it is in". Whether Ctrl+Z removes a landed result depends on what the step befor
 generate on the loopback provider after (a) a `layers` step, (b) a pixel stroke, (c) nothing; press Ctrl+Z once and
 say what comes back. Then either make the landing an undo step (the plan's recommendation, a small item of its own) or
 correct the description.
-
-### A Comfy Cloud recipe with no LoRA section still says its stored rows stayed out in red (found 2026-11-07, the 0.1.52 release review, read)
-
-Seen in the code only: rows stored for a Comfy Cloud recipe whose LoRAs section is hidden (its routes declare no LoRA
-source, e.g. `cloud_ideogram_4`, after rows were stored on another of its variants) reach main, and
-`electron/main/providers/comfycloud.js` `withLoras` answers with its red "The LoRAs stayed out: ..." on every run. The
-local route got the plain line and the clear by `set_generation` `loras: []` in the review's fixes (`docs/PLAN_LORAS.md`
-LR1 deviation 4); the Comfy Cloud side needs the same rule in main (the plain line when the route takes no rows). Small;
-no user report. Test: the `loras` gate's Comfy Cloud stub with a stored row on a route without a source.
 
 ### The local relight recipe names LoRA files at the folder root that the user's server holds under other names (found 2026-11-06, read, not run; item 50's research)
 
