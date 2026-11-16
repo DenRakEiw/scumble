@@ -1584,7 +1584,9 @@ async function main() {
             [...policy.EXCLUDED].join(", "));
 
         const steps = [
-            ["add_paint_layer", {}, "layers"], ["add_filter", {}, "layers"], ["generate", {}, "layers"],
+            ["add_paint_layer", {}, "layers"], ["add_filter", {}, "layers"],
+            // the result's landing is a step of its own (addResults): a step before it would be an empty one
+            ["generate", {}, null], ["generate", { each_area: true }, null], ["upscale", {}, null], ["upscale", { scope: "document" }, null],
             ["set_layer", { match: 60 }, "match"], ["set_layer", { match: 60, match_source: "below" }, "match"],
             ["set_layer", { match: 60, opacity: 50 }, "layers"], ["set_layer", { x: 10 }, null],
             // F2b: set_filter pushes its own step (the type's, or the parameters')

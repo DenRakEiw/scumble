@@ -493,7 +493,8 @@ V3 may swap.
     measures eight, and a cap is Q18.
 18. **A landing is no undo step today**, for results and variants alike: an undo of a `layers` step from before the
     landing takes the result (or the variant) away again, with its file kept in the history. This plan does not change
-    that; Q19 asks whether a landing should become an undo step of its own.
+    that; Q19 asks whether a landing should become an undo step of its own. (Since 2026-11-16 a result's landing is one,
+    a `layers` step pushed by `addResults` as it lands: docs/BUGS.md. V1 should make a variant's landing one the same way.)
 19. **Keys.** `,` and `.` are free in the editor's handler today; `host.pluginKey` (3735) and the Boxes tool's keys run
     first: V3 checks the built-in plugins.
 20. **A switch while a run of the same set is out** is fine: the run's omit is resolved again at the finish (§5.2 step 7),

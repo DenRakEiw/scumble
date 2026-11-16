@@ -15,6 +15,19 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### A landed Generate result was not one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read; measured and fixed 2026-11-16 on `quick-wins`)
+
+`addResults` (`renderer/editor/inpaint_ed_layers.js`) landed the result through `addLayer`, which records no undo step,
+while `cancel_run`'s description tells agents "Ctrl+Z takes the result back once it is in". Measured on the loopback
+provider before the fix, one Ctrl+Z after a result: (a) after a *Delete layer* step it took the result away **and**
+brought the deleted layer back (the two edits in one); (b) after a fill it took the fill back and left the result;
+(c) with nothing before it took the rectangle selection back and left the result. Now the landing pushes a `layers`
+step of its own, named as the result layer ("Result 3"), at the moment it lands: one Ctrl+Z takes exactly the result
+back, Ctrl+Y / Ctrl+Shift+Z bring it back, and a run that lands after the user went on working is taken back alone
+(its step is on top of theirs). Each area's result is a step of its own; a result put back from the history panel too.
+Item 63's and the assistant's steps pushed before a Generate went (they would be empty now). Gate step
+`one_ctrl_z_takes_a_landed_result_back`. Generate new in place is unchanged: it clears the undo history, as before.
+
 ### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`; fixed 2026-11-12)
 
 `renderer/editor/redact.js` `withoutSecrets` takes every input named like a secret out of the recipe's prompt before
@@ -77,16 +90,6 @@ On screen the snap weighs the guide's pixels against the colour of the picture b
 ### The Limit row's range bar keeps an old colour after the swatch changed it (found 2026-11-09, read by K23's review, not run; in 0.1.52 too)
 
 `buildRangeBar` copies the stored limit into `curRange` at mount (`inpaint_rangebar.js`), its `preview` and `commit` merge that copy over the layer's limit (`inpaint_canvas.js` `normalizeStoredLimit({ ...cur, ...r })`), and neither the swatch's handlers nor `refresh()` update it: a new colour from the swatch followed by a drag of the bar brings the old colour back until the row is rebuilt. The bar's own Pick updates the copy. Fix: update `curRange` when the swatch changes the colour, or hand `color` to preview and commit only after a Pick.
-
-### A landed Generate result may not be one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read, not run; item 60's plan)
-
-Seen in the code only (`docs/PLAN_VARIANTS.md` §10 Q19): `addLayer` (`renderer/editor/inpaint_canvas.js`, the result's
-landing) records no undo step ("no undo step, but a waiting restore of the layer list must not drop it"), while
-`cancel_run`'s description (`renderer/commands.js`, `docs/COMMANDS.md`) tells agents "Ctrl+Z takes the result back once
-it is in". Whether Ctrl+Z removes a landed result depends on what the step before it was. To measure before any code:
-generate on the loopback provider after (a) a `layers` step, (b) a pixel stroke, (c) nothing; press Ctrl+Z once and
-say what comes back. Then either make the landing an undo step (the plan's recommendation, a small item of its own) or
-correct the description.
 
 ### A Comfy Cloud recipe with no LoRA section still says its stored rows stayed out in red (found 2026-11-07, the 0.1.52 release review, read)
 

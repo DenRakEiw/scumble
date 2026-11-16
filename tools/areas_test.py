@@ -215,7 +215,10 @@ for (const r of RECTS) if (!selectedAt(r[0] + 5, r[1] + 5)) throw new Error("an 
 if (!selectedAt(902, 302)) throw new Error("the speck is no longer selected");
 if (ed._eachArea) throw new Error("the run's state stayed");
 if (ed.status !== "Each area: 3 areas generated, each its own layer. 1 small speck of the selection outside the areas was left out.") throw new Error("the status: " + ed.status);
-if (ed.undo.length !== undo0) throw new Error("the run pushed undo steps: " + (ed.undo.length - undo0));
+// each area's result is an undo step of its own (its landing), and the run pushes no other (no selection step)
+const steps = ed.undo.slice(undo0).map((s) => s.kind + "/" + s.label);
+const want = ed.history.slice(h0).map((h) => "layers/" + h.name);
+if (JSON.stringify(steps) !== JSON.stringify(want)) throw new Error("the run's undo steps: " + JSON.stringify(steps) + ", wanted " + JSON.stringify(want));
 const prompts = ed.history.slice(h0).map((h) => h.prompt);
 if (new Set(prompts).size !== 1) throw new Error("the prompts: " + JSON.stringify(prompts));
 if (seen.length !== 3 || seen.some((s) => !s.same || s.seq !== seq0 || JSON.stringify(s.bounds) !== JSON.stringify(before))) throw new Error("the selection during the runs: " + JSON.stringify({ seen, before }));
@@ -251,8 +254,15 @@ if (!during.edited || !during.undone || !during.redone || during.label !== "Stop
 if (out.done !== 3 || out.stopped) throw new Error("the run: " + JSON.stringify(out));
 const boxes = boxesOf(resultsSince(h0));
 if (JSON.stringify(boxes) !== JSON.stringify(CROPS)) throw new Error("an area read the edited selection: " + JSON.stringify(boxes));
-// the user's own history: the edit is there, and undo takes it back
+// the user's own history: the edit is there; the three results landed after it, each its own step on top, so three undos
+// take them back one at a time (the edit stays), and the next takes the edit back
 if (ed.sel !== sel0 || !selectedAt(565, 525)) throw new Error("the edit is gone after the run");
+for (let i = 0; i < 3; i++) {
+    const n = resultsSince(h0).length;
+    await run("undo", { doc });
+    const m = resultsSince(h0).length;
+    if (m !== n - 1 || !selectedAt(565, 525)) throw new Error("undo " + (i + 1) + " after the run: " + n + " -> " + m + " results, the edit " + (selectedAt(565, 525) ? "kept" : "taken back"));
+}
 await run("undo", { doc });
 if (selectedAt(565, 525) || !RECTS.every((r) => selectedAt(r[0] + 5, r[1] + 5))) throw new Error("undo after the run did not take the edit back");
 return { during, boxes };

@@ -1303,11 +1303,8 @@ export class GeometryPart {
      * run and its result layer are Generate's own; the extend stays its own undo step). Returns Generate's promise.
      */
     generateAfterExtend() {
-        // a landing records no undo step of its own: this one holds the layers before the result, so Ctrl+Z takes the
-        // result back first and the extend with the next one (not for a run Generate refuses at once, which lands nothing)
-        const s = this.resultInputState();
-        const refused = this._eachArea || !s.wired || (this.providerPending && (s.provider || this.providerPending.resizes));
-        if (!refused) this.pushUndo({ kind: "layers", label: "Generate the new border" });
+        // the result's landing is an undo step of its own (addResults), so Ctrl+Z takes the result back first and the
+        // extend with the next one
         this.lastExtendGenerate = this.generate();
         return this.lastExtendGenerate;
     }
