@@ -22,6 +22,7 @@ const MARK = "$image:";
 const MIN_BYTES = 256;          // shorter strings are not pictures; a mask or an id may look alike
 const DATA_URL = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/;
 const BASE64 = /^[A-Za-z0-9+/\r\n]+={0,2}$/;
+const CANONICAL = /^[A-Za-z0-9+/]*={0,2}$/;    // no line breaks: the only form that comes back from a file unchanged
 
 class Store {
     /** @param dir the app's userData folder */
@@ -144,21 +145,28 @@ function title(events) {
     return text.length > 60 ? text.slice(0, 60) + "…" : text;
 }
 
-/** Is this string the bytes of a picture, in whatever shape its family uses? */
-function imageString(value) {
+/**
+ * Is this string the bytes of a picture, in whatever shape its family uses? A `data:image/...;base64,` URL anywhere;
+ * bare base64 only where a family carries a picture's bytes (`raw`: an image part's `data`, Anthropic's base64
+ * `source.data`, Gemini's `inlineData.data`), so a signature, an `encrypted_content` or a long line of text is never
+ * taken for one. Only canonical base64 (what `toString("base64")` gives back byte for byte): anything else would come
+ * back changed from the file.
+ */
+function imageString(value, raw = false) {
     if (typeof value !== "string" || value.length < MIN_BYTES) return null;
     const m = DATA_URL.exec(value);
-    if (m) return { prefix: m[0], body: value.slice(m[0].length), mime: m[1] };
-    if (BASE64.test(value)) return { prefix: "", body: value, mime: "image/jpeg" };
-    return null;
+    const img = m ? { prefix: m[0], body: value.slice(m[0].length), mime: m[1] }
+        : (raw && BASE64.test(value) ? { prefix: "", body: value, mime: "image/jpeg" } : null);
+    if (!img || !CANONICAL.test(img.body) || img.body.length % 4 !== 0) return null;
+    return Buffer.from(img.body, "base64").toString("base64") === img.body ? img : null;
 }
 
 const extOf = (mime) => (/png/.test(mime) ? "png" : (/webp/.test(mime) ? "webp" : "jpg"));
 
 /** A copy of `node` with every picture written into `images` and replaced by its marker. */
-function strip(node, images) {
+function strip(node, images, raw = false, key = "") {
     if (typeof node === "string") {
-        const img = imageString(node);
+        const img = imageString(node, raw);
         if (!img) return node;
         const name = `${images.length + 1}.${extOf(img.mime)}`;
         images.push({ name, buffer: Buffer.from(img.body, "base64") });
@@ -167,14 +175,29 @@ function strip(node, images) {
     if (Array.isArray(node)) return node.map((x) => strip(x, images));
     if (node && typeof node === "object") {
         const out = {};
-        for (const [k, v] of Object.entries(node)) out[k] = strip(v, images);
+        // the places a family puts a picture's bare base64
+        const carrier = node.type === "image" || node.type === "base64" || key === "inlineData";
+        for (const [k, v] of Object.entries(node)) out[k] = strip(v, images, carrier && k === "data", k);
         return out;
     }
     return node;
 }
 
-/** The other way: every marker back to the bytes of its file, in the shape it had. */
+const STUB = "[screenshot no longer attached; call screenshot again]";
+const MISSING = Symbol("missing picture");
+const GEMINI_LOST = new WeakSet();      // the text parts put in place of Gemini pictures whose files are gone
+
+/**
+ * The other way: every marker back to the bytes of its file, in the shape it had. A picture whose file is gone
+ * becomes its family's text part (an image field that holds words is refused by every API), the panel's `image`
+ * nothing, and a marker anywhere else the line that says so.
+ */
 async function put(node, folder) {
+    const v = await putIn(node, folder);
+    return v === MISSING ? STUB : v;
+}
+
+async function putIn(node, folder) {
     if (typeof node === "string") {
         if (!node.startsWith(MARK)) return node;
         const rest = node.slice(MARK.length);
@@ -185,18 +208,38 @@ async function put(node, folder) {
             const buffer = await fsp.readFile(path.join(folder, path.basename(name)));
             return prefix + buffer.toString("base64");
         } catch (_) {
-            // the picture is gone: the history keeps a line that says so, never a broken marker
-            return "[screenshot no longer attached; call screenshot again]";
+            return MISSING;
         }
     }
     if (Array.isArray(node)) {
         const out = [];
-        for (const x of node) out.push(await put(x, folder));
+        for (const x of node) { const v = await putIn(x, folder); out.push(v === MISSING ? STUB : v); }
         return out;
     }
     if (node && typeof node === "object") {
         const out = {};
-        for (const [k, v] of Object.entries(node)) out[k] = await put(v, folder);
+        let lost = null;
+        for (const [k, v] of Object.entries(node)) {
+            const got = await putIn(v, folder);
+            if (got === MISSING) lost = lost || k;
+            out[k] = got;
+        }
+        // Gemini's functionResponse takes only pictures in its parts: a lost one goes, and the answer says so (as prune)
+        if (Array.isArray(out.parts) && out.response !== undefined && out.parts.some((x) => GEMINI_LOST.has(x))) {
+            out.parts = out.parts.filter((x) => !GEMINI_LOST.has(x));
+            if (!out.parts.length) delete out.parts;
+            if (out.response && typeof out.response === "object") {
+                out.response = { ...out.response };
+                delete out.response.screenshot;
+                out.response.screenshot_removed = STUB;
+            }
+        }
+        if (!lost) return out;
+        if (node.type === "image" || node.type === "image_url") return { type: "text", text: STUB };   // Anthropic, MCP, Chat Completions
+        if (node.type === "input_image") return { type: "input_text", text: STUB };                    // Responses
+        if (lost === "inlineData") { const t = { text: STUB }; GEMINI_LOST.add(t); return t; }     // Gemini
+        if (lost === "data" || lost === "url") return MISSING;     // the carrier inside a part: the part above replaces itself
+        for (const [k, v] of Object.entries(out)) if (v === MISSING) out[k] = k === "image" ? null : STUB;
         return out;
     }
     return node;
