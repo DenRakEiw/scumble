@@ -925,7 +925,18 @@ JS = r"""
             let err = null;
             try { await host.flushEditor(ed); } catch (e) { err = e; } finally { api.fetchApi = keepFetch; }
             check("a failing upload: the save's flush refuses, naming the map", !!err && /normals map could not be stored/.test(String(err && err.message)) && !nm.ref, err && err.message);
+            // documentDirty's own line: a saved file whose key is the state's, nothing else changed, only the map unstored
+            const keepFile = ed.docFile, keepKey = ed._stateKey;
+            ed.docFile = { name: "deeppaint", path: "x:/deeppaint.scumble", key: "k" };
+            ed._stateKey = "k";
+            const otherwise = !ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx)) && !(ed.sel && !ed.selectionEncoded);
+            const dirtyBefore = host.documentDirty(ed);
             await ed.syncLayers();
+            ed._stateKey = "k";   // the pass's notifyChanged clears the key until the next autosave: as if it settled
+            const dirtyAfter = host.documentDirty(ed);
+            ed.docFile = keepFile; ed._stateKey = keepKey;
+            check("documentDirty: unsaved while the map lacks its file, saved once it has it", !otherwise || (dirtyBefore && !dirtyAfter), { otherwise, dirtyBefore, dirtyAfter });
+            check("documentDirty's step ran with nothing else unsaved", otherwise);
             const gv = ed.getValue();
             const v = typeof gv === "string" ? JSON.parse(gv) : gv;
             check("the next pass stores it: the map is in the document's state again", !!nm.ref && !!(v.maps && v.maps.normals && v.maps.normals.ref && v.maps.normals.ref.filename) && !ed.mapsUnstored().length, v.maps && v.maps.normals);

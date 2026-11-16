@@ -61,7 +61,7 @@ export function relightNormalFromMoge(r, g, b, m) {
  * @returns {number[]}
  */
 export function relightNormalOnMask(nx, ny, nz, moge, a) {
-    if (a >= 1) return moge;
+    if (a >= 254.5 / 255) return moge;   // a bilinear sum of 255s can fall a hair under 255
     if (!(a > 0)) return [nx, ny, nz];
     const dl = Math.hypot(nx, ny, nz);
     const d = dl > 1e-5 ? [nx / dl, ny / dl, nz / dl] : [0, 0, 1];
@@ -2024,7 +2024,7 @@ vec4 shade(vec4 c, vec2 uv) {
         float rl = length(rn);
         vec3 mg = rl > 1e-6 ? rn / rl : vec3(0.0, 0.0, 1.0);
         // its mask (A): MoGe's normal where full, the depth map's where 0 (the sky), mixed on the edge (relightNormalOnMask)
-        if (mt.a >= 1.0) normal = mg;
+        if (mt.a >= 254.5 / 255.0) normal = mg;
         else if (mt.a > 0.0) {
             vec3 bn = mix(normal, mg, mt.a);
             float bl = length(bn);

@@ -396,21 +396,26 @@ export class DepthPart {
     /**
      * Store the maps mapsUnstored names (their packed files into the mirror / onto the server). `quiet` (syncLayersOnce:
      * the autosave, a run): a failure is logged and the next pass tries again; otherwise (host.flushEditor, before a save
-     * or a copy) it throws in plain words, so the file never goes without the map.
+     * or a copy) it throws in plain words, so the file never goes without the map. -> the kinds still not stored (quiet)
+     * @returns {Promise<string[]>}
      */
     async storeMaps({ quiet = false } = {}) {
         const nodeId = (this.node && this.node.id != null) ? this.node.id : "0";
+        const failed = [];
         for (const kind of this.mapsUnstored()) {
-            const map = this.maps[kind];
+            // a map dropped, or replaced by one already stored, while an earlier one uploaded (setMaps, an undo)
+            const map = this.maps && this.maps[kind];
+            if (!map || !this.mapsUnstored().includes(kind)) continue;
             try {
                 if (!map.ref) map.ref = (await uploadCanvas(packMap(map), `n${nodeId}_${kind}`)).ref;
                 if (map.guide && !map.guideRef) map.guideRef = (await uploadCanvas(guideCanvas(map), `n${nodeId}_${kind}guide`)).ref;
             } catch (err) {
                 const why = String((err && err.message) || err);
-                if (quiet) { console.warn(`Inpaint Canvas: the ${kind} map could not be stored, the next pass tries again`, err); continue; }
+                if (quiet) { console.warn(`Inpaint Canvas: the ${kind} map could not be stored, the next pass tries again`, err); failed.push(kind); continue; }
                 throw new Error(`The ${kind} map could not be stored (${why}), so the file would go without it. Try again; Compute the maps again if it keeps failing.`);
             }
         }
+        return failed;
     }
 
     /**

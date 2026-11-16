@@ -1017,6 +1017,13 @@ async function saveBeforeRestart(say = () => {}, when = "the restart") {
             await window.scumble.state.save(JSON.stringify(host.bundle()));
         }
     }
+    // a map whose upload failed when it was made (no layer need be edited for it): once more, said when it still fails
+    for (const ed of eds) {
+        if (!ed.base || typeof ed.storeMaps !== "function" || !ed.mapsUnstored().length) continue;
+        const lost = await ed.storeMaps({ quiet: true });
+        if (lost.length) say(`The ${lost.join(" and ")} map${lost.length === 1 ? "" : "s"} of ${host.documentName(ed)} could not be stored and ${lost.length === 1 ? "is" : "are"} not kept after ${when}.`);
+        else await window.scumble.state.save(JSON.stringify(host.bundle()));
+    }
     const selectionPending = (ed) => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
     const failed = new Set();   // an encode that could not start (toCanvas throws above the canvas limit)
     const until = Date.now() + 60000;

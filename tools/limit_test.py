@@ -741,6 +741,7 @@ JS = r"""
         tolField.dispatchEvent(new Event("input"));
         tolField.dispatchEvent(new Event("change"));
         const afterSwatch = { ...rawFl.params.limit };
+        const undoBefore = edRow.undo.length;
         colBar.begin();
         colBar.preview({ lo: 0.1 });
         const mid = { ...rawFl.params.limit };
@@ -750,7 +751,7 @@ JS = r"""
             afterSwatch.color === "#ff0000" && afterSwatch.tol === 55 && mid.color === "#ff0000" && mid.tol === 55
             && done.color === "#ff0000" && done.tol === 55 && done.lo === 0.1,
             { afterSwatch, mid, done });
-        check("Row group: the colour limit's drag is still one undo step on the layer", edRow.filterPreview === null);
+        check("Row group: the colour limit's drag is still one undo step on the layer", edRow.filterPreview === null && edRow.undo.length === undoBefore + 1, { before: undoBefore, now: edRow.undo.length });
     }
 
     shell.closeDocument && shell.closeDocument(edRow, { force: true });
