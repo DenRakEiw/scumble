@@ -1676,17 +1676,29 @@ async function openCloudResults(pictures) {
         }
         await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
         if (!ed.base) {
-            ed.setStatus(!p.provider
+            // as a split that did not open: the empty tab goes (the autosave would bring it back at every start), and
+            // the words go where the user looks
+            const said = !p.provider
                 ? `${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`
-                : `${ed.status} This ${provLabel} result${earlier ? " of an earlier run" : ""} could not be opened; Scumble tries its kept file again at the next start.`, "error");
+                : `${ed.status} This ${provLabel} result${earlier ? " of an earlier run" : ""} could not be opened; Scumble tries its kept file again at the next start.`;
+            await closeDocument(ed, { force: true, remember: false });
+            if (host.editor) host.editor.setStatus(said, "error");
             continue;
         }
+        // the kept file stays the durable copy until the document is: its picture stored, then the session saved
+        let durable = false;
+        try {
+            await host.flushEditor(ed);
+            durable = !!(ed.base && ed.base.ref);
+            if (durable) await window.scumble.state.save(JSON.stringify(host.bundle()));
+        } catch (err) { durable = false; console.warn("a kept result's document could not be stored yet", err); }
         const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
         const model = p.model || provLabel;
         ed.setStatus(earlier
             ? `${article} ${provLabel} result ${isComfy ? "that came in after Scumble closed" : "kept from an earlier session"} (${model}, started ${when}): opened as a document of its own.`
-            : `${article} ${provLabel} result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`);
-        try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ }
+            : `${article} ${provLabel} result its run could not bring at the time (${model}, started ${when}): opened as a document of its own.`
+            + (durable ? "" : " It could not be stored yet: the kept file stays, so the next start opens it again."), durable ? "info" : "warn");
+        if (durable) { try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ } }
         opened.push(ed);
         labels.add(provLabel);
         if (!earlier) allEarlier = false;
