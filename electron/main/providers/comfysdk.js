@@ -99,6 +99,15 @@ function guarded(ctx, { bound = true, timeoutMs = 0 } = {}) {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : String(input && input.url || "");
         let u;
         try { u = new URL(url); } catch (_) { return Promise.reject(new Error(`Comfy Cloud: refused a request to ${String(url).slice(0, 80)}`)); }
+        // Comfy's own job links (urls.self, events, cancel) can come back on another origin than the client's (the user,
+        // 2026-11-16: every status read after the submit was refused "Missing or invalid API key", while reads by the
+        // bare id worked; http://cloud.comfy.org answers a 301 to https). The SDK then sends no key and follows the
+        // link: a job's own path goes to Cloud itself, with the key, and nowhere else.
+        let addKey = false;
+        if (u.origin !== CLOUD && !(test && u.origin === test) && /^\/api\/v2\/jobs(\/|$)/.test(u.pathname) && !headerOf(init, "authorization")) {
+            u = new URL(CLOUD + u.pathname + u.search);
+            addKey = true;
+        }
         let target = u.href;
         if (u.origin === CLOUD) {
             if (test) target = test + u.pathname + u.search;
@@ -107,6 +116,11 @@ function guarded(ctx, { bound = true, timeoutMs = 0 } = {}) {
             if (test || headerOf(init, "authorization")) return Promise.reject(new Error(`Comfy Cloud: refused a request to ${u.origin} (Scumble's Cloud client talks to ${CLOUD} only).`));
         }
         const send = { ...init };
+        if (addKey) {
+            const h = new Headers(init.headers);
+            h.set("Authorization", `Bearer ${String(ctx.key || "").trim()}`);
+            send.headers = h;
+        }
         const method = String(send.method || "GET").toUpperCase();
         if (method !== "GET" && method !== "HEAD" && send.redirect !== "manual") send.redirect = "error";
         if (timeoutMs > 0) send.signal = send.signal ? AbortSignal.any([send.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);

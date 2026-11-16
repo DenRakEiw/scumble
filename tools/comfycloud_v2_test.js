@@ -84,6 +84,19 @@ async function main() {
         image: png("CROP"), mask: png("MASK"), width: 1024, height: 768, references: [], params: { "unet|unet_name": "my-unet.safetensors", random_seed: false }, original: 0, ...extra,
     });
 
+    // 0. job links on another origin (the user, 2026-11-16: every status read after the submit refused for a missing key,
+    // the result then opened as a document of its own): the job's reads go to Cloud with the key
+    {
+        const f = fakeComfyV2({ outputs: saveOutput, selfOrigin: "http://cloud.comfy.org", statuses: ["running", "succeeded"] });
+        const out = await cloud.edit(partnerReq(), ctxOf(f));
+        const reads = f.calls.filter((c) => c.method === "GET" && /^\/api\/v2\/jobs\/[^/]+$/.test(c.path));
+        check("job links on http://cloud.comfy.org: the run lands, every status read went to https://cloud.comfy.org with the key",
+            !!(out && out.bytes) && reads.length >= 1 && reads.every((c) => c.origin === "https://cloud.comfy.org" && c.auth === "Bearer " + KEY), short(reads.map((c) => `${c.origin} ${c.auth ? "key" : "none"}`)));
+        const g = fakeComfyV2({ outputs: saveOutput, selfOrigin: "https://elsewhere.example" });
+        await cloud.edit(partnerReq(), ctxOf(g));
+        check("... and on another host: still only to cloud.comfy.org, never to that host", g.calls.every((c) => c.origin !== "https://elsewhere.example"), short(g.calls.map((c) => c.origin)));
+    }
+
     // 1. a partner node with the crop, two references and the selection: three assets, each in its LoadImage; the GPT
     // Image node takes a mask beside one picture only, so the mask stays out and the answer's note says so (the user's
     // answer of 2026-11-07; the mask as an asset beside the crop alone is 2b's)

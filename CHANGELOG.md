@@ -4,6 +4,10 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Fixed: Comfy Cloud results opened as a new document instead of landing as a layer.** Comfy Cloud took the
+  job, but it now answers with job links Scumble's Cloud client sent no key to, so the first status read was refused
+  ("Missing or invalid API key"); the run gave up and the finished picture came back later as a document of its own.
+  Status reads now always go to cloud.comfy.org with the key, and the result lands on the layer stack again.
 - **Fixed: Seedream on OpenRouter refused about half of all runs** with "seed must be between -1 and 2147483647":
   the editor's seed runs up to 4,294,967,295, and Seedream 5.5, 5.0 pro and 5.0 lite take half that. Their seed now
   stays inside the model's range.

@@ -77,7 +77,7 @@ function fakeComfyV2(o = {}) {
             completed_at: ["succeeded", "failed", "canceled", "expired"].includes(job.status) ? "2026-10-18T10:00:09Z" : null,
             expires_at: "2026-10-25T10:00:00Z", queue_position: null, progress: null,
             outputs: listed ? job.outputs : [], error: failed ? (o.error || null) : null,
-            urls: { self: `/api/v2/jobs/${job.id}`, events: `/api/v2/jobs/${job.id}/events`, cancel: `/api/v2/jobs/${job.id}/cancel` },
+            urls: { self: `${o.selfOrigin || ""}/api/v2/jobs/${job.id}`, events: `${o.selfOrigin || ""}/api/v2/jobs/${job.id}/events`, cancel: `${o.selfOrigin || ""}/api/v2/jobs/${job.id}/cancel` },
         };
     };
     const asset = (id, a, createdNew) => ({
@@ -98,6 +98,9 @@ function fakeComfyV2(o = {}) {
             const a = s.assets.get(u.pathname.slice(1));
             return a ? new Response(a.bytes, { status: 200, headers: { "content-type": a.contentType } }) : json(404, {});
         }
+        // o.selfOrigin: the job links point there (Comfy's http:// links, 2026-11-16); a read sent to it reaches Cloud
+        // through a 301 without the key and is refused as Comfy refuses it
+        if (o.selfOrigin && u.origin === new URL(o.selfOrigin).origin) return json(401, { error: { code: "unauthorized", message: "Missing or invalid API key. Send 'Authorization: Bearer <your comfyui- key>'." } });
         if (u.origin !== origin) return json(404, { error: { code: "not_found", message: "no such origin in the fake: " + u.origin } });
         const p = u.pathname;
         if (p === "/api/assets" && method === "GET" && o.loraAssets) {
