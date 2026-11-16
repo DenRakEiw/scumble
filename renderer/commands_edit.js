@@ -95,6 +95,9 @@ export const EditCommandsPart = {
                 if (a.compute === true || a.compute === "true") await ed.computeSurfaceMaps();
                 if (!ed.hasSurfaceMaps()) throw new Error(a.compute === true || a.compute === "true" ? `the surface maps could not be made: ${ed.status}` : "Deep paint needs the surface maps: run surface_maps first, or pass compute: true");
             }
+            // the layer is an undo step of its own, as the menu's New Deep Paint Layer (a fill below pushes its own);
+            // the maps were checked above, so addSurfaceLayer refuses nothing after this push
+            ed.pushUndo({ kind: "layers", label: "Deep paint layer" });
             const l = ed.addSurfaceLayer();
             if (!l) throw new Error(ed.status);
             ed.activeLayerId = l.id;

@@ -386,7 +386,9 @@ JS = r"""
             check("add_surface_layer: the layer, its name, k, active", nb && nb.filter === "surface" && nb.name === "Blue" && nb.params.reflections === 50 && ed.activeLayerId === nb.id, r1);
             const bp = nb && Array.from(nb.px.readRect(560, 320, 1, 1).data);
             check("add_surface_layer: color fills the selection", bp && bp[3] === 255 && Math.abs(bp[2] - 0xd0) <= 1 && nb.px.readRect(510, 320, 1, 1).data[3] === 0, bp);
-            const one = new Uint8ClampedArray(W * H * 4);
+            const tops = ed.undo.slice(-2).map((u) => u.kind + ":" + (u.label || ""));
+            check("add_surface_layer: the layer is an undo step of its own, the fill one after it", tops[0] === "layers:Deep paint layer" && tops[1] === "layer:Fill selection", tops);
+            const one =new Uint8ClampedArray(W * H * 4);
             if (nb) one.set((await nb.px.readRect(0, 0, W, H)).data);
             const eb = expect(one, 0.5), gb = await all();
             check("add_surface_layer: by the formula with k 0.5", [0, 1, 2].every((c) => Math.abs(gb[4 * (320 * W + 560) + c] - eb[4 * (320 * W + 560) + c]) <= 1), [at(gb, 560, 320), at(eb, 560, 320)]);
