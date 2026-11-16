@@ -14659,6 +14659,39 @@ try {
     await key("z", true);
     if (!ed.layers.some((l) => l.id === g.layer.id) || sum(cur()) !== filled) throw new Error("two redos: " + names());
     out.late = labels.slice(-2);
+    // a result that lands while a text is being typed on the canvas: its step records the text as it was before the edit
+    // (never half typed), the edit goes on; Esc cancels it, and the Ctrl+Z of the result leaves the text as T0
+    const T0 = "T0";
+    const tl = await run("add_text", { doc, text: T0, x: 30, y: 30, size: 40 });
+    const TL = () => ed.layers.find((l) => l.id === tl.id);
+    await wait(300);
+    const px0 = sum(TL());
+    let release2 = null, reached2 = false;
+    const gate2 = new Promise((r) => { release2 = r; });
+    ed.addResults = async (rs) => { reached2 = true; await gate2; return add0.call(ed, rs); };
+    let g2;
+    try {
+        const going = run("generate", { doc, timeout: 60 });
+        for (let i = 0; i < 400 && !reached2; i++) await wait(25);
+        if (!reached2) throw new Error("the second run never reached its landing: " + ed.status);
+        ed.beginTextEdit(TL());
+        const ta = ed.textEdit.ta;
+        ta.value = "T0 and more typed";
+        ta.dispatchEvent(new Event("input"));
+        await wait(300);
+        release2();
+        g2 = await going;
+    } finally { release2(); delete ed.addResults; }
+    if (!ed.textEdit || TL().text.content !== "T0 and more typed") throw new Error("the landing ended the text edit: " + (TL() && TL().text.content));
+    const rec = ed.undo[ed.undo.length - 1].layers.find((l) => l.id === tl.id);
+    if (ed.undo[ed.undo.length - 1].label !== g2.layer.name || !rec || rec.text.content !== T0) throw new Error("the landing's step holds the text " + JSON.stringify(rec && rec.text.content));
+    ed.textEdit.ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await wait(300);
+    if (TL().text.content !== T0) throw new Error("Esc left " + TL().text.content);
+    await key("z");
+    await wait(300);
+    if (ed.layers.some((l) => l.id === g2.layer.id) || TL().text.content !== T0 || sum(TL()) !== px0) throw new Error("the result's Ctrl+Z after Esc: " + JSON.stringify({ text: TL().text.content, px: [sum(TL()), px0] }));
+    out.text = { recorded: rec.text.content, after: TL().text.content };
 } finally {
     host.setRecipe(prev);
     host.shell.activate(ednow(window.__t) || host.editor);

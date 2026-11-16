@@ -131,6 +131,8 @@ export class HistoryPart {
             if (l._textUndo) { this.releaseSnapshot(l._textUndo); l._textUndo = null; }
             if (l._matchUndo) { this.releaseSnapshot(l._matchUndo); l._matchUndo = null; }
         }
+        // a record taken during a text edit on canvases holds the text before it, not its pixels (snapshotLayer): drawn now
+        for (const l of this.layers) if (l && l._textRedraw) { delete l._textRedraw; if (l.text) this.renderTextLayer(l); }
     }
 
     releaseSnapshot(snap) {
@@ -189,6 +191,27 @@ export class HistoryPart {
         const committed = this.committedFilter(l);
         if (committed) { c.params = committed.params; if (committed.name) c.name = committed.name; }
         for (const k of ["match", "lut", "plate"]) if (l[k] && typeof l[k] === "object") c[k] = { ...l[k] };
+        // the same for an edit of a live layer still in progress (a result can land meanwhile: its step records the layers
+        // as they are): the record holds the edit's "before", never the edit half done (LAYER_PENDING_KEYS). A text typed
+        // on the canvas or in the panel, a colour match drag, a move or scale held; the edit itself goes on
+        if (this.layers && this.layers.includes(l)) {
+            // the panel's held step only while its field has the focus: one left from a blur is settled later and is no edit
+            // in progress (the layer may have changed by other ways since)
+            const act = typeof document !== "undefined" ? document.activeElement : null;
+            const row = act && this.layerList ? this.layerList.querySelector(`[data-layer="${l.id}"]`) : null;
+            const typing = !!(row && row !== act && row.contains(act));
+            const tb = this.textEdit && this.textEdit.layer === l ? this.textEdit.before : typing && l._textUndo && l._textUndo.kind === "text" ? l._textUndo : null;
+            if (tb && l.text) {
+                c.text = JSON.parse(JSON.stringify(tb.text));
+                Object.assign(c, { x: tb.x, y: tb.y, w: tb.w, h: tb.h, dirty: true });
+                // tiles: the "before" pixels themselves; canvases keep them as a PNG, so the text is drawn again when the record comes back
+                if (tb.px) c.px = tb.px.clone(); else c._textRedraw = true;
+            }
+            if (l._matchUndo && l._matchUndo.match) c.match = { ...l._matchUndo.match };
+            const held = this.pointer && this.pointer.undoSnap;
+            const g = !held ? null : held.kind === "transform" ? (held.id === l.id ? held : null) : held.kind === "transforms" ? held.items.find((i) => i.id === l.id) : null;
+            if (g) Object.assign(c, { x: g.x, y: g.y, w: g.w, h: g.h });
+        }
         return c;
     }
 
@@ -210,7 +233,8 @@ export class HistoryPart {
         const pixels = [];
         const layers = this.layers.map((l) => {
             const record = this.snapshotLayer(l);
-            pixels.push({ id: l.id, px: l.px ? l.px.clone() : null, maskPx: l.maskPx ? l.maskPx.clone() : null });
+            // a text edit in progress: the record holds its "before" pixels (snapshotLayer), already a clone
+            pixels.push({ id: l.id, px: record.px && record.px !== l.px ? record.px : l.px ? l.px.clone() : null, maskPx: l.maskPx ? l.maskPx.clone() : null });
             // the restore takes the clones above; the record's own references to the live pixels and the layer's caches
             // would only keep what the document replaces later alive (a named snapshot lives as long as the user wants)
             record.px = null; record.maskPx = null;

@@ -1325,7 +1325,10 @@ class InpaintEditor {
             return { error: this.lastRunError };
         } finally {
             this.generateBtn.disabled = false;
-            if (this.isOpen) this.root.focus({ preventScroll: true });
+            // not out of a text being typed meanwhile (on the canvas or in a field): its blur would end the edit half done
+            const a = document.activeElement;
+            const typing = !!this.textEdit || !!(a && a !== this.root && this.root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+            if (this.isOpen && !typing) this.root.focus({ preventScroll: true });
         }
     }
 
