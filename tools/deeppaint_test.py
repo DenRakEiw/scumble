@@ -911,6 +911,27 @@ JS = r"""
         shell.closeDocument && shell.closeDocument(e4, { force: true });
     }
 
+    // a surface map whose upload failed when it was made (ref null): it counts as unsaved, the save's flush stores it
+    // again, and while the upload keeps failing the flush refuses in words; never left out of the file silently
+    {
+        const { api } = await import("./editor/host.js");
+        const nm = ed.maps && ed.maps.normals;
+        check("there is a normals map for the upload step", !!nm);
+        if (nm) {
+            nm.ref = null;
+            check("a map without its file counts as unsaved", ed.mapsUnstored().includes("normals") && host.documentDirty(ed), ed.mapsUnstored());
+            const keepFetch = api.fetchApi;
+            api.fetchApi = async (url, opts) => (/upload/.test(String(url)) ? new Response("no", { status: 500 }) : keepFetch.call(api, url, opts));
+            let err = null;
+            try { await host.flushEditor(ed); } catch (e) { err = e; } finally { api.fetchApi = keepFetch; }
+            check("a failing upload: the save's flush refuses, naming the map", !!err && /normals map could not be stored/.test(String(err && err.message)) && !nm.ref, err && err.message);
+            await ed.syncLayers();
+            const gv = ed.getValue();
+            const v = typeof gv === "string" ? JSON.parse(gv) : gv;
+            check("the next pass stores it: the map is in the document's state again", !!nm.ref && !!(v.maps && v.maps.normals && v.maps.normals.ref && v.maps.normals.ref.filename) && !ed.mapsUnstored().length, v.maps && v.maps.normals);
+        }
+    }
+
     shell.closeDocument && shell.closeDocument(ed, { force: true });
     return { fails, tiles: !!ed.tileMode };
 })()

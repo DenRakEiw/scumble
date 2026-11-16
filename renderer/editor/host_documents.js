@@ -34,6 +34,11 @@ export const HostDocumentsPart = {
         const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
         if (edited()) say(`Saving the edited layers before ${when}...`);
         for (let round = 0; round < 3 && edited(); round++) await ed.syncLayers();
+        // a map whose upload failed when it was made: stored now, or the save refuses (getValue would leave it out)
+        if (ed.base && typeof ed.storeMaps === "function" && ed.mapsUnstored().length) {
+            say(`Saving the maps before ${when}...`);
+            await ed.storeMaps();
+        }
         const pending = () => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
         for (const until = Date.now() + 60000; pending() && Date.now() < until;) {
             if (!ed._selEncoding) {
@@ -71,6 +76,7 @@ export const HostDocumentsPart = {
         if (ed.pointer && ed.pointer.healing) return true;   // a heal stroke blending in a worker is an edit on its way
         if (!ed.docFile || !ed.docFile.key) return true;
         if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx))) return true;
+        if (typeof ed.mapsUnstored === "function" && ed.mapsUnstored().length) return true;
         if (ed.sel && !ed.selectionEncoded) return true;
         if (ed._stateKey == null) return true;
         return ed._stateKey !== ed.docFile.key;
