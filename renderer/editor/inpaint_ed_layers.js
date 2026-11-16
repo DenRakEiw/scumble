@@ -536,7 +536,7 @@ export class LayersPart {
         if (!layer.maskPx) { layer.maskRef = null; layer.maskDirty = false; layer.maskEdit = false; layer.maskOff = false; }
         else layer.maskOff = !!layer.maskOff;
         if (!layer.match) layer.match = { strength: 0, source: "surroundings" };
-        this.historyGen++;   // no undo step, but a waiting restore of the layer list must not drop it
+        this.historyGen++;   // no undo step here (a caller that lands a layer pushes its own), but a waiting restore of the layer list must not drop it
         // a new reference goes below the others, so it takes the next number and none of them is renumbered
         const lowest = host.refTokens && layer.role === "reference" ? this.layers.findIndex((l) => this.isReference(l)) : -1;
         if (lowest >= 0) this.layers.splice(lowest, 0, layer);
@@ -655,7 +655,12 @@ export class LayersPart {
                     continue;
                 }
                 const n = this.history.length + 1;
-                const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px: this.pixels.Layer.fromImage(img), x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
+                const px = this.pixels.Layer.fromImage(img);
+                // the landing is an undo step of its own (docs/PLAN_VARIANTS.md Q19), taken now: a run that lands late is
+                // pushed on top of whatever was done while it ran, so one Ctrl+Z takes exactly this result back and
+                // nothing before it, and Ctrl+Y brings it back (each area's result is a step of its own the same way)
+                this.pushUndo({ kind: "layers", label: "Result " + n });
+                const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px, x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
                 // a provider run says which seed the model got (null: none went, FLUX 3 Image); a local result is the editor's
                 // the texts of the click when the host kept them (S4), else the field's as the result lands (the node)
                 const refsNow = () => { const o = {}; for (const [id, k] of this.refLabels()) o["img" + k] = id; return Object.keys(o).length ? o : null; };

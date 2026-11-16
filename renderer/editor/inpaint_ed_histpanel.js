@@ -466,10 +466,13 @@ export class HistoryPanelPart {
                 const inv = xfMul(xfScale(fw, fh), xfMul(xfInv(h.xf), [rect[2] / npw, 0, 0, rect[3] / nph, rect[0], rect[1]]));
                 const turned = px.transformed(pixelMap(inv), npw, nph);
                 px.release();
+                this.pushUndo({ kind: "layers", label: `Restore ${h.name}` });
                 layer = this.addLayer({ name: h.name, kind: "result", ref: null, px: turned, x: rect[0], y: rect[1], w: rect[2], h: rect[3], dirty: true });
             } else {
                 for (const op of orientOps(h.orient)) px = px.turned(op);
                 const up = orientIsUp(h.orient);
+                // a result put back from the history is an undo step, as its landing was
+                this.pushUndo({ kind: "layers", label: `Restore ${h.name}` });
                 layer = this.addLayer({ name: h.name, kind: "result", ref: up ? h.ref : null, px, x: h.x, y: h.y, w: h.w, h: h.h, ...(up ? {} : { dirty: true }) });
             }
             h.layerId = layer.id;

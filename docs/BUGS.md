@@ -50,6 +50,18 @@ three files (the fetch takes 1.4 s for the PSD, about 0.35 s for the others, wit
 A file gone, a folder or no permission is refused in words (File › Open's in the status line). Numbers:
 `docs/measurements/ctrlo_2026-11-16/summary.txt`; gate `openfile`. Left: `window.scumble.file.read` (the tests' and
 the glb plugin's whole-file read) still answers in one message.
+### A landed Generate result was not one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read; measured and fixed 2026-11-16 on `quick-wins`)
+
+`addResults` (`renderer/editor/inpaint_ed_layers.js`) landed the result through `addLayer`, which records no undo step,
+while `cancel_run`'s description tells agents "Ctrl+Z takes the result back once it is in". Measured on the loopback
+provider before the fix, one Ctrl+Z after a result: (a) after a *Delete layer* step it took the result away **and**
+brought the deleted layer back (the two edits in one); (b) after a fill it took the fill back and left the result;
+(c) with nothing before it took the rectangle selection back and left the result. Now the landing pushes a `layers`
+step of its own, named as the result layer ("Result 3"), at the moment it lands: one Ctrl+Z takes exactly the result
+back, Ctrl+Y / Ctrl+Shift+Z bring it back, and a run that lands after the user went on working is taken back alone
+(its step is on top of theirs). Each area's result is a step of its own; a result put back from the history panel too.
+Item 63's and the assistant's steps pushed before a Generate went (they would be empty now). Gate step
+`one_ctrl_z_takes_a_landed_result_back`. Generate new in place is unchanged: it clears the undo history, as before.
 
 ### The PNG metadata of a MiniMax H3 Image local run drops the upsampler's `key` input (found 2026-11-11, read and run by `tools/secret_names_test.js`; fixed 2026-11-12)
 
@@ -104,15 +116,6 @@ At 15,000 x 10,000 `pan (60 frames)` went from about 2.8 ms to about 5.8 ms, and
 
 On screen the snap weighs the guide's pixels against the colour of the picture below (`inpaint_limit.js` `LIMIT_SHADER` `i.rgb`, `limitStageCPU` `iR`, `iG`, `iB`); `limitAlphaRows` passes the fill's own colour (`rgba[ptr]`), so the soft edge of the exported layer does not follow the picture as it does on screen. K25: the reference colour from `map.guide`, the layer's own pixels only without a guide. It then matches the screen, within the limit at the end of this entry, as long as the picture below is still the one the depth map was made from. Only depth limits are concerned: a fill layer takes no other. Up to 4096 px on the long side the export and the screen agree exactly; above it (the depth map stops at 4096, about 3.66 picture pixels per map texel at 15,000) a hard colour edge can differ within a band one map texel wide, because `map.guide` is a downscale and is read at `floor(mx), floor(my)` while the screen reads the full picture for the centre pixel (`docs/measurements/k25_2026-11-09/summary.txt`).
 
-### A landed Generate result may not be one Ctrl+Z away, though `cancel_run` says it is (found 2026-11-07, read, not run; item 60's plan)
-
-Seen in the code only (`docs/PLAN_VARIANTS.md` §10 Q19): `addLayer` (`renderer/editor/inpaint_canvas.js`, the result's
-landing) records no undo step ("no undo step, but a waiting restore of the layer list must not drop it"), while
-`cancel_run`'s description (`renderer/commands.js`, `docs/COMMANDS.md`) tells agents "Ctrl+Z takes the result back once
-it is in". Whether Ctrl+Z removes a landed result depends on what the step before it was. To measure before any code:
-generate on the loopback provider after (a) a `layers` step, (b) a pixel stroke, (c) nothing; press Ctrl+Z once and
-say what comes back. Then either make the landing an undo step (the plan's recommendation, a small item of its own) or
-correct the description.
 
 ### The local relight recipe names LoRA files at the folder root that the user's server holds under other names (found 2026-11-06, read, not run; item 50's research)
 

@@ -12485,7 +12485,7 @@ try {
     if (!res || res.x !== H - 130 || res.y !== 300 || res.px.width !== 30 || res.px.height !== 60) throw new Error("the restored result: " + JSON.stringify(res && [res.x, res.y, res.px.width, res.px.height]));
     const rp = res.px.readRect(29, 0, 1, 1).data;   // the file's magenta corner (0, 0) lands at (29, 0) after a clockwise turn
     if (!(rp[0] > 200 && rp[2] > 200 && rp[1] < 60)) throw new Error("the restored result is not turned: " + Array.from(rp));
-    await ed.undoStep(); await ed.undoStep();   // the loaded selection, the turn (a restored result is no step; the turn's undo drops it)
+    await ed.undoStep(); await ed.undoStep(); await ed.undoStep();   // the restored result (a step of its own), the loaded selection, the turn
     if (ed.width !== W || ed.height !== H) throw new Error("the undo left " + ed.width + " x " + ed.height);
     same(words(ed.basePx), before.base, "the base after the undo");
     same(words(ed.layers.find((l) => l.id === L1.id).px), before.l1, "the layer after the undo");
@@ -14708,6 +14708,126 @@ try {
     if (r4.ok || !/Florence-2: download it in Settings/.test(r4.error)) throw new Error("no model: " + JSON.stringify(r4));
 } finally {
     host.vlmModel = keep.vlmModel; host.describeImage = keep.describeImage;
+    host.shell.activate(ednow(window.__t) || host.editor);
+    await run("close_document", { doc, force: true });
+}
+return out;
+"""),
+    # docs/BUGS.md "A landed Generate result may not be one Ctrl+Z away": a landing is an undo step of its own. Before it
+    # was none, and one Ctrl+Z after a result took back (a) a layers step from before it together with the result, (b) a
+    # fill from before it with the result left, (c) the selection with the result left. Now one Ctrl+Z takes exactly the
+    # result back after each, Ctrl+Y brings it back, and a result that lands after the user went on working (a fill made
+    # while the run went) is taken back alone, the fill with the next Ctrl+Z
+    ("one_ctrl_z_takes_a_landed_result_back", """
+const doc = (await run("new_document")).id;
+const ed = ednow(doc);
+host.shell.activate(ed);
+const prev = host.recipe;
+const LOOP = { id: "loopback_undo", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [] };
+const key = async (k, shift) => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: "Key" + k.toUpperCase(), ctrlKey: true, shiftKey: !!shift, bubbles: true, cancelable: true }));
+    await wait(50);
+    while (ed._historyQueue) await ed._historyQueue;
+    await wait(50);
+};
+const names = () => ed.layers.map((l) => l.name).join(",");
+const sum = (l) => { const d = l.px.readRect(0, 0, l.px.width, l.px.height).data; let s = 0; for (let i = 3; i < d.length; i += 4) s += d[i]; return s; };
+const out = {};
+try {
+    host.setRecipe(LOOP);
+    for (const kase of ["a", "b", "c"]) {
+        await run("new_canvas", { width: 320, height: 200, doc });
+        await run("set_crop", { doc, fill: "none", withOriginal: false });
+        await run("set_prompt", { doc, prompt: "a test" });
+        await run("select_rect", { doc, x: 20, y: 20, w: 120, h: 90 });
+        let paint = null;
+        if (kase === "a") { const p = ed.addPaintLayer(); await run("remove_layer", { doc, layer: p.id }); }
+        if (kase === "b") { paint = ed.addPaintLayer(); ed.activeLayerId = paint.id; ed.fillSelection(); }
+        const before = names(), undo0 = ed.undo.map((s) => s.label), filled = paint ? sum(paint) : 0;
+        if (kase === "b" && !filled) throw new Error("the fill painted nothing");
+        const g = await run("generate", { doc, timeout: 60 });
+        const R = g.layer && g.layer.id;
+        if (!R || !ed.layers.some((l) => l.id === R)) throw new Error(kase + ": no result landed: " + ed.status);
+        const top = ed.undo[ed.undo.length - 1];
+        if (!top || top.kind !== "layers" || top.label !== g.layer.name || ed.undo.length !== undo0.length + 1) throw new Error(kase + ": the landing is not one step on top: " + JSON.stringify(ed.undo.map((s) => s.label)));
+        await key("z");
+        const undone = names();
+        if (ed.layers.some((l) => l.id === R) || undone !== before || ed.undo.map((s) => s.label).join() !== undo0.join()) throw new Error(kase + ": one Ctrl+Z took " + JSON.stringify({ before, undone, undo: ed.undo.map((s) => s.label), undo0 }));
+        if (paint && sum(ed.layers.find((l) => l.id === paint.id)) !== filled) throw new Error(kase + ": the Ctrl+Z took the fill back too");
+        await key("y");
+        if (!ed.layers.some((l) => l.id === R) || ed.undo.length !== undo0.length + 1 || ed.redo.length) throw new Error(kase + ": Ctrl+Y did not bring the result back: " + names());
+        out[kase] = { before, after: names(), undo: ed.undo.map((s) => s.label) };
+    }
+    // a late landing: the fill is made while the run goes, so the result lands after it and its step is pushed on top;
+    // one Ctrl+Z takes the result alone, the next the fill
+    await run("new_canvas", { width: 320, height: 200, doc });
+    await run("set_crop", { doc, fill: "none", withOriginal: false });
+    await run("set_prompt", { doc, prompt: "a test" });
+    await run("select_rect", { doc, x: 20, y: 20, w: 120, h: 90 });
+    const paint = ed.addPaintLayer();
+    const cur = () => ed.layers.find((l) => l.id === paint.id);
+    ed.activeLayerId = paint.id;
+    // the answer is held at the landing until the fill is made (the run itself is the loopback's, which answers at once)
+    let release = null, reached = false;
+    const gate = new Promise((r) => { release = r; });
+    const add0 = ed.addResults;
+    ed.addResults = async (rs) => { reached = true; await gate; return add0.call(ed, rs); };
+    let g;
+    try {
+        const going = run("generate", { doc, timeout: 60 });
+        for (let i = 0; i < 400 && !reached; i++) await wait(25);
+        if (!reached) throw new Error("the run never reached its landing: " + ed.status);
+        ed.fillSelection();
+        release();
+        g = await going;
+    } finally { release(); delete ed.addResults; }
+    const filled = sum(cur());
+    if (!filled) throw new Error("the fill during the run painted nothing");
+    const labels = ed.undo.map((s) => s.label);
+    if (labels.slice(-2).join() !== "Fill selection," + g.layer.name) throw new Error("the late landing's steps: " + labels);
+    await key("z");
+    if (ed.layers.some((l) => l.id === g.layer.id) || !cur() || sum(cur()) !== filled) throw new Error("the late result's Ctrl+Z: " + names() + " / " + (cur() && sum(cur())));
+    await key("z");
+    if (sum(cur()) !== 0) throw new Error("the second Ctrl+Z did not take the fill back");
+    await key("z", true);
+    await key("z", true);
+    if (!ed.layers.some((l) => l.id === g.layer.id) || sum(cur()) !== filled) throw new Error("two redos: " + names());
+    out.late = labels.slice(-2);
+    // a result that lands while a text is being typed on the canvas: its step records the text as it was before the edit
+    // (never half typed), the edit goes on; Esc cancels it, and the Ctrl+Z of the result leaves the text as T0
+    const T0 = "T0";
+    const tl = await run("add_text", { doc, text: T0, x: 30, y: 30, size: 40 });
+    const TL = () => ed.layers.find((l) => l.id === tl.id);
+    await wait(300);
+    const px0 = sum(TL());
+    let release2 = null, reached2 = false;
+    const gate2 = new Promise((r) => { release2 = r; });
+    ed.addResults = async (rs) => { reached2 = true; await gate2; return add0.call(ed, rs); };
+    let g2;
+    try {
+        const going = run("generate", { doc, timeout: 60 });
+        for (let i = 0; i < 400 && !reached2; i++) await wait(25);
+        if (!reached2) throw new Error("the second run never reached its landing: " + ed.status);
+        ed.beginTextEdit(TL());
+        const ta = ed.textEdit.ta;
+        ta.value = "T0 and more typed";
+        ta.dispatchEvent(new Event("input"));
+        await wait(300);
+        release2();
+        g2 = await going;
+    } finally { release2(); delete ed.addResults; }
+    if (!ed.textEdit || TL().text.content !== "T0 and more typed") throw new Error("the landing ended the text edit: " + (TL() && TL().text.content));
+    const rec = ed.undo[ed.undo.length - 1].layers.find((l) => l.id === tl.id);
+    if (ed.undo[ed.undo.length - 1].label !== g2.layer.name || !rec || rec.text.content !== T0) throw new Error("the landing's step holds the text " + JSON.stringify(rec && rec.text.content));
+    ed.textEdit.ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await wait(300);
+    if (TL().text.content !== T0) throw new Error("Esc left " + TL().text.content);
+    await key("z");
+    await wait(300);
+    if (ed.layers.some((l) => l.id === g2.layer.id) || TL().text.content !== T0 || sum(TL()) !== px0) throw new Error("the result's Ctrl+Z after Esc: " + JSON.stringify({ text: TL().text.content, px: [sum(TL()), px0] }));
+    out.text = { recorded: rec.text.content, after: TL().text.content };
+} finally {
+    host.setRecipe(prev);
     host.shell.activate(ednow(window.__t) || host.editor);
     await run("close_document", { doc, force: true });
 }

@@ -2065,7 +2065,8 @@ try {
     const L = r.generated.layer;
     if (L.x + L.w <= W && L.y + L.h <= H) throw new Error("the result is not over the new border: " + JSON.stringify(L));
     const labels = ed.undo.slice(u0).map((s) => s.label);
-    if (labels.join() !== "Extend canvas,Generate the new border") throw new Error("the steps: " + labels);
+    // the result's landing is its own step, named as the result layer is
+    if (labels.join() !== "Extend canvas," + ed.history[ed.history.length - 1].name) throw new Error("the steps: " + labels);
     const nR = ed.layers.length;
     await c("undo", { doc: d.id });
     const u1 = { size: [ed.width, ed.height], layers: ed.layers.length, result: ed.layers.some((l) => l.id === L.id) };
@@ -2113,7 +2114,7 @@ try {
         const R = ed.layers.find((l) => l.id === ed.history[ed.history.length - 1].layerId);
         if (!R || R.x >= 40) throw new Error("the frame's result is not over the new border: " + (R && [R.x, R.y, R.w, R.h]));
         const fl = ed.undo.slice(u2s).map((s) => s.label);
-        if (fl.join() !== "Extend canvas,Generate the new border") throw new Error("the frame's steps: " + fl);
+        if (fl.join() !== "Extend canvas," + R.name) throw new Error("the frame's steps: " + fl);
         await c("undo", { doc: d.id });
         if (ed.width !== W2 + 40 || ed.layers.some((l) => l.id === R.id)) throw new Error("the frame's first undo: " + ed.width + " / " + ed.layers.length);
         await c("undo", { doc: d.id });

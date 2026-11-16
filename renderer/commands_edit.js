@@ -300,9 +300,8 @@ export const EditCommandsPart = {
             if (gen) {
                 const width = ed.width, height = ed.height;
                 let generated;
-                // a landing records no undo step of its own: this one holds the layers before the result, so the first
-                // Ctrl+Z takes the result back and the second the extend
-                ed.pushUndo({ kind: "layers", label: "Generate the new border" });
+                // the result's landing is an undo step of its own (addResults): the first Ctrl+Z takes the result back and
+                // the second the extend
                 try { generated = await RunCommandsPart.generate.run(ed, { timeout: a.timeout }); }
                 catch (err) {
                     const e = new Error(`The canvas was extended to ${width} × ${height} (its own undo step); the generate of the new border failed: ${(err && err.message) || err}`);

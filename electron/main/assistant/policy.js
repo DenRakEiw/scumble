@@ -558,10 +558,11 @@ function undoStep(call, facts = {}) {
     if (READS.has(name)) return null;
     // duplicate_layer, frequency_separation and dodge_burn_layer push their own "layers" step (a second was an empty one)
     // glb_place pushes its own "layers" step for the object and its depth layer (a second one would be an empty step)
-    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "generate"].includes(name)) return "layers";
+    // generate and the selection's upscale land their result layer as a step of its own (addResults; each area's result
+    // one step), the whole picture's upscale pushes its own `canvas` step: a step before them would be an empty one
+    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer"].includes(name)) return "layers";
     if (name === "film_apply_look") return addsLayer(facts) ? "layers" : null;
-    // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
-    if (name === "upscale") return args.scope === "document" ? null : "layers";
+    if (name === "generate" || name === "upscale") return null;
     // the pass pushes its own "layers" step for the layer it adds (a second one would be an empty step)
     if (name === "realism_pass") return null;
     if (name === "relight") return args.layer ? null : "layers";
