@@ -523,8 +523,9 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("the whole picture's reason names both routes", doc.reason === "upscales the whole picture (a paid model or your ComfyUI): every layer is scaled along", doc.reason);
         check("upscale is a run: a busy document refuses it", policy.decide({ name: "upscale", args: {} }, { tools: new Set(["upscale"]), busy: true }).action === "refuse");
         check("its timeout defaults to 30 minutes", policy.clamp({ name: "upscale", args: {} }).args.timeout === 1800);
-        check("the selection's upscale gets a layers step, the whole picture's none (it pushes its own)",
-            policy.undoStep({ name: "upscale", args: { scope: "selection" } }) === "layers" && policy.undoStep({ name: "upscale", args: { scope: "document" } }) === null && policy.undoStep({ name: "upscale", args: {} }) === "layers");
+        // since 0.1.57 a result's landing is its own undo step (addResults), so the assistant pushes none before either
+        check("no layers step before an upscale: the selection's result lands as its own step, the whole picture pushes its own",
+            policy.undoStep({ name: "upscale", args: { scope: "selection" } }) === null && policy.undoStep({ name: "upscale", args: { scope: "document" } }) === null && policy.undoStep({ name: "upscale", args: {} }) === null);
     });
 
     await section("the key never leaks", async () => {
