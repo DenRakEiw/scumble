@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scumble: free, open-source AI inpainting editor</title>
-<meta name="description" content="Scumble is a free, open-source desktop editor for AI inpainting: select, prompt, get a colour-matched layer. Layers, masks, filters, PSD export, MCP for agents. Runs on your own ComfyUI or your API keys.">
+<meta name="description" content="Scumble is a free, open-source desktop editor built around AI models: inpaint, edit, upscale and generate, and every result comes back as a layer of its own. Boxes in the prompt, relight, layers, masks, filters, PSD export, MCP for agents. Runs on your own ComfyUI, Comfy Cloud or your API keys.">
 <link rel="canonical" href="https://www.denrakeiw.com/scumble">
 <link rel="icon" href="https://raw.githubusercontent.com/DenRakEiw/scumble/main/build/icon.png">
 <meta property="og:title" content="Scumble: free, open-source AI inpainting editor">
-<meta property="og:description" content="Select, prompt, get a colour-matched layer. Layers, masks, filters, PSD export, MCP for agents. Your own ComfyUI or your API keys.">
+<meta property="og:description" content="Inpaint, edit, upscale and generate; every result is a layer of its own. Boxes in the prompt, relight, filters, PSD export, MCP for agents. Your own ComfyUI, Comfy Cloud or your API keys.">
 <meta property="og:image" content="https://raw.githubusercontent.com/DenRakEiw/scumble/main/docs/images/social-preview.png">
 <meta property="og:url" content="https://denrakeiw.github.io/scumble/">
 <meta name="twitter:card" content="summary_large_image">
@@ -21,7 +21,8 @@
   header img { width: 56px; height: 56px; border-radius: 12px; }
   h1 { font-size: 2rem; margin: 0; letter-spacing: 0.01em; }
   .tag { color: var(--muted); margin: 0 0 28px; font-size: 1.1rem; }
-  .hero { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; margin: 0 0 28px; }
+  .hero { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; margin: 0 0 8px; }
+  .cap { color: var(--muted); font-size: 0.9rem; margin: 0 0 28px; }
   .get { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0 0 32px; }
   .get a { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; color: var(--text); text-decoration: none; }
   .get a strong { display: block; color: var(--accent); margin-bottom: 4px; }
@@ -43,9 +44,10 @@
     <img src="https://raw.githubusercontent.com/DenRakEiw/scumble/main/build/icon.png" alt="">
     <h1>Scumble</h1>
   </header>
-  <p class="tag">A free, open-source desktop editor for AI inpainting. Select, say what should be there, and the result comes back as a layer of its own, colour-matched to its surroundings.</p>
+  <p class="tag">A free, open-source desktop editor built around AI models. Inpaint, edit, upscale and generate: select, say what should be there, and the result comes back as a layer of its own, colour-matched to its surroundings.</p>
 
-  <img class="hero" src="https://raw.githubusercontent.com/DenRakEiw/scumble/main/docs/images/social-preview.png" alt="Scumble: a layered editor with an inpainted result over a photograph">
+  <img class="hero" src="https://raw.githubusercontent.com/DenRakEiw/scumble/main/docs/images/readme/workflow.gif" width="680" height="383" alt="One key visual built in Scumble, its layers landing one by one: the generated and upscaled base, the wheels inpainted from a reference photo, a detail pass tile by tile, the face and the shoes swapped from references, the Realism Pass">
+  <p class="cap">One picture from the first generation to the finished frame, 17 layers, without leaving the editor (sped up, the waits cut out).</p>
 
   <div class="get">
     <a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R"><strong>Microsoft Store</strong><span>Windows, signed by Microsoft, updates itself. Or <code>winget install 9NDBTNNMXF2R</code>.</span></a>
@@ -55,12 +57,14 @@
 
   <h2>What it does</h2>
   <ul>
-    <li>Select by rectangle, brush, point, a text description, or by depth, brightness and colour; type a prompt; the result lands as a new layer with masks, blend modes and undo.</li>
-    <li>Draw boxes on an empty canvas, a caption each, and the whole picture is generated to that layout.</li>
-    <li>Layers, groups, masks, clipping; filter layers (curves, colour grading, HSL, grain, film looks, haze and dehaze on a depth map); text layers; retouch tools (heal, remove, liquify, dodge and burn, frequency separation); in-app cutout and depth maps.</li>
+    <li>Select by rectangle, brush, lasso, magic wand, object hover, a text description, or by depth, brightness and colour; type a prompt; the result lands as a new layer, colour-matched, with masks, 27 blend modes and an undo step of its own. Several separate areas can run one after another, each at its own size.</li>
+    <li>Draw boxes on an empty canvas or on the picture, a caption each, and the picture is generated to that layout (FLUX 3 Image, its open Klein model and MOSS-Image on your own ComfyUI, Ideogram 4). Reference layers are named in the prompt as <code>@img1</code>, <code>@img2</code>.</li>
+    <li>Layers, groups, masks, clipping; filter layers (curves, colour grading, HSL, grain, 46 film looks, lens blur, haze and dehaze on a depth map) with a live scope and a clipping warning; text layers; retouch tools (heal, remove, liquify, dodge and burn, frequency separation); in-app cutout, depth maps and automatic layer names.</li>
+    <li>Relight with virtual lights from the picture's depth map. Deep paint: paint, a light brush and wrapped logos that take the picture's own light and keep its reflections. Contact shadows under cut-outs; 3D objects and a posable mannequin as depth and pose guides.</li>
+    <li>Upscale the selection or the whole picture; a Realism Pass for generated skin, hair and fabric; green and blue screen keying with CorridorKey 2.0; one picture split into layers; outpainting in one step; a frame from a video as a picture or a layer.</li>
     <li>Pictures up to 15,000 pixels stay fluid; export to PNG, JPEG, WebP, TIFF, and layered PSD and ORA.</li>
-    <li>The pixels come from your own ComfyUI (local or remote), Comfy Cloud, or image APIs on your own keys (FLUX 3 Image, FLUX.2, GPT Image, Nano Banana, Seedream, Qwen and more). No account, no subscription; keys stay in the OS credential store.</li>
-    <li>Every command is an MCP tool: Claude Desktop installs it with one click from the release's <code>.mcpb</code>, Claude Code and any MCP client drive the window you are looking at.</li>
+    <li>The pixels come from your own ComfyUI (local or remote, with your LoRAs), Comfy Cloud, or image APIs on your own keys (FLUX 3 Image, FLUX.2, GPT Image, Nano Banana, Seedream, Qwen, Ideogram, Krea and more). No account, no subscription; keys stay in the OS credential store.</li>
+    <li>Every command is an MCP tool, 124 of them: Claude Desktop installs it with one click from the release's <code>.mcpb</code>, Claude Code and any MCP client drive the window you are looking at, and <code>--run</code> works through a folder of files as a batch. A built-in assistant on your own key uses the same commands.</li>
   </ul>
 
   <h2>Learn more</h2>
@@ -70,12 +74,14 @@
     <a href="https://www.denrakeiw.com/scumble/videos">Videos</a>
     <a href="https://www.denrakeiw.com/scumble/blog">Dev blog</a>
     <a href="https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md">MCP docs</a>
+    <a href="https://github.com/DenRakEiw/scumble/blob/main/docs/COMMANDS.md">Commands</a>
+    <a href="https://github.com/DenRakEiw/scumble/blob/main/docs/PLUGINS.md">Plugins</a>
     <a href="https://github.com/DenRakEiw/scumble/blob/main/CHANGELOG.md">Changelog</a>
     <a href="https://github.com/DenRakEiw/scumble/issues">Report a bug</a>
     <a href="https://github.com/DenRakEiw/ComfyUI-InpaintCanvas">ComfyUI node</a>
   </nav>
 
-  <footer>Windows 10/11 today, Linux builds from CI (untested by the author yet), no macOS build. Made by DenRakEiw. Film and model names belong to their owners; Scumble ships no models and runs no service.</footer>
+  <footer>Windows 10/11 today, Linux builds from CI (untested by the author yet), no macOS build. Made by DenRakEiw. Film and model names belong to their owners; Scumble bundles no models (its in-app helper models are downloaded on request) and runs no service.</footer>
 </main>
 </body>
 </html>
