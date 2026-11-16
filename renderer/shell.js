@@ -1585,9 +1585,44 @@ async function openCloudResults(pictures) {
         const article = /^[aeiou]/i.test(provLabel) ? "An" : "A";
         const slug = isComfy ? "comfy-cloud" : (String(p.provider || provLabel).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "provider");
         const ext = /jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png";
-        const name = `${slug}-${String(p.jobId).slice(0, 8)}.${ext}`;
-        await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
+        const name = `${slug}-${String(p.jobId).slice(0, 8)}${p.kind === "layers" ? "-split" : ""}.${ext}`;
         const earlier = p.earlier !== false;
+        if (p.kind === "layers") {
+            // a split whose window went away during its run: the base as the picture, its layers in one group above it
+            let got = null, why = "";
+            try { got = await host.landKeptSplit(ed, p, name); } catch (err) { why = String((err && err.message) || err); }
+            if (!got) {
+                // the editor's own reason first (a base that did not open says why); the half-made tab goes, so the
+                // autosave keeps no base-only copy that would come back beside the kept split at every start
+                const said = `${!why && ed.status ? `${ed.status} ` : ""}This ${provLabel} split${earlier ? " of an earlier run" : ""} could not be opened${why ? ` (${why})` : ""}; Scumble tries its kept file again at the next start.`;
+                await closeDocument(ed, { force: true, remember: false });
+                if (host.editor) host.editor.setStatus(said, "error");
+                continue;
+            }
+            // the kept file stays the durable copy until the document is: its layers stored, then the session saved
+            let durable = false;
+            try {
+                await host.flushEditor(ed);
+                durable = got.layers.every((l) => l.ref);
+                if (durable) await window.scumble.state.save(JSON.stringify(host.bundle()));
+            } catch (err) { durable = false; console.warn("a kept split's document could not be stored yet", err); }
+            const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
+            const model = p.model || provLabel;
+            const parts = [`${article} ${provLabel} split ${earlier ? "kept from an earlier session" : "its run could not bring at the time"} (${model}, started ${when}): opened as a document of its own, its base and ${got.n} layer${got.n === 1 ? "" : "s"} in the group "${got.group.name}".`];
+            // a host that says a base alone means its layer mode was dropped (OpenRouter): red, in its words
+            if (got.n <= 0 && got.baseOnly) parts.push(got.baseOnly);
+            const left = [...got.leftOut, ...got.missing];
+            if (left.length) parts.push(`Left out: ${left.join(", ")}.`);
+            if (got.whole.length || got.fitted.length) parts.push(`Without a position from ${provLabel}: ${[...got.whole, ...got.fitted].join(", ")}.`);
+            if (!durable) parts.push("Its layers could not be stored yet: the kept file stays, so the next start opens the split again.");
+            ed.setStatus(parts.join(" "), got.n <= 0 && got.baseOnly ? "error" : left.length || got.whole.length || got.fitted.length || got.n <= 0 || !durable ? "warn" : "info");
+            if (durable) { try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ } }
+            opened.push(ed);
+            labels.add(provLabel);
+            if (!earlier) allEarlier = false;
+            continue;
+        }
+        await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
         if (!ed.base) {
             ed.setStatus(!p.provider
                 ? `${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`

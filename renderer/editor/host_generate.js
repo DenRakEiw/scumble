@@ -7,7 +7,7 @@ import { refusal } from "./inpaint_status.js";
 import { hasTokens, referencesRule, referencesText } from "./reftokens.js";
 import { smallBoxes, smallNote } from "./boxes.js";
 import { areaState, runEachArea } from "./eacharea.js";
-import { runSplitLayers } from "./splitlayers.js";
+import { runSplitLayers, landKeptSplit } from "./splitlayers.js";
 import { HINT_NOTE, SUBFOLDER, api, notesKind, promptMissing, providerEdit, runIdOf, textOptions, viaLine } from "./host_util.js";
 
 export const HostGeneratePart = {
@@ -348,6 +348,14 @@ export const HostGeneratePart = {
      */
     splitLayers(editor, opts = {}) {
         return runSplitLayers(this, editor, opts, { providerEdit, canvasBytes, bytesToImage, viaLine, runIdOf });
+    },
+
+    /**
+     * A split kept by main because its window went away during the run (splitlayers.js landKeptSplit): opened in the new
+     * document `editor` as its picture and its layers in one group. Only the shell's recovery calls it.
+     */
+    landKeptSplit(editor, kept, name) {
+        return landKeptSplit(this, editor, kept, name, { canvasBytes, bytesToImage });
     },
 
     /** Why a run of recipe `r` with this prompt is refused before anything is made (promptRequired), or "" (Each area asks it before its question). */

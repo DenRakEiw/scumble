@@ -841,18 +841,63 @@ async function main() {
         const x7 = await viaIndex(base);
         check("index.edit without a stored key: refused before any call, naming ModelArk", !!x7.err && /No API key for BytePlus ModelArk/.test(x7.err) && x7.s.calls.length === 0, x7.err);
         currentKey = KEY;
-        // a split whose window went away during the run (review finding providers/split-pagegone-keeps-base-only):
-        // its base plate alone is not kept as a recovered picture, and the log says the layers could not be kept
+        // a split whose window went away during the run (docs/BUGS.md, before: review finding
+        // providers/split-pagegone-keeps-base-only): its whole answer is kept in one .split file, noted as kind
+        // "layers"; the window's ask gets the layers' entries and a token (no bytes in the answer), takes each picture
+        // from the file, and its ack removes the file and the note
         {
+            const resDir = path.join(userDir, "results");
             const sLay = fakeServer({ answers: [layerAnswer] });
             globalThis.fetch = sLay.fetch;
-            let lErr = null;
-            try { await index.edit(layerReq(variant("seedream_5_5")), { pageGone: () => true }); } catch (e) { lErr = String(e && e.message || e); } finally { globalThis.fetch = realFetch; }
-            const kept = fs.existsSync(path.join(userDir, "results")) ? fs.readdirSync(path.join(userDir, "results")) : [];
+            let lErr = null, changed = 0;
+            let goneOut = null;
+            try { goneOut = await index.edit(layerReq(variant("seedream_5_5"), { prompt: "split it" }), { pageGone: () => true, cloudJobsChanged: () => { changed++; } }); } catch (e) { lErr = String(e && e.message || e); } finally { globalThis.fetch = realFetch; }
+            check("index.edit for a page that went away holds none of the split's pictures in memory (no token, no layers)", !!goneOut && goneOut.layersToken === null && Array.isArray(goneOut.layers) && goneOut.layers.length === 0, short(goneOut && { token: goneOut.layersToken, layers: goneOut.layers }));
+            const kept = fs.existsSync(resDir) ? fs.readdirSync(resDir) : [];
             const said = logged.find((l) => /went away before its layers came/.test(l.message || ""));
-            check("index.edit: a split whose window went away keeps no base-only picture and logs that its 2 layers could not be kept",
-                !lErr && kept.length === 0 && !!said && /the 2 layers \(generated and charged\) could not be kept/.test(said.message) && !logged.some((l) => /the picture is kept/.test(l.message || "")),
-                short({ lErr, kept, said: said && said.message }));
+            const noted = (() => { try { return JSON.parse(fs.readFileSync(path.join(userDir, "cloudjobs.json"), "utf8")).jobs; } catch (_) { return []; } })();
+            check("index.edit: a split whose window went away keeps its whole answer in one .split file, noted as kind layers, logs that the base and its 2 layers are kept, and tells the window",
+                !lErr && kept.length === 1 && /\.split$/.test(kept[0]) && noted.length === 1 && noted[0].kind === "layers" && noted[0].file === kept[0] && noted[0].provider === "ark" && !!said && /the base and its 2 layers are kept/.test(said.message) && changed === 1,
+                short({ lErr, kept, noted, said: said && said.message, changed }));
+            const r = await index.recoverCloudJobs();
+            const pic = r.pictures[0];
+            const L = pic ? pic.layers : [];
+            check("recoverCloudJobs: the kept split comes as one picture of kind layers with a token and its 3 entries (base, sky, dog: names, boxes, z order, the prompt), no bytes in the answer",
+                r.pictures.length === 1 && pic.kind === "layers" && pic.jobId === noted[0].jobId && typeof pic.layersToken === "string" && pic.bytes.length === 0 && L.length === 3 && L[0].base === true && L[1].name === "sky" && L[1].z_index === 1 && L[2].name === "dog" && L[2].description === "a dog" && eq(L[2].bounding_box, { absolute: [10, 20, 110, 220], normalized: [10, 26, 107, 286] }) && L.every((l, i) => l.part === i && !("bytes" in l) && !("offset" in l)) && pic.prompt === "split it" && pic.providerLabel === index.PROVIDERS.ark.label,
+                short(pic && { ...pic, layersToken: !!pic.layersToken }));
+            let tags = [], partErr = null, again = null;
+            try { tags = L.map((l) => tagOf(index.layerPart(pic.layersToken, l.part))); } catch (e) { partErr = String(e && e.message || e); }
+            try { index.layerPart(pic.layersToken, 0); } catch (e) { again = String(e && e.message || e); }
+            check("layerPart on a kept split: each picture read from the file in order (BASE, Z1, Z2), each once",
+                !partErr && eq(tags, ["BASE", "Z1", "Z2"]) && /no longer held/.test(again || ""), short({ partErr, tags, again }));
+            index.ackCloudJob(pic.jobId);
+            const after = fs.existsSync(resDir) ? fs.readdirSync(resDir) : [];
+            check("ackCloudJob on the kept split: its file and its note go", after.length === 0 && !fs.existsSync(path.join(userDir, "cloudjobs.json")), short({ after }));
+            // a .split file cut short (a crash while it was written past the rename cannot happen, but a damaged disk can):
+            // the note is dropped, nothing is handed to the window
+            const sLay2 = fakeServer({ answers: [layerAnswer] });
+            globalThis.fetch = sLay2.fetch;
+            try { await index.edit(layerReq(variant("seedream_5_5")), { pageGone: () => true }); } catch (_) { /* checked below */ } finally { globalThis.fetch = realFetch; }
+            const f2 = fs.readdirSync(resDir).find((n) => n.endsWith(".split"));
+            if (f2) fs.truncateSync(path.join(resDir, f2), 200);
+            const r2 = await index.recoverCloudJobs();
+            check("recoverCloudJobs: a kept split cut short is dropped, nothing handed to the window", !!f2 && r2.pictures.length === 0 && r2.dropped === 1, short({ f2, r2: { pictures: r2.pictures.length, dropped: r2.dropped } }));
+            const badLog = logged.find((l) => l.level === "error" && /the kept split .*\.split .* is damaged and was dropped/.test(l.message || ""));
+            check("... and the drop is logged at error level, naming the split's file", !!badLog && badLog.message.includes(f2), short(badLog));
+            // (review 5) a layer whose picture is empty is left out and named; the rest of the split is kept and lands
+            const cj = require(path.join(ROOT, "electron", "main", "providers", "cloudjobs.js"));
+            const pf = path.join(userDir, "empty-layer.split");
+            const fh = await fs.promises.open(pf, "w");
+            let wrote = 0;
+            try { wrote = await cj.writeSplit(fh, { layers: [{ bytes: pngOf(64, 48, 80, "B"), base: true, z_index: 0, name: "" }, { bytes: new Uint8Array(0), z_index: 1, name: "empty one" }, { bytes: pngOf(32, 32, 80, "L2"), z_index: 2, name: "kept" }], missing: ["failed earlier"] }); } finally { await fh.close(); }
+            let head = null, hErr = null;
+            try { head = cj.readSplitHead(pf).head; } catch (e) { hErr = String(e && e.message || e); }
+            check("writeSplit leaves an empty picture out and names it in missing; the file reads whole", wrote === 2 && !hErr && head.layers.length === 2 && head.layers[1].name === "kept" && eq(head.missing, ["failed earlier", "empty one"]), short({ wrote, hErr, head: head && { n: head.layers.length, missing: head.missing } }));
+            const fh2 = await fs.promises.open(pf, "w");
+            let emptyBase = null;
+            try { await cj.writeSplit(fh2, { layers: [{ bytes: new Uint8Array(0), base: true }] }); } catch (e) { emptyBase = String(e && e.message || e); } finally { await fh2.close(); }
+            check("writeSplit refuses a split whose base picture is empty", /base picture is empty/.test(emptyBase || ""), emptyBase);
+            fs.rmSync(pf, { force: true });
         }
         fs.rmSync(userDir, { recursive: true, force: true });
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY) && !JSON.stringify(logged).includes(REAL_KEY), `${logged.length} records`);

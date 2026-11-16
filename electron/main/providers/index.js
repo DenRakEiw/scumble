@@ -338,14 +338,12 @@ async function edit(request, hooks = {}) {
     }
     // the picture came, but the page that asked for it is gone (a reload or a crash during the run): a Comfy Cloud v2
     // job puts its note back (S6); any other provider run (except a local in-app helper crop) keeps the bytes locally
-    // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own
+    // under a main-generated name (MAIN-2), so the new page's ask opens the picture as a document of its own; a split
+    // keeps its whole answer (the base and every layer) in one `.split` file the new page lands as a document of its own
+    let pageWentAway = false;   // a split's pictures are not held for a page that is gone (its kept file has them)
     if (out && out.bytes && hooks && typeof hooks.pageGone === "function" && hooks.pageGone()) {
-        if (split) {
-            // a split's answer is its layers (out.bytes is only the base plate): keeping the base alone would open a
-            // picture without them and read as a recovered run (docs/BUGS.md)
-            const n = Array.isArray(out.layers) ? Math.max(0, out.layers.length - 1) : 0;
-            log.record({ level: "error", source: id, message: `${p.label}: the window that asked for the split went away before its layers came; the ${n} layer${n === 1 ? "" : "s"} (generated and charged) could not be kept` });
-        } else if (ctx.jobNote && ctx.jobs) {
+        pageWentAway = true;
+        if (ctx.jobNote && ctx.jobs && !split) {
             ctx.jobs.add(ctx.jobNote);
             log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for job ${ctx.jobNote.jobId} went away before its picture came; the job stays noted, so the window opens it` });
             jobsChanged(hooks);
@@ -356,15 +354,25 @@ async function edit(request, hooks = {}) {
                 try {
                     const savedId = crypto.randomUUID();
                     const mime = out.mime || "image/png";
-                    const ext = /jpe?g/i.test(mime) ? "jpg" : /webp/i.test(mime) ? "webp" : "png";
+                    const ext = split ? "split" : /jpe?g/i.test(mime) ? "jpg" : /webp/i.test(mime) ? "webp" : "png";
                     const file = `${savedId}.${ext}`;
                     const resDir = path.join(dir, "results");
                     fs.mkdirSync(resDir, { recursive: true });
                     const target = path.join(resDir, file);
                     tmp = target + ".tmp";
-                    const buf = toBuffer(out.bytes);
-                    const fd = fs.openSync(tmp, "w");
-                    try { fs.writeFileSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+                    if (split) {
+                        // a split's answer is its layers (out.bytes is only the base plate): the whole answer goes into
+                        // one file the window lands as a document holding them (cloudjobs.writeSplit, docs/BUGS.md),
+                        // written without holding main's thread
+                        const fh = await fs.promises.open(tmp, "w");
+                        try {
+                            await cloudjobs.writeSplit(fh, out, { seconds: (Date.now() - t0) / 1000, prompt: String(req.prompt || "").slice(0, 4000), notes: notes.concat(Array.isArray(out.notes) ? out.notes.map(String) : []).slice(0, 50) });
+                            await fh.sync();
+                        } finally { await fh.close(); }
+                    } else {
+                        const fd = fs.openSync(tmp, "w");
+                        try { fs.writeFileSync(fd, toBuffer(out.bytes)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+                    }
                     cloudjobs.retrying(() => fs.renameSync(tmp, target));
                     tmp = null;
                     const noted = cloudjobs.store(dir, { pushedOut: notesPushedOut }).add({
@@ -375,9 +383,13 @@ async function edit(request, hooks = {}) {
                         started: t0,
                         file,
                         mime,
+                        kind: split ? "layers" : undefined,
                     });
                     if (noted) {
-                        log.record({ level: "warn", source: id, message: `${p.label}: the window that asked for the run went away before its picture came; the picture is kept (${file}), so the window opens it` });
+                        const n = split ? Math.max(0, out.layers.length - 1) : 0;
+                        log.record({ level: "warn", source: id, message: split
+                            ? `${p.label}: the window that asked for the split went away before its layers came; the base and its ${n} layer${n === 1 ? "" : "s"} are kept (${file}), so the window opens them as a document of their own`
+                            : `${p.label}: the window that asked for the run went away before its picture came; the picture is kept (${file}), so the window opens it` });
                         jobsChanged(hooks);
                     } else {
                         cloudjobs.unlinkResult(dir, file);
@@ -385,7 +397,7 @@ async function edit(request, hooks = {}) {
                     }
                 } catch (err) {
                     if (tmp) { try { cloudjobs.retrying(() => fs.unlinkSync(tmp)); } catch (_) { /* swept at next start */ } }
-                    log.record({ level: "error", source: id, message: `${p.label}: could not keep the picture after the window went away: ${(err && err.message) || err}` });
+                    log.record({ level: "error", source: id, message: `${p.label}: could not keep the ${split ? "split's layers (generated and charged)" : "picture"} after the window went away: ${(err && err.message) || err}` });
                 }
             }
         }
@@ -396,6 +408,8 @@ async function edit(request, hooks = {}) {
     log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), boxes: sentBoxes, notes, ...(split ? { layers: out.layers.map((l) => ({ z: l.z_index, name: l.name, description: l.description.slice(0, 400) })) } : {}) } });
     // a split's pictures stay here and the window takes them one at a time: dozens of 2K PNGs in one IPC message end the
     // renderer (docs/BUGS.md, the same limit as a large export's save)
+    // (no page to take them: nothing held, the kept file or the log above has them)
+    if (split && pageWentAway) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], layersToken: null, layers: [] };
     if (split) return { bytes: new Uint8Array(0), mime: out.mime || "image/png", info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, notes, missing: out.missing || [], ...keepLayerParts(out.layers) };
     const bytes = toBuffer(out.bytes);
     // the LoRAs a Comfy Cloud graph's chain loaded (item 50): the via line and loras_sent name them
@@ -408,7 +422,11 @@ async function edit(request, hooks = {}) {
 const LAYER_PARTS_KEEP_MS = 10 * 60 * 1000;
 const layerParts = new Map();
 
-/** Keeps the pictures of a split under a token: -> { layersToken, layers: the entries without their bytes, each with `part` }. */
+/**
+ * Keeps the pictures of a split under a token: -> { layersToken, layers: the entries without their bytes, each with
+ * `part` }. An entry's `bytes` is its picture, or `{ file, at, length }` where it lies in a kept split's file (a
+ * recovered split: nothing of it is read until the window asks for that picture).
+ */
 function keepLayerParts(list) {
     const token = randomUUID();
     const timer = setTimeout(() => layerParts.delete(token), LAYER_PARTS_KEEP_MS);
@@ -424,7 +442,8 @@ function layerPart(token, part) {
     if (!b) throw new Error("That layer's picture is no longer held: nothing more can land from this run.");
     e.parts[part] = null;
     if (!e.parts.some(Boolean)) dropLayerParts(token);
-    const bytes = toBuffer(b);
+    const onDisk = b && typeof b === "object" && !(b instanceof Uint8Array) && !(b instanceof ArrayBuffer) && typeof b.file === "string";
+    const bytes = onDisk ? cloudjobs.readSplitPart(b.file, b.at, b.length) : toBuffer(b);
     return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
@@ -655,6 +674,43 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
         // local files under <userData>/results/ do not expire after 24 h (unlike Comfy Cloud's server-side outputs)
         const clean = cloudjobs.cleanFile(e.file);
         if (!clean) { localDropped.push(e.jobId); continue; }
+        const provId = e.provider ? String(e.provider) : null;
+        const prov = provId && Object.prototype.hasOwnProperty.call(PROVIDERS, provId) ? PROVIDERS[provId] : null;
+        const meta = {
+            jobId: e.jobId,
+            provider: provId,
+            providerLabel: (prov && prov.label) || provId || null,
+            model: e.model || null,
+            recipe: e.recipe || null,
+            started: e.started,
+            earlier: !(+e.started >= BOOT),
+        };
+        if (e.kind === "layers") {
+            // a kept split: its head alone is read here; the window takes each picture from the file (layerPart) and acks
+            // the whole once its layers are in
+            const file = path.join(dir, "results", clean);
+            let got;
+            try { got = cloudjobs.readSplitHead(file); } catch (err) {
+                if (err && err.code === "EBADSPLIT") log.record({ level: "error", source: provId || "providers", message: `the kept split ${clean} (${meta.providerLabel || provId || "a provider"}, ${e.model || "its model"}) is damaged and was dropped: ${err.message}` });
+                if (err && (err.code === "ENOENT" || err.code === "EBADSPLIT")) localDropped.push(e.jobId);
+                else { localKeptIds.push(e.jobId); localUnread++; }
+                continue;
+            }
+            const h = got.head;
+            localPictures.push({
+                ...meta,
+                kind: "layers",
+                bytes: new Uint8Array(0),
+                mime: e.mime || "image/png",
+                info: h.info == null ? null : h.info,
+                seconds: Number.isFinite(+h.seconds) ? +h.seconds : null,
+                prompt: typeof h.prompt === "string" ? h.prompt : "",
+                notes: Array.isArray(h.notes) ? h.notes.map(String) : [],
+                missing: Array.isArray(h.missing) ? h.missing.map(String) : [],
+                ...keepLayerParts(h.layers.map(({ offset, length, ...rest }) => ({ ...rest, bytes: { file, at: got.start + offset, length } }))),
+            });
+            continue;
+        }
         let b;
         try {
             b = cloudjobs.retrying(() => fs.readFileSync(path.join(dir, "results", clean)));
@@ -663,16 +719,8 @@ async function recoverCloudJobs({ skip = null, only = null } = {}) {
             else { localKeptIds.push(e.jobId); localUnread++; }
             continue;
         }
-        const provId = e.provider ? String(e.provider) : null;
-        const prov = provId && Object.prototype.hasOwnProperty.call(PROVIDERS, provId) ? PROVIDERS[provId] : null;
         localPictures.push({
-            jobId: e.jobId,
-            provider: provId,
-            providerLabel: (prov && prov.label) || provId || null,
-            model: e.model || null,
-            recipe: e.recipe || null,
-            started: e.started,
-            earlier: !(+e.started >= BOOT),
+            ...meta,
             bytes: new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
             mime: e.mime || "image/png",
         });

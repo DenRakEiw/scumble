@@ -34,7 +34,8 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 from cdp import HOOK, Cdp  # noqa: E402
 
 ELECTRON = os.path.join(ROOT, "node_modules", "electron", "dist", "electron.exe")
-PORT = 9576
+# its own instances' DevTools port; SCUMBLE_CLOUDJOBS_PORT moves it (a lane that must not take 9576)
+PORT = int(os.environ.get("SCUMBLE_CLOUDJOBS_PORT") or 9576)
 TEST_KEY = "test-cloudjobs-gate-0123456789"
 HOUR = 3600 * 1000
 RESULTS = []
@@ -440,6 +441,71 @@ async def main():
                   {"doc": kept_doc, "calls": len(mock.calls) - n2, "notes": read_notes(paid), "left_files": left_files, "untrusted": untrusted})
         finally:
             await e.close()
+
+        # 6. a split whose page went away during its run (docs/BUGS.md): main keeps its whole answer in one .split file,
+        # the new page opens it as a document of its own, the base as its picture and every layer in one group, and its
+        # ack removes the file and the note
+        split_prof = os.path.join(work, "split")
+        os.makedirs(split_prof)
+        f = await App(split_prof, "split-reload").start().connect()
+        try:
+            await f.ev("""(() => {
+                window.__splitRun = window.scumble.providers.edit({
+                    provider: 'loopback', model: 'loopback-split', recipe: 'loopback', kind: 'layers',
+                    prompt: '', width: 128, height: 96, references: [], params: { delay_ms: 3000 },
+                });
+                window.__splitRun.catch(() => {});
+                return 1;
+            })()""")
+            await asyncio.sleep(0.3)
+            await f.c.call("Page.reload")
+            await asyncio.sleep(1.0)
+            try:
+                if f.ws is not None and not f.ws.closed:
+                    await f.ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+            await f.connect()
+            split_doc = None
+            for _ in range(80):
+                try:
+                    got = await f.ev("""(async () => {
+                        const { host } = await import('./editor/host.js');
+                        const ed = host.editors().find((x) => x.width === 128 && x.height === 96 && /split its run could not bring/.test(x.status || ''));
+                        if (!ed) return null;
+                        const g = ed.groups[ed.groups.length - 1];
+                        const inGroup = g ? ed.layers.filter((l) => l.group === g.id) : [];
+                        return JSON.stringify({
+                            name: host.documentName(ed),
+                            status: ed.status || '',
+                            frontStatus: (host.editor && host.editor.status) || '',
+                            group: g ? g.name : null,
+                            layers: inGroup.map((l) => ({ name: l.name, x: l.x, y: l.y, w: l.w, h: l.h, px: !!l.px })),
+                        });
+                    })()""")
+                    if got:
+                        split_doc = json.loads(got)
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+                await asyncio.sleep(0.25)
+            await notes_become(split_prof, [], tries=20)
+            res_dir = os.path.join(split_prof, "results")
+            left_files = os.listdir(res_dir) if os.path.isdir(res_dir) else []
+            lay = (split_doc or {}).get("layers") or []
+            by = {l["name"]: l for l in lay}
+            check("a split whose page reloaded during its run opens as a document of its own: the base as its picture, its base and both layers in one group placed from their boxes, the window's words; its ack removes the .split file and the note",
+                  bool(split_doc) and len(lay) == 3 and lay[-1]["name"] == "front disc" and lay[-2]["name"] == "back disc"
+                  and by["back disc"]["x"] == 0 and by["back disc"]["y"] == 0 and by["back disc"]["w"] == 64 and by["back disc"]["h"] == 48
+                  and by["front disc"]["x"] == 64 and by["front disc"]["y"] == 48 and all(l["px"] for l in lay)
+                  and str(split_doc.get("name", "")).startswith("loopback-") and str(split_doc.get("name", "")).endswith("-split")
+                  and str(split_doc.get("status", "")).startswith("A Loopback (test) split its run could not bring at the time (loopback-split,")
+                  and "its base and 2 layers in the group" in str(split_doc.get("status", ""))
+                  and "opened in a tab of its own" in str(split_doc.get("frontStatus", ""))
+                  and read_notes(split_prof) == [] and left_files == [],
+                  {"doc": split_doc, "notes": read_notes(split_prof), "left_files": left_files})
+        finally:
+            await f.close()
     finally:
         mock.stop()
         shutil.rmtree(work, ignore_errors=True)

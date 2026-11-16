@@ -149,6 +149,23 @@ module.exports = {
         const out = nativeImage.createFromBitmap(px, { width: w, height: h });
         return { bytes: out.toPNG(), mime: "image/png", seed: req.seed, info: { width: w, height: h, factor: f, from: [width, height], prompt: req.prompt || "", references: (req.references || []).length, mask: !!req.mask } };
     },
+    // kind "layers" (Split into layers) in layersplit.js's answer shape: a ramp of the asked size as the base, then two
+    // discs with boxes (bottom to top "back disc", "front disc"), so tools/cloudjobs_test.py can check a split kept
+    // when its window went away lands as a document holding them
+    async layers(req, ctx) {
+        const delay = Math.max(0, +req.params.delay_ms || 0);
+        if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it
+        if (req.params.fail) throw new Error("loopback failure requested");
+        const w = Math.max(16, Math.min(4096, req.width | 0)), h = Math.max(16, Math.min(4096, req.height | 0));
+        const base = rampPng(w, h, 7);
+        const bw = Math.max(8, w >> 1), bh = Math.max(8, h >> 1);
+        const layers = [
+            { bytes: base, mime: "image/png", z_index: 0, base: true, bounding_box: null, full: false, name: "", description: "", size: null },
+            { bytes: discPng(bw, bh, 40), mime: "image/png", z_index: 1, base: false, bounding_box: { absolute: [0, 0, bw, bh] }, full: false, name: "back disc", description: "a disc at the top left", size: null },
+            { bytes: discPng(bw, bh, 200), mime: "image/png", z_index: 2, base: false, bounding_box: { absolute: [w - bw, h - bh, w, h] }, full: false, name: "front disc", description: "a disc at the bottom right", size: null },
+        ];
+        return { bytes: base, mime: "image/png", seed: undefined, layers, missing: [], info: { width: w, height: h, layers: 2, model: req.model || "" } };
+    },
     async generate(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
         if (delay) await (ctx && ctx.sleep ? ctx.sleep(delay) : new Promise((r) => setTimeout(r, delay)));   // ctx.sleep: Cancel ends it

@@ -1,5 +1,5 @@
 // Split into layers (Seedream's layer decomposition: Seedream 5.5 and 5.0 pro on BytePlus ModelArk, Seedream 5.5 on
-// WaveSpeedAI and Oxen.ai too): the visible picture or one layer goes out as the one input, and the answer (a base
+// WaveSpeedAI, Oxen.ai and OpenRouter too): the visible picture or one layer goes out as the one input, and the answer (a base
 // picture and the model's layers, each a PNG with alpha, with a box in the base's pixels where the host gives one, a
 // stacking order and a name) lands as new layers above everything that is there, in one group, as one undo step.
 // docs/RECIPES.md "Split into layers".
@@ -272,7 +272,8 @@ async function prepare(app, editor, res, job, gone, deps) {
     const entries = res.layers || [];
     if (!entries.length) throw new Error("the answer holds no pictures");
     const take = (e) => window.scumble.providers.layerPart(res.layersToken, e.part);
-    const firstBytes = await take(entries[0]);
+    // a kept split's base was taken already: it is the new document's picture (landKeptSplit)
+    const firstBytes = res.firstBytes || await take(entries[0]);
     const firstImg = await deps.bytesToImage(firstBytes, entries[0].mime);
     const bw = firstImg.naturalWidth || firstImg.width, bh = firstImg.naturalHeight || firstImg.height;
     if (!(bw > 0 && bh > 0)) throw new Error("the answer's base picture is empty");
@@ -282,9 +283,19 @@ async function prepare(app, editor, res, job, gone, deps) {
     const made = [], whole = [], fitted = [];
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const bytes = row.entry === entries[0] ? firstBytes : await take(row.entry);
-        if (gone()) return null;
-        const img = row.entry === entries[0] ? firstImg : await deps.bytesToImage(bytes, row.entry.mime);
+        let bytes, img;
+        try {
+            bytes = row.entry === entries[0] ? firstBytes : await take(row.entry);
+            if (gone()) return null;
+            img = row.entry === entries[0] ? firstImg : await deps.bytesToImage(bytes, row.entry.mime);
+            if (!img) throw new Error(`the picture of ${row.name} does not decode`);
+        } catch (err) {
+            // a kept split (res.tolerant): a layer that cannot be read or decoded is left out and named, the rest land
+            if (!res.tolerant || row.entry === entries[0]) throw err;
+            console.warn("a kept split's layer left out", err);
+            leftOut.push(row.name);
+            continue;
+        }
         if (row.entry.full && !row.entry.base) {
             // a layer without a position: over the source only when it has the base's shape, else at its own, never stretched
             const f = fitFull(img.naturalWidth || img.width, img.naturalHeight || img.height, bw, bh, job.rect);
@@ -338,6 +349,46 @@ function land(editor, ready, job, groupName) {
     }
     editor.layersRestacked();
     return { group: g, layers };
+}
+
+/**
+ * A split whose window went away during its run, kept by main (providers/index.js, cloudjobs.writeSplit), opened in
+ * `editor` (a new, empty document): its base becomes the document's picture under the file name `name`, and every
+ * picture of the answer (the base too) lands above it in one group, as a split lands, one undo step. `p` the kept entry
+ * as recoverCloudJobs hands it ({ layersToken, layers, missing, ... }); `deps` canvasBytes, bytesToImage. -> { group, n
+ * (layers besides the base), leftOut, whole, fitted, missing } or null when the base did not open (the editor's line
+ * says why) or the tab was closed. Throws when a picture could not be read or made: the caller keeps the note then.
+ */
+export async function landKeptSplit(app, editor, p, name, deps) {
+    const entries = (p && p.layers) || [];
+    try {
+        if (!entries.length) throw new Error("the kept split holds no pictures");
+        const firstBytes = await window.scumble.providers.layerPart(p.layersToken, entries[0].part);
+        await editor.loadFile(new File([firstBytes], name, { type: entries[0].mime || "image/png" }), { ask: false });
+        const gone = () => !app.editors().includes(editor);
+        if (!editor.base || gone()) return null;
+        const job = { rect: { x: 0, y: 0, w: editor.width, h: editor.height } };
+        const ready = await prepare(app, editor, { ...p, firstBytes, tolerant: true }, job, gone, deps);
+        if (!ready || gone()) return null;
+        const landed = land(editor, ready, job, app.documentName(editor));
+        const missing = Array.isArray(p.missing) ? p.missing.map((m) => cleanLayerName(m, "Layer", new Set())) : [];
+        return { group: landed.group, layers: landed.layers.map((x) => x.layer), n: landed.layers.length - 1, leftOut: ready.leftOut, whole: ready.whole, fitted: ready.fitted, missing, baseOnly: p.info && typeof p.info.base_only === "string" ? p.info.base_only.trim() : "" };
+    } finally {
+        window.scumble.providers.dropLayerParts(p && p.layersToken).catch(() => {});
+    }
+}
+
+/**
+ * The line for a split that came back with its base alone: -> { text, kind }. On most hosts the model found no
+ * separate elements (amber); an adapter that knows a base alone means its host dropped the layer mode says so in
+ * `info.base_only` (OpenRouter, openrouter.js layers), and the line is red with its words. `via` the run's via line
+ * (empty: none).
+ */
+export function baseOnlyWords(model, groupName, via, info) {
+    const tail = `in the group "${groupName}"${via ? ` · ${via}` : ""}.`;
+    const said = info && typeof info.base_only === "string" ? info.base_only.trim() : "";
+    if (said) return { text: `${said} Only its base came back, ${tail}`, kind: "error" };
+    return { text: `${model} found no separate elements: only its base came back, ${tail}`, kind: "warn" };
 }
 
 /**
@@ -397,7 +448,7 @@ async function runJob(app, editor, opts, deps) {
         const n = landed.layers.length - 1;
         const parts = [n > 0
             ? `Split into ${n} layer${n === 1 ? "" : "s"} and a base, in the group "${landed.group.name}" (Ctrl+Z takes them all back) · ${deps.viaLine(r, label, res.seconds)}.`
-            : `${model} found no separate elements: only its base came back, in the group "${landed.group.name}" · ${deps.viaLine(r, label, res.seconds)}.`];
+            : baseOnlyWords(model, landed.group.name, deps.viaLine(r, label, res.seconds), res.info).text];
         if (scaledUp) parts.push(`The model answered ${bw} × ${bh}: the layers are scaled up to the picture's size, so they are lower resolution than the picture.`);
         const missing = Array.isArray(res.missing) ? res.missing.map((m) => cleanLayerName(m, "Layer", new Set())) : [];
         if (ready.leftOut.length) parts.push(`Left out, without a usable position: ${ready.leftOut.join(", ")}.`);
@@ -406,7 +457,9 @@ async function runJob(app, editor, opts, deps) {
         if (ready.fitted.length) parts.push(`${label} gave ${many(ready.fitted.length, "one layer", `${ready.fitted.length} layers`)} of another shape no position, so ${many(ready.fitted.length, "it sits", "each sits")} at ${many(ready.fitted.length, "its", "its own")} shape in the middle of the picture, not stretched: move and scale ${many(ready.fitted.length, "it", "them")} where ${many(ready.fitted.length, "it belongs", "they belong")} (${ready.fitted.join(", ")}).`);
         if (missing.length) parts.push(`Left out, its picture could not be downloaded: ${missing.join(", ")}.`);
         if (editor.geometrySeq !== geo) parts.push("The picture changed shape during the run: the layers sit where it was when it went out.");
-        editor.setStatus(parts.join(" "), scaledUp || ready.leftOut.length || ready.whole.length || ready.fitted.length || missing.length || n <= 0 ? "warn" : "info");
+        // a base alone: amber, or red where the adapter says its host dropped the layer mode (baseOnlyWords)
+        const amber = scaledUp || ready.leftOut.length || ready.whole.length || ready.fitted.length || missing.length;
+        editor.setStatus(parts.join(" "), n <= 0 ? baseOnlyWords(model, landed.group.name, "", res.info).kind : amber ? "warn" : "info");
         return {
             group: landed.group, recipe: r.id, provider: r.provider, model, seconds: res.seconds, unplaced: [...ready.whole, ...ready.fitted], tier: job.tier, asked: job.count, answered: [bw, bh], scaledUp, leftOut: [...ready.leftOut, ...missing],
             layers: landed.layers.map(({ layer, row }) => ({ layer, z: row.entry.z_index, base: !!row.entry.base, description: row.entry.description || "" })),
