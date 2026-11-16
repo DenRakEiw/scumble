@@ -184,7 +184,7 @@ SETTLE = r"""
     host.flushEditor = async function (...args) {
         const r = await orig.apply(this, args);
         ed._userInputs = (ed._userInputs || 0) + 1;
-        await must("set_prompt", { doc: ed.node.id, prompt: "typed while it settled" });
+        await must("set_prompt", { doc: ed.node.id, text: "typed while it settled" });
         return r;
     };
     ed.docFile.clean = true;
