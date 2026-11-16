@@ -866,7 +866,9 @@ press, no end search fails the length step);
 `file:testOpenVideo`, an IPC handler main registers only unpackaged and only for a file of that fixture folder, so with
 `--exe` it is skipped and says so; the native file dialog itself is not driven.
 
-`tools/openfile_test.py` (gate `openfile`, File › Open and `load_image` hand the window a token, not the file; full tier,
+`tools/openfile_test.py` (gate `openfile`; **dev builds only**: it opens through the test hook `file:testOpen`, which a
+packaged exe does not register, so against `--exe` it fails with "No handler registered" and is left out of the exe
+gates; File › Open and `load_image` hand the window a token, not the file; full tier,
 both backends; about 15 s) runs `node tools/grantedfiles_test.js` (main's token route `electron/main/grantedfiles.js`:
 the checked grant of a missing file and a folder, a whole file across many 1 MiB read pieces, ranges across a piece's
 border, HEAD, 416, 405, unknown, path-like, released and capped tokens, a file gone since its grant, the words) and
