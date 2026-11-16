@@ -272,7 +272,8 @@ async function prepare(app, editor, res, job, gone, deps) {
     const entries = res.layers || [];
     if (!entries.length) throw new Error("the answer holds no pictures");
     const take = (e) => window.scumble.providers.layerPart(res.layersToken, e.part);
-    const firstBytes = await take(entries[0]);
+    // a kept split's base was taken already: it is the new document's picture (landKeptSplit)
+    const firstBytes = res.firstBytes || await take(entries[0]);
     const firstImg = await deps.bytesToImage(firstBytes, entries[0].mime);
     const bw = firstImg.naturalWidth || firstImg.width, bh = firstImg.naturalHeight || firstImg.height;
     if (!(bw > 0 && bh > 0)) throw new Error("the answer's base picture is empty");
@@ -338,6 +339,33 @@ function land(editor, ready, job, groupName) {
     }
     editor.layersRestacked();
     return { group: g, layers };
+}
+
+/**
+ * A split whose window went away during its run, kept by main (providers/index.js, cloudjobs.writeSplit), opened in
+ * `editor` (a new, empty document): its base becomes the document's picture under the file name `name`, and every
+ * picture of the answer (the base too) lands above it in one group, as a split lands, one undo step. `p` the kept entry
+ * as recoverCloudJobs hands it ({ layersToken, layers, missing, ... }); `deps` canvasBytes, bytesToImage. -> { group, n
+ * (layers besides the base), leftOut, whole, fitted, missing } or null when the base did not open (the editor's line
+ * says why) or the tab was closed. Throws when a picture could not be read or made: the caller keeps the note then.
+ */
+export async function landKeptSplit(app, editor, p, name, deps) {
+    const entries = (p && p.layers) || [];
+    try {
+        if (!entries.length) throw new Error("the kept split holds no pictures");
+        const firstBytes = await window.scumble.providers.layerPart(p.layersToken, entries[0].part);
+        await editor.loadFile(new File([firstBytes], name, { type: entries[0].mime || "image/png" }), { ask: false });
+        const gone = () => !app.editors().includes(editor);
+        if (!editor.base || gone()) return null;
+        const job = { rect: { x: 0, y: 0, w: editor.width, h: editor.height } };
+        const ready = await prepare(app, editor, { ...p, firstBytes }, job, gone, deps);
+        if (!ready || gone()) return null;
+        const landed = land(editor, ready, job, app.documentName(editor));
+        const missing = Array.isArray(p.missing) ? p.missing.map((m) => cleanLayerName(m, "Layer", new Set())) : [];
+        return { group: landed.group, n: landed.layers.length - 1, leftOut: ready.leftOut, whole: ready.whole, fitted: ready.fitted, missing };
+    } finally {
+        window.scumble.providers.dropLayerParts(p && p.layersToken).catch(() => {});
+    }
 }
 
 /**

@@ -7,7 +7,8 @@
 // window says it has it (ack). Nothing is ever sent again; only a job's own result is read. A job whose run is still
 // in flight in this process (`flying`) is left to its run.
 //
-// <userData>/cloudjobs.json: { version: 1, jobs: [{ jobId, model, recipe, node, saveId, started }] }, written whole (a
+// <userData>/cloudjobs.json: { version: 1, jobs: [{ jobId, model, recipe, node, saveId, started }] } (a locally kept
+// picture adds provider, file and mime; a kept split also kind "layers", its file a `.split`), written whole (a
 // temp file, then a rename). A Comfy Cloud note older than MAX_AGE_MS is dropped unread (Comfy keeps a job's outputs
 // for a limited time; locally kept files under results/ stay until opened and acked). Every change is one synchronous
 // read-modify-write, so the notes of runs that end at the same time never overwrite each other (one main process holds
@@ -145,6 +146,8 @@ function store(dir, { pushedOut = null } = {}) {
                 if (clean) {
                     item.file = clean;
                     item.mime = typeof entry.mime === "string" && entry.mime ? entry.mime : "image/png";
+                    // a split's whole answer in one file (writeSplit): the window lands its layers, not one picture
+                    if (entry.kind === "layers") item.kind = "layers";
                 }
                 rest.push(item);
                 if (rest.length <= MAX_ENTRIES) return rest;
@@ -174,4 +177,94 @@ function store(dir, { pushedOut = null } = {}) {
     };
 }
 
-module.exports = { store, flying, settled, retrying, cleanFile, unlinkResult, sweepResults, MAX_AGE_MS, FILE, KEPT };
+// ---- a split's whole answer kept in one file (docs/BUGS.md: a split lost when its window went away) --------------
+// `<id>.split` under results/: the magic, the head's length (uint32 LE), the head as JSON, then each layer's picture
+// one after another. The head holds what the window lands a split from (each layer's name, box, stacking order, mime,
+// description; the run's info, notes, missing) and where each picture lies (`offset` from the end of the head,
+// `length`), so the window takes the pictures one at a time from the file and main never holds a recovered split
+// whole. One file per split: the notes, the sweep and an ack treat it as any kept picture.
+
+const SPLIT_MAGIC = Buffer.from("SCSPLIT1", "ascii");
+const SPLIT_HEAD_MAX = 4 * 1024 * 1024;   // a head of 101 layers' names and descriptions is a few hundred KB at most
+const SPLIT_LAYERS_MAX = 512;
+const SPLIT_TEXT = { name: 400, description: 4000, mime: 100 };
+
+/**
+ * Writes a split's answer to the open file `fd`: `out` the adapter's answer ({ layers: [{ bytes, mime, z_index, base,
+ * bounding_box, full, name, description, size }], info, missing }), `extra` more of the head (seconds, prompt, notes).
+ * -> the number of layers written.
+ */
+function writeSplit(fd, out, extra = {}) {
+    const list = Array.isArray(out && out.layers) ? out.layers : [];
+    if (!list.length) throw new Error("the split's answer holds no pictures");
+    if (list.length > SPLIT_LAYERS_MAX) throw new Error(`the split's answer holds ${list.length} pictures, more than ${SPLIT_LAYERS_MAX}`);
+    const bufs = list.map((l) => { const b = l && l.bytes; return Buffer.isBuffer(b) ? b : b instanceof Uint8Array ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : Buffer.from(b || []); });
+    let offset = 0;
+    const layers = list.map((l, i) => {
+        const row = {
+            mime: String(l.mime || "image/png").slice(0, SPLIT_TEXT.mime),
+            z_index: Number.isFinite(+l.z_index) ? +l.z_index : i,
+            base: !!l.base,
+            bounding_box: l.bounding_box && typeof l.bounding_box === "object" ? l.bounding_box : null,
+            full: !!l.full,
+            name: String(l.name == null ? "" : l.name).slice(0, SPLIT_TEXT.name),
+            description: String(l.description == null ? "" : l.description).slice(0, SPLIT_TEXT.description),
+            size: l.size == null ? null : l.size,
+            offset, length: bufs[i].length,
+        };
+        offset += bufs[i].length;
+        return row;
+    });
+    const head = Buffer.from(JSON.stringify({ version: 1, ...extra, info: out.info == null ? null : out.info, missing: Array.isArray(out.missing) ? out.missing.map(String) : [], layers }), "utf8");
+    if (head.length > SPLIT_HEAD_MAX) throw new Error("the split's head is too large to keep");
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(head.length, 0);
+    for (const b of [SPLIT_MAGIC, len, head, ...bufs]) fs.writeSync(fd, b, 0, b.length);
+    return layers.length;
+}
+
+/**
+ * A kept split's head, read alone (its pictures stay on disk): -> { head, start (where the pictures begin), size }.
+ * Throws with `code` "EBADSPLIT" for a file that is not a whole split (a wrong magic, a head past its limit, a picture
+ * past the file's end); any other read error is the file system's (ENOENT, a held file).
+ */
+function readSplitHead(file) {
+    const bad = (why) => Object.assign(new Error(`not a kept split: ${why}`), { code: "EBADSPLIT" });
+    const fd = retrying(() => fs.openSync(file, "r"));
+    try {
+        const size = fs.fstatSync(fd).size;
+        const pre = Buffer.alloc(SPLIT_MAGIC.length + 4);
+        if (size < pre.length || fs.readSync(fd, pre, 0, pre.length, 0) !== pre.length) throw bad("too short");
+        if (!pre.subarray(0, SPLIT_MAGIC.length).equals(SPLIT_MAGIC)) throw bad("wrong magic");
+        const n = pre.readUInt32LE(SPLIT_MAGIC.length);
+        if (!(n > 0 && n <= SPLIT_HEAD_MAX) || pre.length + n > size) throw bad("bad head length");
+        const hb = Buffer.alloc(n);
+        if (fs.readSync(fd, hb, 0, n, pre.length) !== n) throw bad("head cut short");
+        let head;
+        try { head = JSON.parse(hb.toString("utf8")); } catch (_) { throw bad("head not JSON"); }
+        const start = pre.length + n;
+        const layers = head && Array.isArray(head.layers) ? head.layers : null;
+        if (!layers || !layers.length || layers.length > SPLIT_LAYERS_MAX) throw bad("no layers");
+        for (const l of layers) {
+            if (!l || !Number.isInteger(l.offset) || !Number.isInteger(l.length) || l.offset < 0 || l.length <= 0 || start + l.offset + l.length > size) throw bad("a picture past the end");
+        }
+        return { head, start, size };
+    } finally { fs.closeSync(fd); }
+}
+
+/** One picture of a kept split, read from its place in the file. */
+function readSplitPart(file, at, length) {
+    const fd = retrying(() => fs.openSync(file, "r"));
+    try {
+        const b = Buffer.alloc(length);
+        let got = 0;
+        while (got < length) {
+            const r = fs.readSync(fd, b, got, length - got, at + got);
+            if (r <= 0) throw new Error("the kept split's file is cut short");
+            got += r;
+        }
+        return b;
+    } finally { fs.closeSync(fd); }
+}
+
+module.exports = { store, flying, settled, retrying, cleanFile, unlinkResult, sweepResults, writeSplit, readSplitHead, readSplitPart, MAX_AGE_MS, FILE, KEPT };

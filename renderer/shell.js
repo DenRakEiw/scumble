@@ -1585,9 +1585,30 @@ async function openCloudResults(pictures) {
         const article = /^[aeiou]/i.test(provLabel) ? "An" : "A";
         const slug = isComfy ? "comfy-cloud" : (String(p.provider || provLabel).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "provider");
         const ext = /jpe?g/i.test(p.mime || "") ? "jpg" : /webp/i.test(p.mime || "") ? "webp" : "png";
-        const name = `${slug}-${String(p.jobId).slice(0, 8)}.${ext}`;
-        await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
+        const name = `${slug}-${String(p.jobId).slice(0, 8)}${p.kind === "layers" ? "-split" : ""}.${ext}`;
         const earlier = p.earlier !== false;
+        if (p.kind === "layers") {
+            // a split whose window went away during its run: the base as the picture, its layers in one group above it
+            let got = null, why = "";
+            try { got = await host.landKeptSplit(ed, p, name); } catch (err) { why = String((err && err.message) || err); }
+            if (!got) {
+                ed.setStatus(`This ${provLabel} split${earlier ? " of an earlier run" : ""} could not be opened${why ? ` (${why})` : ""}; Scumble tries its kept file again at the next start.`, "error");
+                continue;
+            }
+            const when = p.started ? new Date(p.started).toLocaleString() : "earlier";
+            const model = p.model || provLabel;
+            const parts = [`${article} ${provLabel} split ${earlier ? "kept from an earlier session" : "its run could not bring at the time"} (${model}, started ${when}): opened as a document of its own, its base and ${got.n} layer${got.n === 1 ? "" : "s"} in the group "${got.group.name}".`];
+            const left = [...got.leftOut, ...got.missing];
+            if (left.length) parts.push(`Left out: ${left.join(", ")}.`);
+            if (got.whole.length || got.fitted.length) parts.push(`Without a position from ${provLabel}: ${[...got.whole, ...got.fitted].join(", ")}.`);
+            ed.setStatus(parts.join(" "), left.length || got.whole.length || got.fitted.length || got.n <= 0 ? "warn" : "info");
+            try { await cloudJobs.api.ack(p.jobId); } catch (_) { /* the next start brings it again */ }
+            opened.push(ed);
+            labels.add(provLabel);
+            if (!earlier) allEarlier = false;
+            continue;
+        }
+        await ed.loadFile(new File([p.bytes], name, { type: p.mime || "image/png" }), { ask: false });
         if (!ed.base) {
             ed.setStatus(!p.provider
                 ? `${ed.status} This Comfy Cloud result${earlier ? " of an earlier run" : ""} could not be opened; Scumble asks Comfy for it again at the next start.`
