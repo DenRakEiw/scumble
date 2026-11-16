@@ -1073,13 +1073,21 @@ ui.settings.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopP
 window.scumble.file.onOpened(async (g) => {
     if (g.error) { if (host.editor) host.editor.setStatus(`Could not open ${g.name}: ${g.error}.`, "error"); return; }
     let ed = host.editor;
-    if (!ed || ed.base) { ed = newDocument(); activate(ed); }
+    const before = ed;
+    let made = false;
+    if (!ed || ed.base) { ed = newDocument(); activate(ed); made = true; }
     ed.setStatus(`Reading ${g.name} ...`);
     let file;
     try {
         file = await grantedFile(g, { type: pictureType(g.name, { svg: false }) });
     } catch (err) {
-        if (!ed._destroyed) ed.setStatus(`Could not open ${g.name}: ${String((err && err.message) || err)}.`, "error");
+        const say = `Could not open ${g.name}: ${String((err && err.message) || err)}.`;
+        // the tab made for this file goes again when the read failed (before the token route no tab was made then);
+        // the words go to the tab that was in front
+        if (made && !ed._destroyed && !ed.base) {
+            await closeDocument(ed, { force: true, remember: false });
+            if (before && !before._destroyed) { activate(before); before.setStatus(say, "error"); }
+        } else if (!ed._destroyed) ed.setStatus(say, "error");
         return;
     }
     if (ed._destroyed || ed.base) await openInto(file);
