@@ -3,6 +3,7 @@
 
 import { BRUSH_MAX } from "./editor/inpaint_canvas.js";
 import { P, clampInt, findLayer } from "./commands_util.js";
+import { host } from "./editor/host.js";
 
 /** @typedef {import("./commands.js").Command} Command */
 
@@ -10,6 +11,20 @@ let COMMANDS = null;
 
 /** @satisfies {Record<string, Command>} */
 export const DepthCommandsPart = {
+    describe: {
+        needsImage: true,
+        description: "Describe the selected area (its bounding box), or the whole picture when nothing is selected, as the screen shows it, with Florence-2 in the app (download it in Settings › Helpers; refused without it). One line by default, a few sentences with detailed. to_prompt: the text also goes into the prompt field (the field's own undo keeps the old text). -> { text, area: selection | picture, box, detailed, seconds, provider, model }",
+        params: {
+            detailed: P.bool("a few sentences instead of one line", { default: false }),
+            to_prompt: P.bool("put the text into the prompt field too", { default: false }),
+            timeout: P.timeout(120),
+        },
+        async run(ed, a) {
+            const yes = (v) => v === true || v === "true";
+            const jobId = "mcp" + Date.now().toString(36);
+            return host.describeArea(ed, { detailed: yes(a.detailed), toPrompt: yes(a.to_prompt), jobId, timeoutMs: clampInt(a.timeout, 5, 600, 120) * 1000 });
+        },
+    },
     surface_maps: {
         needsImage: true,
         description: "Compute or refresh Deep paint's surface maps: the picture's light, its reflections and its surface normals (Marigold IID Lighting and MoGe-2 in the app). One undo step; a fresh set is kept unless force.",

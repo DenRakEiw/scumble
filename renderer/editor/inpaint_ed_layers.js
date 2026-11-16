@@ -107,6 +107,7 @@ export class LayersPart {
                 }
                 last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: !ref });
                 added.push(last);
+                if (role === "reference" && this.layerLanded) this.layerLanded(last, "reference");
                 n++;
             } catch (err) {
                 console.error(err);
@@ -669,6 +670,7 @@ export class LayersPart {
                 this.renderHistory();
                 const al = r.align && r.align.aligned ? ` · aligned (shift ${r.align.shift[0]}, ${r.align.shift[1]} px, scale ${r.align.scale[0]}, ${r.align.scale[1]})` : "";
                 this.setStatus(`Result ${n} added (${r.width} × ${r.height} at ${r.x}, ${r.y})${r.via ? " · " + r.via : ""}${al}`);
+                if (this.layerLanded) this.layerLanded(layer, "result");
             } catch (err) {
                 console.error(err);
                 this.setStatus(String(err.message || err), failKind(err));

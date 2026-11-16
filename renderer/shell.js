@@ -119,7 +119,7 @@ const ui = {
     netCurl: $("set-net-curl"), netNote: $("set-net-note"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateHelpNotify: $("set-update-help-notify"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
-    helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
+    helpersModels: $("set-helpers-models"), helpersAutoName: $("set-helpers-autoname"), helpersAutoNameNote: $("set-helpers-autoname-note"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
 
 shellState.settings = await window.scumble.settings.get();
@@ -777,6 +777,7 @@ ui.promptFolder.addEventListener("click", async () => {
 });
 
 ui.helpersDevice.addEventListener("change", async () => renderHelpers(await window.scumble.helpers.configure({ device: ui.helpersDevice.value })));
+ui.helpersAutoName.addEventListener("change", async () => { renderHelpers(await window.scumble.helpers.configure({ autoName: ui.helpersAutoName.checked })); host.refreshHelpers(); });
 ui.helpersSam2.addEventListener("change", async () => { renderHelpers(await window.scumble.helpers.configure({ sam2: ui.helpersSam2.value })); host.refreshHelpers(); });
 ui.helpersBrowse.addEventListener("click", async () => { const r = await window.scumble.helpers.browseDir(); if (r) { renderHelpers(r); host.refreshHelpers(); } });
 ui.helpersDefault.addEventListener("click", async () => { renderHelpers(await window.scumble.helpers.configure({ dir: null })); host.refreshHelpers(); });
@@ -1287,6 +1288,22 @@ async function frequencySeparation() {
     try { await ed.frequencySeparation({ radius: r }); } catch (err) { ed.setStatus(`Frequency separation failed: ${err.message || err}`, failKind(err)); }
 }
 
+/**
+ * Image > Describe Selection (item 62): Florence-2's caption of the selection (or the picture) in the status line and
+ * in a small note with Copy and Use as prompt; `describe:...:prompt` (Shift+click) puts it into the prompt field at once.
+ */
+async function describeSelection(cmd) {
+    const ed = host.editor;
+    if (!ed || !ed.base) return;
+    const detailed = cmd.includes(":detailed"), toPrompt = cmd.endsWith(":prompt");
+    let r;
+    try { r = await host.describeArea(ed, { detailed, toPrompt }); } catch (_) { return; /* the status line says why */ }
+    if (toPrompt || !r.text) return;
+    const i = await dialogs.ask({ title: r.area === "selection" ? "The selection" : "The picture", message: r.text, detail: `Florence-2${r.provider ? " on " + r.provider : ""}${r.seconds != null ? `, ${(+r.seconds).toFixed(1)} s` : ""}`, buttons: ["Copy", "Use as prompt", "Close"], defaultId: 2, cancelId: 2 });
+    if (i === 0) { try { await navigator.clipboard.writeText(r.text); ed.setStatus("The description is copied."); } catch (err) { ed.setStatus("Could not copy: " + (err.message || err), "warn"); } }
+    else if (i === 1) { ed.setPromptText(r.text); ed.setStatus("The description is in the prompt field."); }
+}
+
 /** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
 async function canvasOnly(on) {
     const want = on === undefined ? !shellState.canvasOnlyState : !!on;
@@ -1353,6 +1370,7 @@ export function menuCommand(cmd) {
     else if (cmd === "new-deep-paint-layer") { if (host.editor) host.editor.newDeepPaintLayer().catch(() => { /* the status line says why */ }); }
     else if (cmd === "surface-maps") { if (host.editor) host.editor.computeSurfaceMaps().catch(() => { /* the status line says why */ }); }
     else if (cmd.startsWith("surface-view:")) { if (host.editor) host.editor.setSurfaceView(cmd.slice("surface-view:".length)); }
+    else if (cmd === "describe" || cmd.startsWith("describe:")) describeSelection(cmd);
     else if (cmd === "split-layers") { if (host.editor) import("./splitdialog.js").then((m) => m.openSplitDialog(host.editor)).catch((err) => console.warn("the Split dialog", err)); }
     else if (cmd === "key-screen") { if (host.editor) import("./keydialog.js").then((m) => m.openKeyDialog(host.editor)).catch((err) => console.warn("the Key dialog", err)); }
     else if (cmd === "new-tab") activate(newDocument());

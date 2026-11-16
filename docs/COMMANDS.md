@@ -281,6 +281,17 @@ Compute or refresh Deep paint's surface maps: the picture's light, its reflectio
 | `force` | boolean | recompute even if a fresh set is present (default `false`) |
 | `view` | string | show a map on the screen in place of the picture (the screen only), or the picture again (one of `none`, `shading`, `residual`, `normals`) |
 
+### `describe` *(image)*
+
+Describe the selected area (its bounding box), or the whole picture when nothing is selected, as the screen shows it, with Florence-2 in the app (download it in Settings › Helpers; refused without it). One line by default, a few sentences with detailed. to_prompt: the text also goes into the prompt field (the field's own undo keeps the old text). -> { text, area: selection | picture, box, detailed, seconds, provider, model }
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `detailed` | boolean | a few sentences instead of one line (default `false`) |
+| `to_prompt` | boolean | put the text into the prompt field too (default `false`) |
+| `timeout` | integer | seconds to wait for the result (default 120) (default `120`) |
+
 ### `sample_depth` *(image)* *(read-only)*
 
 Sample the document's depth map at (x, y) in image pixels (Depth Anything V2 Small). Returns normalized depth (0..1, near to far), 16-bit depth (0..65535), raw disparity, disparity bounds, resolution, provider and whether the map is stale. Requires running depth_map first.

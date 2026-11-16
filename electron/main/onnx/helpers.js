@@ -233,7 +233,7 @@ class HelperProcess {
             .then(() => { clearTimeout(timer); this.retiring.delete(p); });
     }
 
-    /** One job (`objects`, `segment`, `cutout`, `depth`, `intrinsic`, `normals`) -> what the engine answers. */
+    /** One job (`objects`, `segment`, `cutout`, `depth`, `intrinsic`, `normals`, `describe`) -> what the engine answers. */
     call(type, job) {
         this._clearIdle();
         this._start();
@@ -245,6 +245,22 @@ class HelperProcess {
             try { proc.post({ ...job, id, type }); }
             catch (err) { proc.pending.delete(id); reject(err); this._armIdle(); }
         });
+    }
+
+    /**
+     * A describe job told to stop at its next decoder step (Florence-2, item 62), wherever it runs: the current
+     * process, a retired one still answering, or the engine on this thread. No answer; the job itself answers
+     * "cancelled". -> whether anyone was told
+     */
+    cancel(jobId) {
+        if (jobId == null) return false;
+        if (this.local) return this.local.cancel(jobId);
+        let told = false;
+        for (const p of [this.proc, ...this.retiring]) {
+            if (!p) continue;
+            try { p.post({ type: "cancel", jobId: String(jobId) }); told = true; } catch (_) { /* gone */ }
+        }
+        return told;
     }
 
     /** Whether a job is under way (in the current process or a retired one). */

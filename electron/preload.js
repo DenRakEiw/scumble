@@ -214,6 +214,9 @@ contextBridge.exposeInMainWorld("scumble", {
         depth: (req) => ipcRenderer.invoke("helpers:depth", req),
         intrinsic: (req) => ipcRenderer.invoke("helpers:intrinsic", req),
         normals: (req) => ipcRenderer.invoke("helpers:normals", req),
+        // Florence-2 (item 62): a caption of RGBA 768², stopped by cancelDescribe(jobId)
+        describe: (req) => ipcRenderer.invoke("helpers:describe", req),
+        cancelDescribe: (jobId) => ipcRenderer.invoke("helpers:cancelDescribe", jobId),
         onProgress: (cb) => on("helpers:progress", cb),
         // { kind, cause, message } once, when SAM2, matting and depth fall back to main's thread for the session
         onNotice: (cb) => on("helpers:notice", cb),

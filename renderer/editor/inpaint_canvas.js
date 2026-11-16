@@ -211,6 +211,9 @@ class InpaintEditor {
         this.filterPreview = null;      // id of the filter layer whose slider is being dragged (low-res preview)
         this.hideLightHandles = false;  // view toggle: hide 3D light handles and overlays on canvas
         this.seenResults = new Set();
+        // (layer, why) where a result, a paste, a cutout or a reference lands ("result", "paste", "cutout", "reference"):
+        // the app names it (Florence-2, host_vlm.js); null in the node
+        this.layerLanded = null;
         this.layerCounter = 0;
         this.paintCounter = 0;
         this.pointer = null;

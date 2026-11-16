@@ -29,6 +29,7 @@ import { HostRelightPart } from "./host_relight.js";
 import { HostQueuePart } from "./host_queue.js";
 import { HostDocumentsPart } from "./host_documents.js";
 import { HostHelpersPart } from "./host_helpers.js";
+import { HostVlmPart } from "./host_vlm.js";
 
 // ---- the contract ------------------------------------------------------------------------
 //
@@ -138,6 +139,7 @@ export const host = {
     ...HostQueuePart,
     ...HostDocumentsPart,
     ...HostHelpersPart,
+    ...HostVlmPart,
 };
 bindUtil(host);
 

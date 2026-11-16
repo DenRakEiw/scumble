@@ -783,6 +783,10 @@ function buildMenu() {
                 { label: "Key Green / Blue Screen...", click: () => send("menu", "key-screen") },
                 // a paid run on the recipe's host with a layer mode (renderer/splitdialog.js); the dialog says why when it cannot
                 { label: "Split into Layers...", click: () => send("menu", "split-layers") },
+                // Florence-2 in the app (item 62): the selection (or the picture) described; Shift+click puts the text
+                // into the prompt field. Not greyed: main does not know whether the model is there, the status line says
+                { label: "Describe Selection", click: (_i, _w, ev) => send("menu", ev && ev.shiftKey ? "describe:prompt" : "describe") },
+                { label: "Describe Selection in Detail", click: (_i, _w, ev) => send("menu", ev && ev.shiftKey ? "describe:detailed:prompt" : "describe:detailed") },
                 // Deep paint's surface maps (docs/PLAN_SURFACE_PAINT.md SP3): the analysis and a look at its maps
                 {
                     label: "Surface Maps",
@@ -1383,6 +1387,8 @@ function installIpc() {
     ipcMain.handle("helpers:depth", (_e, req) => helpers.depth(req));
     ipcMain.handle("helpers:intrinsic", (_e, req) => helpers.intrinsic(req));
     ipcMain.handle("helpers:normals", (_e, req) => helpers.normals(req));
+    ipcMain.handle("helpers:describe", (_e, req) => helpers.describe(req));
+    ipcMain.handle("helpers:cancelDescribe", (_e, jobId) => helpers.cancelDescribe(jobId));
     // plugins (electron/main/plugins.js): folders and manifests; the renderer loads the modules
     ipcMain.handle("plugins:list", () => plugins.list());
     ipcMain.handle("plugins:setEnabled", (_e, { id, enabled }) => plugins.setEnabled(String(id), !!enabled));

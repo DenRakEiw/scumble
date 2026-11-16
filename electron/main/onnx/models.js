@@ -147,6 +147,8 @@ const MODELS = [
     fromSetCatalogue(require("./corridorkey2.json")),
     // Deep paint's decomposition (docs/PLAN_SURFACE_PAINT.md SP2): Scumble's export, hosted at a pinned commit
     fromSetCatalogue(require("./intrinsic.json")),
+    // Florence-2 base (item 62): captions for new layers' names and Describe selection, onnx-community's 8-bit export
+    fromSetCatalogue(require("./florence2.json")),
 ];
 
 const byId = (id) => MODELS.find((m) => m.id === id) || null;
