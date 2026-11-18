@@ -405,6 +405,8 @@ class Assistant {
             docs: new Set(),
             tools: [],
             started: Date.now(),
+            // the chat this turn runs in: `this.chat` may be another by its end (a New chat that gave up waiting for it)
+            chat,
         };
         turn.signal = turn.abort.signal;
         this.turn = turn;
@@ -562,7 +564,20 @@ class Assistant {
     async deleteChat(id) {
         if (!this.deps.store) return false;
         // a turn still running in it does not write it back when it ends, and a save already going ends first
-        if (this.chat && this.chat.id === id) this.chat.deleted = true;
+        const mine = !!(this.chat && this.chat.id === id);
+        if (mine) this.chat.deleted = true;
+        // the turn's own chat too: one a New chat left behind while its turn hung is no longer `this.chat`, and its
+        // end would have written the deleted chat back
+        const running = !!(this.turn && this.turn.chat && this.turn.chat.id === id);
+        if (running) this.turn.chat.deleted = true;
+        // deleting a chat ends its turn, as New chat does: it would go on asking the model and editing the documents
+        // for a chat that is gone (the waits as in reset())
+        if (running || (mine && !this.turn && this.starting)) {
+            this.stop();
+            if (this.starting) await Promise.race([this.starting, new Promise((r) => setTimeout(r, 5000))]);
+            if (this.turn && this.turn.chat && this.turn.chat.id === id) { this.turn.chat.deleted = true; this.stop(); }
+            if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+        }
         await this.savesDone();
         await this.deps.store.remove(id);
         if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; }

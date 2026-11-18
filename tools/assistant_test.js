@@ -1180,6 +1180,53 @@ async function main() {
             await a.close();
         }
         {
+            // (review p1-review-fixes/assistant-delete-chat-leaves-turn-running-and-resurrects-after-reset) deleting a
+            // chat ends the turn running in it: no Stop first, no further call, nothing written back. `detached` is
+            // the chat a New chat left behind when its wait for the turn ran out (reset() after 5 s): no longer a.chat
+            for (const detached of [false, true]) {
+                const editor = new FakeEditor();
+                let release;
+                const held = new Promise((r) => { release = r; });
+                editor.onRun = async (name) => { if (name === "add_paint_layer") await held; };
+                const { a } = assistantOn(editor, [
+                    anthropicStream([{ type: "tool_use", id: "c1", name: "add_paint_layer", input: { doc: 1 } }]),
+                    anthropicStream([{ type: "tool_use", id: "c2", name: "add_paint_layer", input: { doc: 1 } }]),
+                    anthropicStream([{ type: "text", text: "two layers" }]),
+                ]);
+                const saved = [], removed = [];
+                a.deps.store = { save: async (chat) => { saved.push(chat.id); return {}; }, prune: async () => {}, remove: async (id) => { removed.push(id); } };
+                await a.connect();
+                a.chat = await a.newChat();
+                const id = a.chat.id;
+                const chat = a.chat;
+                const turn = a.send("add two layers");
+                await waitFor(() => editor.calls.some((c) => c.name === "add_paint_layer"));
+                if (detached) { a.chat = null; a.events = []; }
+                const gone = a.deleteChat(id);
+                release();
+                await gone;
+                const out = await turn;
+                await new Promise((r) => setTimeout(r, 20));
+                const adds = editor.calls.filter((c) => c.name === "add_paint_layer").length;
+                check(detached ? "deleting_a_chat_a_new_chat_left_behind_stops_its_turn_and_never_writes_it_back" : "deleting_the_running_chat_stops_its_turn_and_clears_the_panels_events",
+                    out.reason === "stopped" && adds === 1 && chat.deleted === true && a.turn === null && a.chat === null && removed.includes(id) && !saved.includes(id) && (detached || a.events.length === 0),
+                    JSON.stringify({ reason: out.reason, adds, deleted: chat.deleted, chat: a.chat && a.chat.id, events: a.events.length, saved, removed }));
+                // a chat that is not the running one is deleted without touching the turn
+                const editor2 = new FakeEditor();
+                const { a: b } = assistantOn(editor2, [anthropicStream([{ type: "text", text: "hello" }])]);
+                b.deps.store = { save: async () => ({}), prune: async () => {}, remove: async () => {} };
+                let stops = 0;
+                const stop = b.stop.bind(b);
+                b.stop = () => { stops++; return stop(); };
+                await b.connect();
+                b.chat = await b.newChat();
+                await b.deleteChat("some-other-chat");
+                if (!detached) check("deleting_another_chat_stops_nothing", stops === 0 && b.chat && !b.chat.deleted, `${stops} stops`);
+                await b.close();
+                await a.close();
+            }
+        }
+        {
             // Stop while a tool call is in flight: every open call still gets an answer
             const editor = new FakeEditor();
             let release;
