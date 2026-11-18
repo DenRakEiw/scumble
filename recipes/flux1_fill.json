@@ -9,6 +9,7 @@
     "bfl": {
       "model": "flux-pro-1.0-fill",
       "input": "fill",
+      "text": false,
       "settings": [
         {
           "index": 1,
@@ -66,6 +67,7 @@
     "fal": {
       "model": "fal-ai/flux-pro/v1/fill",
       "input": "fill",
+      "text": false,
       "settings": [
         {
           "index": 1,
@@ -101,6 +103,7 @@
     "replicate": {
       "model": "black-forest-labs/flux-fill-pro",
       "input": "fill",
+      "text": false,
       "fields": {
         "image": "image",
         "mask": "mask"
@@ -165,6 +168,7 @@
     "wavespeed": {
       "model": "wavespeed-ai/flux-fill-dev",
       "input": "fill",
+      "text": false,
       "fields": {
         "image": "image",
         "mask": "mask_image"

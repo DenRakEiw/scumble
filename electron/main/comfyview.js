@@ -704,8 +704,12 @@ class ComfyView {
         const values = comfyparams.parseValues(r.values);
         const objectInfo = await this.objectInfo();
         if (!asNew && lostHeld()) return wrongTab();
+        // the held recipe hands its own fields (its task, its edit and refs rules, its models, its LoRA rows, the rows'
+        // labels and values) to the save only while the page still shows that recipe's graph: a new recipe saved from
+        // another workflow tab, or from a page the recipe never loaded into, starts from the graph alone
+        const onHeld = !!(held && heldLoaded === held.id && !lostHeld() && !r.tabChanged && curTab === heldTab);
         try {
-            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: held ? held.id : null, name: asNew ? name : "", values });
+            const saved = await this.saveRecipe({ output, workflow, objectInfo, heldId: onHeld ? held.id : null, name: asNew ? name : "", values });
             let nextTab = curTab;
             if (asNew && this.isOpen && this.phase === "page" && gen === this.readyGen && this.recipe === held) {
                 const freshTok = crypto.randomUUID();

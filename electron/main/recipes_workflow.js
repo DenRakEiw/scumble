@@ -2,7 +2,7 @@
 // readWidgets, storedSpec, specDefault and fromWorkflow (the import of a ComfyUI UI graph): moved out of recipes.js (item 56 S11, docs/PLAN_SPLIT.md), text unchanged.
 "use strict";
 
-const { FIXED_OUTPUTS, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, tailOutputs } = require("./recipes_store");
+const { FIXED_OUTPUTS, SETTING_SLOTS, SKIP_TYPES, UI_WIDGETS, WIDGET_TYPES, backendOutputName, tailOutputs } = require("./recipes_store");
 
 // ---- conversion ----------------------------------------------------------------------
 
@@ -246,29 +246,30 @@ function fromWorkflow(wf, objectInfo, meta, opts) {
 
     // the outputs by name: a setting at its backend slot, the tail outputs (box_prompt, elements) as tailOutputs says
     const tailNotes = tailOutputs(prompt, canvasId, (slot) => { const o = (canvasNode.outputs || [])[slot]; return o && o.name ? o.name : backendOutputName(slot); });
-    // setting outputs: the first real (non-instance) consumer of setting_n, found on the flattened links
+    // setting outputs: every input of the prompt that still reads setting_n (tailOutputs put each at its backend slot),
+    // as fromPrompt reads them. The prompt's links are the resolved ones, so a setting that reaches its input through a
+    // Reroute or a bypassed node, or feeds more than one input, gets a row per input: the single hop on the raw links
+    // found the first direct consumer alone and left the others reading an output a run never fills.
     const settings = [];
-    (canvasNode.outputs || []).forEach((o, i) => {
-        if (i < FIXED_OUTPUTS || !o || !o.links || !o.links.length) return;
-        const named = /^setting_([1-8])$/.exec(o.name || "");
-        if (o.name && !named) return;   // a tail output: tailOutputs took its consumers
-        const l = Array.from(links.values()).find((x) => x.origin === canvasId && x.originSlot === i && !instances.has(x.target) && !x.target.endsWith("-20") && prompt[x.target]);
-        if (!l) return;
-        const target = nodes.get(l.target);
-        const tin = (target.inputs || [])[l.targetSlot];
-        if (!tin) return;
-        const info = objectInfo[target.type];
-        const spec = info && info.input && ((info.input.required && info.input.required[tin.name]) || (info.input.optional && info.input.optional[tin.name])) || null;
-        const node = prompt[l.target];
-        const current = node.inputs[tin.name];
-        if (Array.isArray(current)) {
-            const ov = overrides.get(`${l.target}|${l.targetSlot}`);
-            const wv = widgetValues.get(l.target) || {};
-            node.inputs[tin.name] = ov !== undefined ? ov : (wv[tin.name] !== undefined ? wv[tin.name] : specDefault(spec));
+    for (const [id, node] of Object.entries(prompt)) {
+        if (id === canvasId || !node || !node.inputs) continue;
+        const target = nodes.get(id);
+        for (const [name, v] of Object.entries(node.inputs)) {
+            if (!Array.isArray(v) || String(v[0]) !== canvasId || +v[1] < FIXED_OUTPUTS) continue;
+            const index = +v[1] - FIXED_OUTPUTS + 1;
+            if (index > SETTING_SLOTS) continue;
+            const info = objectInfo[node.class_type];
+            const spec = info && info.input && ((info.input.required && info.input.required[name]) || (info.input.optional && info.input.optional[name])) || null;
+            const slot = ((target && target.inputs) || []).findIndex((/** @type {any} */ i) => i && i.name === name);
+            const ov = slot >= 0 ? overrides.get(`${id}|${slot}`) : undefined;
+            const wv = widgetValues.get(id) || {};
+            node.inputs[name] = ov !== undefined ? ov : (wv[name] !== undefined ? wv[name] : specDefault(spec));
+            const stored = storedSpec(spec, node.inputs[name]);
+            settings.push({ index, node: id, input: name, label: `${(target && (target.title || target.type)) || node.class_type} · ${name}`, ...(stored ? { spec: stored } : {}) });
         }
-        const stored = storedSpec(spec, node.inputs[tin.name]);
-        settings.push({ index: named ? +named[1] : i - FIXED_OUTPUTS + 1, node: l.target, input: tin.name, label: `${target.title || target.type} · ${tin.name}`, ...(stored ? { spec: stored } : {}) });
-    });
+    }
+    // in slot order, as the canvas node's outputs list them (rows of one slot in the prompt's order)
+    settings.sort((a, b) => a.index - b.index);
 
     const mode = resultLocal ? "local" : "api";
     const needs = Array.from(new Set(Object.values(prompt).map((n) => n.class_type)));

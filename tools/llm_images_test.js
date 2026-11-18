@@ -361,6 +361,44 @@ async function main() {
         }
     }
 
+    // 10. (review main-net/llm-compat-unclosed-think-leaks-into-prompt) a <think> block inside the content: a closed one
+    // is cut out, one the token limit cut before its </think> is not the prompt
+    {
+        const chat = (content, finish) => () => json(200, { choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: finish }] });
+        const closed = await ask("compat:local-vision", {}, [chat("<think>Let me look at the picture.</think>\n\na red door", "stop")]);
+        check("a closed <think> block is cut out of the answer", !closed.err && closed.res.text === "a red door", short(closed.err || closed.res));
+        const two = await ask("compat:local-vision", {}, [chat("<think>one</think>a red<THINK>two</THINK> door", "stop")]);
+        check("two closed blocks, any case: each cut where it stands, the text between kept", !two.err && two.res.text === "a red door", short(two.err || two.res));
+        const open = await ask("compat:local-vision", {}, [chat("<think>Okay, let's inspect Picture 1 and the mask", "length")]);
+        check("an unclosed <think> block (finish_reason length) is an error that names the reason, never the prompt",
+            !!open.err && /length/.test(open.err) && !/inspect Picture/.test(open.err) && !open.res, short(open.err || open.res));
+        const tail = await ask("compat:local-vision", {}, [chat("a red door\n<think>and now I wonder", "length")]);
+        check("text before an unclosed block is kept, the block's rest dropped", !tail.err && tail.res.text === "a red door", short(tail.err || tail.res));
+        const plain = await ask("compat:local-vision", {}, [chat("a door, I think, in red", "stop")]);
+        check("an answer without a block is unchanged", !plain.err && plain.res.text === "a door, I think, in red", short(plain.err || plain.res));
+    }
+
+    // 11. (review main-net/llm-openai-custom-nonreasoning-rejected) OpenAI's Responses API: `reasoning` only to the
+    // families that reason; a GPT-4 row the user added goes without it (OpenAI answers it with HTTP 400)
+    {
+        state.settings.llm.models.push({ provider: "openai", model: "gpt-4.1" }, { provider: "openai", model: "gpt-4o-mini" }, { provider: "openai", model: "ft:gpt-4.1-2026:acme::abc" },
+            { provider: "openai", model: "chatgpt-4o-latest" }, { provider: "openai", model: "gpt-5-chat-latest" }, { provider: "openai", model: "o4-mini" }, { provider: "openai", model: "gpt-6-nova" });
+        try {
+            const without = [];
+            for (const m of ["gpt-4.1", "gpt-4o-mini", "ft:gpt-4.1-2026:acme::abc", "chatgpt-4o-latest", "gpt-5-chat-latest"]) {
+                const r = await ask("openai:" + m, { image: CROP });
+                if (r.err || r.calls.length !== 1 || "reasoning" in r.calls[0].body || r.calls[0].body.model !== m || r.calls[0].body.max_output_tokens !== 4096 || r.res.text !== "ok openai") without.push(`${m}: ${short(r.err || r.calls[0].body.reasoning)}`);
+            }
+            check("GPT-4 rows, a fine-tune of one, the ChatGPT alias and a -chat model go without `reasoning`", !without.length, without.join(" | "));
+            const withIt = [];
+            for (const m of ["gpt-5.6-luna", "gpt-5.6-terra", "o4-mini", "gpt-6-nova"]) {
+                const r = await ask("openai:" + m, { image: CROP });
+                if (r.err || !eq(r.calls[0].body.reasoning, { effort: "low" })) withIt.push(`${m}: ${short(r.err || r.calls[0].body.reasoning)}`);
+            }
+            check("the shipped 5.x rows, an o-series row and a family not named keep reasoning effort low", !withIt.length, withIt.join(" | "));
+        } finally { reset(); }
+    }
+
     const failed = results.filter((x) => !x).length;
     console.log(`${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

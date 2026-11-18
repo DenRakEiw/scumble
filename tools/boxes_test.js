@@ -227,6 +227,32 @@ const box = (extra = {}) => ({ id: "edit_1", kind: "new", rect: [0.25, 0.25, 0.7
     check("the prompt's own quotes and newline are escaped by the JSON, not lost", JSON.parse(a.prompt).high_level_description === "line one\nline \"two\"", short(a.prompt));
     e = throws(() => boxes.applyBoxes(ri({ boxes: [box({ id: "cat_1", desc: "a cat like {@ref:1}" })] }), layI));
     check("a desc naming a picture this route does not send refuses (the image-to-image route takes the crop alone)", /^Box cat_1 names reference picture 2, which this run does not send/.test(e), e);
+
+    // (review providers/boxes-bypass-token-safety-and-ref-shift) the box's words go into the prompt after index.js's
+    // safety net ran over it: an @img token that named no picture, or a "{@ref:" that is no marker, refuses here
+    const tokens = [];
+    for (const desc of ["a hat like @img2", "a hat like @IMG1", "@img?Lab12 on the wall", "like {@ref:x}", "{@ref: 1}"]) {
+        const f3 = throws(() => boxes.applyBoxes({ ...r2, boxes: [box({ desc })] }, lay2));
+        const i4 = throws(() => boxes.applyBoxes(ri({ boxes: [box({ id: "cat_1", desc })] }), layI));
+        if (!/^Box edit_1 holds .* in its description.*[Nn]othing was sent\.$/.test(f3 || "") || !/^Box cat_1 holds .* in its description.*[Nn]othing was sent\.$/.test(i4 || "")) tokens.push(`${desc}: ${f3} | ${i4}`);
+    }
+    check("an unresolved @img token or a stray {@ref: in a box's description refuses the run, on FLUX 3 and on Ideogram 4", !tokens.length, tokens.join(" ; "));
+    e = throws(() => boxes.applyBoxes({ ...r2, boxes: [box({ id: "sign_1", desc: "red neon", text: "see @img3" })] }, lay2));
+    const e4 = throws(() => boxes.applyBoxes(ri({ boxes: [box({ id: "sign_1", desc: "carved", text: "see @img3" })] }), layI));
+    const e5 = throws(() => boxes.applyBoxes(ri({ boxes: [box({ id: "sign_1", desc: "carved", text: "{@ref:0}" })] }), layI));
+    check("... and in a Text box's words (Ideogram 4 resolves no marker in them: the lettering goes as written)",
+        /^Box sign_1 holds the reference token "@img3"/.test(e || "") && /^Box sign_1 holds the reference token "@img3" in its text/.test(e4 || "") && /^Box sign_1 holds "\{@ref:" in its text/.test(e5 || ""), [e, e4, e5].join(" | "));
+    a = boxes.applyBoxes({ ...r2, boxes: [box({ desc: "mail me at a@img.example, user@img1x, @img0 and @imagine" }), box({ id: "edit_2", desc: "like {@ref:1}" })] }, lay2);
+    check("plain text that only looks like a token goes as written, a resolved marker as the picture's name", a.rows[0].desc === "mail me at a@img.example, user@img1x, @img0 and @imagine" && a.rows[1].desc === "like image 3", short(a.rows));
+    check("namesReferences: a From box's ref or a marker in a box's words, nothing else",
+        boxes.namesReferences([box(), box({ kind: "from", src: [0, 0, 1, 1], ref: 0 })]) === true && boxes.namesReferences([box({ desc: "like {@ref:1}" })]) === true && boxes.namesReferences([box({ text: "{@ref:0}" })]) === true
+        && boxes.namesReferences([box(), box({ desc: "a hat", text: "SALE" })]) === false && boxes.namesReferences([]) === false && boxes.namesReferences(null) === false, "");
+    {
+        // index.js keeps a run whose boxes point at references from going out when an empty picture left the list
+        const src = require("fs").readFileSync(path.join(ROOT, "electron", "main", "providers", "index.js"), "utf8");
+        const guard = src.indexOf("boxes.namesReferences(req.boxes)"), apply = src.indexOf("boxes.applyBoxes(req, lay)");
+        check("index.js asks namesReferences before applyBoxes and refuses on a shifted list", guard > 0 && guard < apply && /given !== req\.references\.length && boxes\.namesReferences\(req\.boxes\)\) throw new Error\("A reference picture of the request was empty/.test(src), `${guard} ${apply}`);
+    }
     check("the selection's box (S1, desc = the prompt) as an element", boxes.applyBoxes(ri({ boxes: [box({ id: "black_cat_1", desc: "a black cat in the grass" })] }), layI).prompt === '{"high_level_description":"a black cat in the grass","compositional_deconstruction":{"background":"","elements":[{"type":"obj","bbox":[250,250,750,750],"desc":"a black cat in the grass"}]}}', "");
 
     // ---- 7. the renderer's module --------------------------------------------------------------------------------------

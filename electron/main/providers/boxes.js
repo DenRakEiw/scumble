@@ -16,7 +16,7 @@
 // Ideogram 4 (S5, `options.boxes: "ideogram4"`): the boxes become its JSON caption, the whole prompt (captionIdeogram4).
 "use strict";
 
-const { resolveMarkers, validRefName, REF_NAME_DEFAULT } = require("./refs");
+const { resolveMarkers, validRefName, REF_NAME_DEFAULT, TOKEN, MARKER_ANY } = require("./refs");
 
 /** The schemas this file writes rows for, by the variant's `options.boxes`. */
 const SCHEMAS = new Set(["flux3", "ideogram4"]);
@@ -113,11 +113,31 @@ const fold = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice
 /** The pattern a request names its pictures by. */
 const patternOf = (req) => (req && validRefName(req.refName) ? req.refName : REF_NAME_DEFAULT);
 
+/**
+ * The safety net index.js holds the prompt to (resolveNames), for a box's own words, which go into the prompt after
+ * it: an @img token that named no picture, or a "{@ref:" that is no marker, never reaches a model.
+ */
+function clean(b, s, what) {
+    const m = TOKEN.exec(s);
+    if (m) throw new Error(`Box ${b.id} holds the reference token "${m[0]}" in its ${what}, which was not resolved to a picture: nothing was sent.`);
+    if (MARKER_ANY.test(s)) throw new Error(`Box ${b.id} holds "{@ref:" in its ${what}, which Scumble keeps for itself: reword it. Nothing was sent.`);
+    return s;
+}
+
 /** `s` with the {@ref:i} markers resolved to the route's names ("image 2"), folded to one line; `b` names the box. */
 function resolved(req, lay, b, s) {
     const r = resolveMarkers(fold(s), lay.pictures, patternOf(req));
     if (r.left.length) throw new Error(`Box ${b.id} names reference picture ${r.left[0].ref + 1}, which this run does not send: nothing was sent.`);
-    return r.text;
+    return clean(b, r.text, "description");
+}
+
+/**
+ * Whether any box points at a reference picture by its index: a From box's `ref`, or a marker in its words. index.js
+ * refuses such a run when an empty picture was taken out of the request's list (every index after it would point at
+ * the next picture), as resolveNames does for the prompt.
+ */
+function namesReferences(list) {
+    return (Array.isArray(list) ? list : []).some((b) => b && (b.ref != null || MARKER_ANY.test(String(b.desc == null ? "" : b.desc)) || MARKER_ANY.test(String(b.text == null ? "" : b.text))));
 }
 
 /** A box's desc as a FLUX 3 row carries it: a Text box says what it reads (`text reading "SALE", red letters`). */
@@ -273,7 +293,8 @@ const placesIdeogram4 = (b, text) => b.kind === "new" || (b.kind === "keep" && !
 function elementIdeogram4(req, lay, b) {
     const desc = resolved(req, lay, b, b.desc);
     if (b.kind === "keep") return { type: "obj", bbox: grid(b.src), desc };
-    return b.text != null ? { type: "text", bbox: grid(b.rect), text: fold(b.text), desc } : { type: "obj", bbox: grid(b.rect), desc };
+    // the words go as the lettering itself, so no marker is resolved in them: one that is there refuses the run
+    return b.text != null ? { type: "text", bbox: grid(b.rect), text: clean(b, fold(b.text), "text"), desc } : { type: "obj", bbox: grid(b.rect), desc };
 }
 
 /**
@@ -331,4 +352,4 @@ function applyBoxes(req, lay) {
     return { prompt: `${prompt} ${JSON.stringify(rows)}`, rows, notes, params: null };
 }
 
-module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, captionFlux3, captionIdeogram4, whereWords, wayWords, applyBoxes, _descOf: descOf };
+module.exports = { SCHEMAS, KINDS, BOX_ID, DESC_MAX, schemaOf, checkBoxes, grid, frameName, pictureName, rowsFlux3, instructionFlux3, captionFlux3, captionIdeogram4, whereWords, wayWords, applyBoxes, namesReferences, _descOf: descOf };

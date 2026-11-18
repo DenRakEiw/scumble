@@ -209,6 +209,7 @@
           "negative_prompt",
           "seed",
           "enable_prompt_expansion",
+          "enable_thinking",
           "watermark"
         ],
         "edit_aspect": "auto-single",
@@ -227,6 +228,7 @@
       },
       "fixed": {
         "enable_prompt_expansion": false,
+        "enable_thinking": false,
         "watermark": false
       },
       "settings": [

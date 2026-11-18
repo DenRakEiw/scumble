@@ -19,6 +19,31 @@ the section for its version; `docs/` and the commit history hold the technical d
   is read from the server's history. A helper job that runs longer than a moment shows in the title row with its
   seconds and *Cancel*, which takes the job off your ComfyUI and frees the document at once; `cancel_run` stops it
   too, and a mask that still arrives after a Cancel is not applied.
+- **Fixed: GPT Image on Comfy Cloud failed about every second run.** The editor's random seed can be larger than the
+  Partner Node takes, and Comfy Cloud refused the workflow after the pictures were uploaded. The seed now goes inside
+  the node's range (GPT Image 2, 2.5 and 2.6).
+- **Fixed: Seedream 5.0 lite and pro on Comfy Cloud refused near-square and small crops.** At *Highres fix › Maximum* a
+  square crop went larger than the model takes (lite 16.8 MP, pro 4.6 MP), and a small crop on lite went under its
+  3.7 MP floor. The crop is now planned inside the model's own range; crops that fit before go as before.
+- **FLUX.1 Fill is no longer offered for Generate new** on Black Forest Labs, fal, Replicate and WaveSpeedAI: it is an
+  inpaint model whose endpoints require the picture and the mask, so those runs could only fail.
+- **Qwen Image 3.0 on Oxen.ai** sends Thinking off beside the prompt expansion that is off (Oxen's schema ties the two).
+- **Fixed: prompt rewriting with a local reasoning model could put the model's thoughts into the prompt** when the
+  answer was cut off inside its `<think>` block; such an answer is now an error that names the reason. A GPT-4 model
+  you added under *Settings › Language models* for OpenAI is no longer refused (it was sent a reasoning setting it
+  does not take).
+- **Boxes: an `@img` token in a box's description or text that names no reference layer now stops the run** before
+  anything is sent, as it does in the prompt (it went to the model as written, in a paid run).
+- **Workflow import: a setting wired through a Reroute or a bypassed node, or into several inputs, becomes a Settings
+  row for each input.** Before, such an input kept a link to the canvas node that a run never filled, and the recipe
+  failed on ComfyUI.
+- **ComfyUI window: *Save as new recipe* from another workflow tab starts from that graph alone.** It used to take the
+  open recipe's task, picture rules, model list, LoRA rows and row values along, which could leave the new recipe
+  unusable.
+- **Assistant: deleting a chat stops the answer that is still running in it**, and a deleted chat no longer comes
+  back in the list when that answer ends. Asking the assistant to describe the picture no longer shows
+  "Undo this turn" (nothing changed) and no longer takes the previous turn's undo away; a layer's role set by the
+  assistant is one undo step, not two.
 
 ## 0.1.57 - 2026-11-16
 

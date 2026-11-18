@@ -234,9 +234,9 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         want("seedream_5_5 text", await bodyOf(textReq(s55, { aspect: "16:9", width: 2048, height: 1152 })),
             { model: "bytedance-seedream-5-5", prompt: "a lighthouse", response_format: "b64_json", watermark: false, output_format: "png", size: "2K", aspect_ratio: "16:9" });
         want("qwen_image_edit alone", await bodyOf(editReq(V("qwen_image_edit"), { negative: "blur" })),
-            { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
+            { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_image: ["<png CROP>"], enable_prompt_expansion: false, enable_thinking: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
         want("qwen_image_edit with a reference", await bodyOf(editReq(V("qwen_image_edit"), { references: [pngOf(512, 512, 70, "REF")] })),
-            { model: "qwen-image-3", prompt: EDIT + " Image 2 is a reference image.", response_format: "b64_json", input_image: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
+            { model: "qwen-image-3", prompt: EDIT + " Image 2 is a reference image.", response_format: "b64_json", input_image: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, enable_thinking: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
         want("grok edit", await bodyOf(editReq(V("grok_imagine"))),
             { model: "xai-grok-imagine-image-edit", prompt: EDIT, response_format: "b64_json", input_image: "<png CROP>", output_format: "png" });
         want("grok text", await bodyOf(textReq(V("grok_imagine"), { aspect: "16:9", width: 1920, height: 1080 })),

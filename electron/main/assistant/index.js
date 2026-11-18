@@ -126,13 +126,13 @@ class Assistant {
      */
     backendFor() {
         const bridge = this.deps.bridge;
-        const metaFor = (command) => {
+        const metaFor = (command, args) => {
             const turn = this.turn;
             // the Bridge is called with the command's own name, the policy's sets hold MCP tool
             // names: they differ for a plugin command (film.looks -> film_looks), whose read would
             // otherwise take the user-activity wait and count as a step to undo
             const name = toolName(command);
-            const read = policy.READS.has(name);
+            const read = policy.isRead(name, args);
             return {
                 origin: "assistant",
                 wait: name === "screenshot" ? "soft" : !read,
@@ -145,7 +145,7 @@ class Assistant {
             };
         };
         return {
-            run: (name, args) => bridge.run(name, args, metaFor(name)),
+            run: (name, args) => bridge.run(name, args, metaFor(name, args)),
             describe: () => bridge.describe(),
             on: (event, fn) => bridge.on(event, fn),
             removeListener: (event, fn) => bridge.removeListener && bridge.removeListener(event, fn),
@@ -405,6 +405,8 @@ class Assistant {
             docs: new Set(),
             tools: [],
             started: Date.now(),
+            // the chat this turn runs in: `this.chat` may be another by its end (a New chat that gave up waiting for it)
+            chat,
         };
         turn.signal = turn.abort.signal;
         this.turn = turn;
@@ -562,7 +564,20 @@ class Assistant {
     async deleteChat(id) {
         if (!this.deps.store) return false;
         // a turn still running in it does not write it back when it ends, and a save already going ends first
-        if (this.chat && this.chat.id === id) this.chat.deleted = true;
+        const mine = !!(this.chat && this.chat.id === id);
+        if (mine) this.chat.deleted = true;
+        // the turn's own chat too: one a New chat left behind while its turn hung is no longer `this.chat`, and its
+        // end would have written the deleted chat back
+        const running = !!(this.turn && this.turn.chat && this.turn.chat.id === id);
+        if (running) this.turn.chat.deleted = true;
+        // deleting a chat ends its turn, as New chat does: it would go on asking the model and editing the documents
+        // for a chat that is gone (the waits as in reset())
+        if (running || (mine && !this.turn && this.starting)) {
+            this.stop();
+            if (this.starting) await Promise.race([this.starting, new Promise((r) => setTimeout(r, 5000))]);
+            if (this.turn && this.turn.chat && this.turn.chat.id === id) { this.turn.chat.deleted = true; this.stop(); }
+            if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+        }
         await this.savesDone();
         await this.deps.store.remove(id);
         if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; }
@@ -776,7 +791,7 @@ class Assistant {
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not one of your tools in this chat" });
             return errorResult(`refused by Scumble: not one of your tools in this chat`);
         }
-        if (this.readOnly && !policy.READS.has(name)) {
+        if (this.readOnly && !policy.isRead(name, call.args)) {
             // the gate's read-only milestone (A4): nothing but reads runs in this chat
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not enabled in this run" });
             return errorResult("refused by Scumble: not enabled in this run");
@@ -798,7 +813,7 @@ class Assistant {
         const doc = args.doc !== undefined ? args.doc : turn.pin;
         let layers = [];
         const takesLayer = !!(props.layer || props.source || props.target);
-        const wantsLayers = !policy.READS.has(name) && (takesDoc || takesLayer) && doc != null;
+        const wantsLayers = !policy.isRead(name, args) && (takesDoc || takesLayer) && doc != null;
         if (wantsLayers) {
             try {
                 const answer = await this.read("list_layers", { doc });
@@ -856,7 +871,7 @@ class Assistant {
         turn.undo = undoKind ? { kind: undoKind, id: canonical.args.layer || null } : null;
         // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
         // that only read leaves `lastTurn` null
-        if (!policy.READS.has(name) && doc !== undefined && doc !== null) turn.docs.add(doc);
+        if (!policy.isRead(name, canonical.args) && doc !== undefined && doc !== null) turn.docs.add(doc);
         this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
         const before = layers.map((l) => l.id);
         const startedAt = Date.now();
@@ -892,7 +907,7 @@ class Assistant {
         if (!res.isError) this.recordSettingsChange(chat, doc, name, canonical.args, parsed);
 
         // ---- ownership and the pin
-        if (!policy.READS.has(name) && takesDoc && name !== "close_document") {
+        if (!policy.isRead(name, canonical.args) && takesDoc && name !== "close_document") {
             try {
                 const answer = await this.read("list_layers", { doc });
                 const after = (answer && answer.layers) || [];

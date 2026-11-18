@@ -977,7 +977,9 @@ ratio no steeper than 3:1; the 2.6 OpenAI, fal, ToAPIs and Comfy Cloud variants 
 gets more context instead of an answer of another shape), **GPT Image 2 2048 with the same budget** (the size rules of the
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
 for lite** (its `image_size` is a free size with an area range, not a side limit),
-**Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), **Seedream on
+**Seedream 5.0 on Comfy Cloud 2496 / 4992 with the node's own pixel range** (pro 921,600 to 4,624,220 px, lite
+3,686,400 to 16,777,216: what the partner node's `execute()` takes, read in ComfyUI v0.45.2; the sides alone let a
+near-square crop past it), **Seedream on
 ModelArk 4096 in 16 px steps with the model's own pixel range as budget and floor** (5.0 pro and 5.5 921,600 to
 4,624,220 px, lite 3,686,400 to 16,777,216; see "BytePlus ModelArk" below), **the OpenRouter
 variants of the three GPT recipes 2048 with neither budget nor floor** (OpenRouter takes no pixel
@@ -1376,10 +1378,10 @@ shown reference layers along; one without makes pictures from the prompt alone.
   | Qwen Image 2.1 | Oxen.ai | - |
   | HY Image 3.5 | Comfy Partner API | - |
   | Grok Imagine | OpenRouter; fal (`/edit`), Oxen.ai (`xai-grok-imagine-image-edit`) | Comfy Router |
-  | FLUX.1 Fill, Ideogram 4, Ideogram 4.5, Krea 2, Recraft V4, Z-Image, Z-Image Turbo, Mystic, Reve | - | every variant with a text shape |
+  | Ideogram 4, Ideogram 4.5, Krea 2, Recraft V4, Z-Image, Z-Image Turbo, Mystic, Reve | - | every variant with a text shape |
 
-  Comfy Cloud has no text shape, nor do Oxen.ai's Seedream 5 lite and the expand, inpaint and LaMa recipes (`text:
-  false`). The caps for a new image: FLUX.2 8 (Replicate flex 10, Comfy Router 9, WaveSpeed 3, Magnific 4), klein 4
+  Comfy Cloud has no text shape, nor do Oxen.ai's Seedream 5 lite, FLUX.1 Fill on any host (its endpoints require
+  the picture and the mask) and the expand, inpaint and LaMa recipes (`text: false`). The caps for a new image: FLUX.2 8 (Replicate flex 10, Comfy Router 9, WaveSpeed 3, Magnific 4), klein 4
   (WaveSpeed 3), FLUX 3 Image 10, GPT Image 16, Nano Banana 14, Seedream 5 pro 10, 5 lite 14 on ModelArk, Replicate, OpenRouter and
   Comfy Router and 10 on ToAPIs, fal and WaveSpeed, Magnific's Seedream 4.5 and 5 lite 5, Qwen Image Edit 3, Qwen
   2.1 10, HY 5, Grok 5 on fal, 3 on OpenRouter, 1 on Oxen.ai; on ToAPIs the channel's own cap wins (GPT Image 2 and

@@ -92,8 +92,15 @@ code.
   canvas route); a gradient and the shapes refuse Deep paint layers, Fill has no start point. (3) The cancelled
   save's line was fixed in 0.1.57 already; its stale BUGS.md entry is gone. (4) The `depth` gate has its rule in
   `run_gates.sh` (`node tools/depth_test.js`). Gates: lint, types, depth, wrap, deeppaint, brush, editor on tiles,
-  deeppaint and editor on canvas, all PASS. A background agent took a small package of item 73 in a worktree (the
-  user: "evtl noch einen einfachen teil"); its branch is merged only after its report is read.
+  deeppaint and editor on canvas, all PASS. **A small package of item 73 is merged** (the user: "evtl noch einen
+  einfachen teil", then "ja"): a background agent's 10 commits, every small "should" of the review in
+  `electron/**` and `recipes/**` that was still true (11 findings: the Comfy Cloud GPT Image seed, Seedream 5.0's
+  pixel range there, FLUX.1 Fill without Generate new, Oxen's Qwen 3.0 thinking, an unclosed `<think>`, GPT-4 rows
+  without `reasoning`, box words held to the token safety net, workflow import through a Reroute, Save as new
+  recipe from another tab, the assistant's deleted chat, describe as a read and `set_layer {role}`'s one undo
+  step); its source diff read by the main loop, the plain-Node tests and lint / types / recipes / boxes /
+  assistant on the merged state. None of it run live. Left of item 73: the shoulds under `renderer/`, the larger
+  ones, the 58 nice; and one that needs the user's word (may the assistant set `clip` on a user's layer unasked).
 - **2026-11-18, later: Deep paint's Stay on surface built on `main` (local, not pushed), for the next update.** The
   user painted a circle on a wall around an arm and expected the paint under the arm ("ja" to the switch). A
   brush or eraser stroke on a Deep paint layer lands only on the surface under its first point: `inpaint_surface.js`

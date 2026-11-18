@@ -185,6 +185,21 @@ async function main() {
         const hiPro = await graphOf({ ...editReq("comfycloud", { seed: 3e9 }), model: "seedream 5.0 pro" });
         check("a seed of 3e9 goes inside the node's range on 5.5 and on 5.0 (modulo 2^31)", hi.inputs["model.seed"] === 3e9 % 2147483648 && hi.inputs["model.seed"] <= spec.inputs["model.seed"].max && hiPro.inputs["model.seed"] === 3e9 % 2147483648, short([hi.inputs["model.seed"], hiPro.inputs["model.seed"]]));
         check("ten pictures in all", cloud.layout(editReq("comfycloud")).max === 10, String(cloud.layout(editReq("comfycloud")).max));
+        // (review provider-refusals/comfycloud-seedream50-bounds-and-pixels) Seedream 5.0 on the same node: its execute()
+        // takes 0.92 to 4.62 MP on pro and 3.68 to 16.78 MP on lite; the sides alone (2496 / 4992) let a near-square
+        // crop past the area and a small one under lite's floor, which the node refused after the uploads
+        const size50 = async (model, w, h) => { const x = (await graphOf({ ...editReq("comfycloud", { width: w, height: h, image: pngOf(w, h, "CROP") }), model })).inputs; return [x["model.width"], x["model.height"]]; };
+        const inside = ([w, h], lo, hi, side, ratio) => w * h >= lo && w * h <= hi && w % 2 === 0 && h % 2 === 0 && Math.min(w, h) >= 1024 && Math.max(w, h) <= side && Math.abs(w / h - ratio) < 0.02;
+        const proSq = await size50("seedream 5.0 pro", 2496, 2496), proWide = await size50("seedream 5.0 pro", 2496, 1664), proBig = await size50("seedream 5.0 pro", 6000, 4800);
+        check("5.0 pro: a square crop at the side limit comes down under 4.62 MP, a 3:2 one that fits stays 2496 x 1664",
+            inside(proSq, 921600, 4624220, 2496, 1) && eq(proWide, [2496, 1664]) && inside(proBig, 921600, 4624220, 2496, 1.25), short([proSq, proWide, proBig]));
+        const liteSq = await size50("seedream 5.0 lite", 4992, 4992), liteWide = await size50("seedream 5.0 lite", 4992, 2496), liteSmall = await size50("seedream 5.0 lite", 1024, 1024), liteHd = await size50("seedream 5.0 lite", 2048, 1152);
+        check("5.0 lite: a square crop at the side limit comes down under 16.78 MP, a 2:1 one stays, a small one grows to the 3.68 MP floor in its shape",
+            inside(liteSq, 3686400, 16777216, 4992, 1) && eq(liteWide, [4992, 2496]) && inside(liteSmall, 3686400, 16777216, 4992, 1) && inside(liteHd, 3686400, 16777216, 4992, 16 / 9), short([liteSq, liteWide, liteSmall, liteHd]));
+        const lim = (id) => recipes._normalize(JSON.parse(fs.readFileSync(path.join(ROOT, "recipes", id + ".json"), "utf8"))).providers.comfycloud.limits;
+        const lp = lim("seedream_5_pro"), ll = lim("seedream_5_lite");
+        check("the two 5.0 recipes plan the crop inside the same range (their Comfy Cloud limits), the sides as before",
+            lp.max === 2496 && lp.min === 1024 && lp.step === 2 && lp.pixels === 4624220 && lp.minPixels === 921600 && ll.max === 4992 && ll.min === 1024 && ll.step === 2 && ll.pixels === 16777216 && ll.minPixels === 3686400, short([lp, ll]));
     });
 
     // ---- Split into layers on WaveSpeedAI and Oxen.ai (kind "layers") ----

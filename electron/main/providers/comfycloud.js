@@ -83,12 +83,16 @@ const KREA3_SEEDS = NODE_SEEDS;
 // Seedream 5.5 on ByteDanceSeedreamNodeV3 (its option "seedream 5.5"): the custom size the node checks
 const SEEDREAM55 = /^seedream 5\.5$/;
 const SEEDREAM55_SIZE = { step: 2, max: 8594, minPixels: 921600, maxPixels: 4624220, maxRatio: 16 };
+// Seedream 5.0 on the same node: what its execute() takes in all, [least, most] pixels (comfy_api_nodes/nodes_bytedance.py
+// of ComfyUI v0.45.2, read 2026-11-18: pro 0.92 to 4.62 MP, lite 3.68 to 16.78 MP). The sides stay as they were.
+const SEEDREAM50_PIXELS = { pro: [921600, 4624220], lite: [3686400, 16777216] };
 
 // How each partner node is wired. `g` is the graph builder: g.crop / g.refs are [node id, 0]
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
 const SHAPES = {
     OpenAIGPTImageNodeV2(g, v) {
-        g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed);
+        // the node's seed tops out at 2147483647 as Krea's and Seedream's (tools/refs/comfy_cloud/nodes/OpenAIGPTImageNodeV2.json)
+        g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed % NODE_SEEDS);
         g.set("model.size", "auto"); g.set("model.background", "auto"); g.set("model.quality", "medium");
         // the node's default; a Complexity row overrides it, and AFTER_PARAMS holds the row to the rule
         if (GPT26.test(v.model)) g.set("model.complexity", "high");
@@ -128,7 +132,13 @@ const SHAPES = {
         }
         const pro = /pro/.test(v.model);
         g.set("prompt", v.prompt); g.set("model", v.model); g.set("model.seed", v.seed % NODE_SEEDS); g.set("model.watermark", false); g.set("model.thinking", true);
-        const [w, h] = fit(v.width, v.height, 1024, pro ? 2496 : 4992, 2);
+        const side = pro ? 2496 : 4992;
+        let [w, h] = fit(v.width, v.height, 1024, side, 2);
+        // the sides alone let a near-square crop past the model's area (2496 x 2496 is 6.2 MP, 4992 x 4992 24.9 MP) and a
+        // small one under lite's floor (1024 x 1024 is 1.05 MP): the node refused both after the uploads. The recipe's
+        // limits plan the crop inside the range; this holds a size that comes another way.
+        const [least, most] = SEEDREAM50_PIXELS[pro ? "pro" : "lite"];
+        if (w * h > most || w * h < least) [w, h] = fitPixels(w, h, { step: 2, max: side, minPixels: least, maxPixels: most, maxRatio: 0 });
         g.set("model.size_preset", "Custom"); g.set("model.width", w); g.set("model.height", h);
         if (pro) g.set("model.prompt_optimization", "standard"); else { g.set("model.max_images", 1); g.set("model.fail_on_partial", false); }
         g.images("model.images.image_", [g.crop, ...g.refs]);
