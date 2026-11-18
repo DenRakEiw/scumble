@@ -304,6 +304,8 @@ async function edit(request, hooks = {}) {
         if (req.boxes.length) {
             if (!boxes.schemaOf(req)) notes.push(`The boxes were not sent: ${p.label} ${req.model} takes none.`);
             else {
+                // resolveNames holds the prompt's markers to this; a box's `ref` and the markers in its words count the same list
+                if (!stripped && given !== req.references.length && boxes.namesReferences(req.boxes)) throw new Error("A reference picture of the request was empty, so the boxes' references would point at the wrong pictures: nothing was sent.");
                 const a = boxes.applyBoxes(req, lay);
                 req.prompt = a.prompt;
                 if (a.params) req.params = { ...req.params, ...a.params };   // Ideogram 4: no prompt expansion over its caption
