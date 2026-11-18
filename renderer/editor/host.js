@@ -248,7 +248,9 @@ function closedPromptEnded(detail) {
 api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("success", detail); host.helperEvent("success", detail); });
 api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("interrupted", detail); host.helperEvent("interrupted", detail); });
 // the helper prompts a document waits for (host_helperwatch.js): a job ComfyUI will never answer ends its wait
-setInterval(() => { host.watchHelpers().catch((err) => console.warn("helper watch", err)); }, 1000);
+const helperWatch = setInterval(() => { host.watchHelpers().catch((err) => console.warn("helper watch", err)); }, 1000);
+// a plain-Node test that imports this module must be able to end (the window's timer is a number, without unref)
+if (helperWatch && typeof helperWatch.unref === "function") helperWatch.unref();
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
     if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(host.liveRunIds()); }
