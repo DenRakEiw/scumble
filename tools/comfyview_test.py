@@ -818,7 +818,7 @@ class Gate:
         # plain Node: the sign-in hosts (V4) and a detached recipe run through the Comfy Cloud adapter (V5b)
         root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
         out = {}
-        for name in ("comfyhosts_test.js", "cloudgraph_test.js", "links_test.js", "comfyprobe_test.js", "comfyparams_test.js"):
+        for name in ("comfyhosts_test.js", "cloudgraph_test.js", "links_test.js", "comfyprobe_test.js", "comfyparams_test.js", "comfyview_save_test.js"):
             r = subprocess.run(["node", os.path.join(root, "tools", name)], cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=120)
             tail = r.stdout.strip()
             if r.returncode != 0 or not tail.endswith("PASS"):
