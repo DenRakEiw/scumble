@@ -1589,6 +1589,11 @@ async function main() {
             ["generate", {}, null], ["generate", { each_area: true }, null], ["upscale", {}, null], ["upscale", { scope: "document" }, null],
             ["set_layer", { match: 60 }, "match"], ["set_layer", { match: 60, match_source: "below" }, "match"],
             ["set_layer", { match: 60, opacity: 50 }, "layers"], ["set_layer", { x: 10 }, null],
+            // (review assistant-glb/set-layer-clip-auto-and-role-double-undo) the editor's setLayerRole pushes its own step:
+            // role alone gets none from the shell (a second was an empty one), beside another soft field the field's step
+            ["set_layer", { role: "reference" }, null], ["set_layer", { role: "reference", opacity: 50 }, "layers"], ["set_layer", { role: "none", match: 60 }, "match"],
+            // (review p1-lanes-bce/assistant-describe-not-in-reads) describe writes nothing the editor undoes, with to_prompt or without
+            ["describe", {}, null], ["describe", { to_prompt: true }, null],
             // F2b: set_filter pushes its own step (the type's, or the parameters')
             ["set_filter", { params: { a: 1 } }, null], ["set_filter", { type: "blur", params: { a: 1 } }, null],
             ["set_text", { text: "x" }, "text"], ["set_text", { angle: 30 }, "layers"], ["set_prompt", { prompt: "x" }, null],
@@ -3463,6 +3468,39 @@ async function main() {
             check("a_read_only_turn_leaves_no_last_turn",
                 afterRead === null && afterWrite && afterWrite.steps === 1 && eq(afterWrite.docs, [1]),
                 `${JSON.stringify(afterRead)} then ${JSON.stringify(afterWrite && afterWrite.docs)}`);
+            await a.close();
+        }
+        {
+            // (review p1-lanes-bce/assistant-describe-not-in-reads) describe only looks at the picture unless to_prompt
+            // puts its text into the prompt field: a read takes no wait, no turn and no layer reads, and leaves no
+            // "Undo this turn"; with to_prompt it is a write as before
+            const reads = [["describe", {}], ["describe", { detailed: true }], ["describe", { to_prompt: false }], ["describe", { to_prompt: "false" }], ["list_layers", {}], ["film_looks", {}]];
+            const writes = [["describe", { to_prompt: true }], ["describe", { to_prompt: "true", detailed: true }], ["set_prompt", { prompt: "x" }], ["add_paint_layer", {}]];
+            const off = reads.filter(([n, x]) => policy.isRead(n, x) !== true).concat(writes.filter(([n, x]) => policy.isRead(n, x) !== false)).map(([n, x]) => `${n} ${JSON.stringify(x)}`);
+            check("describe_is_a_read_unless_it_writes_the_prompt", !off.length && policy.isRead("describe") === true && !policy.READS.has("describe"), off.join("; "));
+            const editor = new FakeEditor();
+            editor.describe = async () => ALL_COMMANDS.concat([{ name: "describe", description: "Describe the picture.", params: { doc: { type: "integer", description: "document id" }, detailed: { type: "boolean", description: "a few sentences" }, to_prompt: { type: "boolean", description: "into the prompt field" } } }]);
+            const { a } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "describe", input: { doc: 1, detailed: true } }]),
+                anthropicStream([{ type: "text", text: "a door" }]),
+                anthropicStream([{ type: "tool_use", id: "c2", name: "describe", input: { doc: 1, to_prompt: true } }]),
+                anthropicStream([{ type: "text", text: "in the prompt now" }]),
+            ]);
+            await a.send("what is in the picture?");
+            const afterRead = a.lastTurn;
+            const m1 = editor.metas[editor.calls.findIndex((c) => c.name === "describe")];
+            const layerReads1 = editor.calls.filter((c) => c.name === "list_layers").length;
+            await a.send("put it into the prompt");
+            const afterWrite = a.lastTurn;
+            const m2 = editor.metas[editor.calls.findLastIndex((c) => c.name === "describe")];
+            const layerReads2 = editor.calls.filter((c) => c.name === "list_layers").length - layerReads1;
+            check("a_plain_describe_turn_takes_no_snapshot_and_leaves_no_last_turn",
+                afterRead === null && m1 && m1.wait === false && m1.turn === undefined && m1.undo === undefined,
+                JSON.stringify({ afterRead, m1: m1 && { wait: m1.wait, turn: m1.turn, undo: m1.undo } }));
+            // the write reads the layers before and after its call (the canonical call, the ownership), the read neither
+            check("describe_with_to_prompt_is_a_write_of_the_turn",
+                afterWrite && eq(afterWrite.docs, [1]) && m2 && m2.wait === true && typeof m2.turn === "string" && layerReads2 === layerReads1 + 2,
+                JSON.stringify({ afterWrite, m2: m2 && { wait: m2.wait, turn: m2.turn }, layerReads1, layerReads2 }));
             await a.close();
         }
         {

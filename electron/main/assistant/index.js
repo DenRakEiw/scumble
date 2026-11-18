@@ -126,13 +126,13 @@ class Assistant {
      */
     backendFor() {
         const bridge = this.deps.bridge;
-        const metaFor = (command) => {
+        const metaFor = (command, args) => {
             const turn = this.turn;
             // the Bridge is called with the command's own name, the policy's sets hold MCP tool
             // names: they differ for a plugin command (film.looks -> film_looks), whose read would
             // otherwise take the user-activity wait and count as a step to undo
             const name = toolName(command);
-            const read = policy.READS.has(name);
+            const read = policy.isRead(name, args);
             return {
                 origin: "assistant",
                 wait: name === "screenshot" ? "soft" : !read,
@@ -145,7 +145,7 @@ class Assistant {
             };
         };
         return {
-            run: (name, args) => bridge.run(name, args, metaFor(name)),
+            run: (name, args) => bridge.run(name, args, metaFor(name, args)),
             describe: () => bridge.describe(),
             on: (event, fn) => bridge.on(event, fn),
             removeListener: (event, fn) => bridge.removeListener && bridge.removeListener(event, fn),
@@ -776,7 +776,7 @@ class Assistant {
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not one of your tools in this chat" });
             return errorResult(`refused by Scumble: not one of your tools in this chat`);
         }
-        if (this.readOnly && !policy.READS.has(name)) {
+        if (this.readOnly && !policy.isRead(name, call.args)) {
             // the gate's read-only milestone (A4): nothing but reads runs in this chat
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not enabled in this run" });
             return errorResult("refused by Scumble: not enabled in this run");
@@ -798,7 +798,7 @@ class Assistant {
         const doc = args.doc !== undefined ? args.doc : turn.pin;
         let layers = [];
         const takesLayer = !!(props.layer || props.source || props.target);
-        const wantsLayers = !policy.READS.has(name) && (takesDoc || takesLayer) && doc != null;
+        const wantsLayers = !policy.isRead(name, args) && (takesDoc || takesLayer) && doc != null;
         if (wantsLayers) {
             try {
                 const answer = await this.read("list_layers", { doc });
@@ -856,7 +856,7 @@ class Assistant {
         turn.undo = undoKind ? { kind: undoKind, id: canonical.args.layer || null } : null;
         // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
         // that only read leaves `lastTurn` null
-        if (!policy.READS.has(name) && doc !== undefined && doc !== null) turn.docs.add(doc);
+        if (!policy.isRead(name, canonical.args) && doc !== undefined && doc !== null) turn.docs.add(doc);
         this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
         const before = layers.map((l) => l.id);
         const startedAt = Date.now();
@@ -892,7 +892,7 @@ class Assistant {
         if (!res.isError) this.recordSettingsChange(chat, doc, name, canonical.args, parsed);
 
         // ---- ownership and the pin
-        if (!policy.READS.has(name) && takesDoc && name !== "close_document") {
+        if (!policy.isRead(name, canonical.args) && takesDoc && name !== "close_document") {
             try {
                 const answer = await this.read("list_layers", { doc });
                 const after = (answer && answer.layers) || [];

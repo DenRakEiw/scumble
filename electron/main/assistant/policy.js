@@ -19,6 +19,18 @@ const READS = new Set([
     "list_loras",
 ]);
 
+/**
+ * Whether this call only reads. A name in READS always does; `describe` does unless it is asked to put its text into
+ * the prompt field (`to_prompt`, read as renderer/commands_depth.js reads it): without that it looks at the picture and
+ * writes nothing, so it takes no turn snapshot and offers no "Undo this turn".
+ */
+function isRead(name, args) {
+    name = String(name);
+    if (READS.has(name)) return true;
+    if (name === "describe") { const v = args && args.to_prompt; return !(v === true || v === "true"); }
+    return false;
+}
+
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
 const RUNS = new Set(["generate", "generate_new", "upscale", "realism_pass", "select_by_text", "cutout_layer", "upsample_prompt", "relight", "key_screen", "split_layers"]);
 
@@ -555,7 +567,7 @@ function decide(call, facts = {}) {
 function undoStep(call, facts = {}) {
     const name = String(call && call.name);
     const args = (call && call.args) || {};
-    if (READS.has(name)) return null;
+    if (isRead(name, args)) return null;
     // duplicate_layer, frequency_separation and dodge_burn_layer push their own "layers" step (a second was an empty one)
     // glb_place pushes its own "layers" step for the object and its depth layer (a second one would be an empty step)
     // generate and the selection's upscale land their result layer as a step of its own (addResults; each area's result
@@ -570,7 +582,9 @@ function undoStep(call, facts = {}) {
     // an angle turns the mask with the text, which only a "layers" step holds
     if (name === "set_text") return args.angle !== undefined ? "layers" : "text";
     if (name === "set_layer") {
-        const soft = SET_LAYER_SOFT.filter((k) => args[k] !== undefined);
+        // `role` asks like the other soft fields (setLayer) but the editor's setLayerRole pushes its own "layers" step:
+        // a second one from the shell was an empty step under it
+        const soft = SET_LAYER_SOFT.filter((k) => k !== "role" && args[k] !== undefined);
         if (!soft.length) return null;                                    // geometry pushes its own `transform`
         if (soft.length === 1 && (soft[0] === "match" || soft[0] === "match_source")) return "match";
         if (soft.every((k) => k === "match" || k === "match_source")) return "match";
@@ -587,7 +601,7 @@ function addsLayer(facts) {
 }
 
 module.exports = {
-    EXCLUDED, READS, RUNS, POLICY, decide, renders, clamp, clampInt, timeoutOf, undoStep,
+    EXCLUDED, READS, isRead, RUNS, POLICY, decide, renders, clamp, clampInt, timeoutOf, undoStep,
     SET_LAYER_SOFT, SET_LAYER_GEOMETRY, TIMEOUT_DEFAULTS, REALISM_LABEL, REALISM_FACTORS, REALISM_MAX_AREA,
     _layerOf: layerOf, _layerBelow: layerBelow, _owns: owns, _extMatches: extMatches,
 };
