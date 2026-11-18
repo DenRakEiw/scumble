@@ -198,13 +198,19 @@ function turn(instruction, image, images) {
 
 // ---- adapters -----------------------------------------------------------------------
 
+// OpenAI's model families that do not reason and answer `reasoning` with HTTP 400 ("Unsupported parameter"): GPT-4 and
+// older, the ChatGPT aliases and the -chat models, also behind a fine-tune's "ft:" (a row the user added by hand;
+// the shipped rows are 5.x). Everything else keeps the low effort, so a newer family is not slowed by a missing name.
+const OPENAI_NO_REASONING = /^(?:ft:)?(?:gpt-3|gpt-4|chatgpt)|-chat(?:-|$)/i;
+
 async function askOpenAI({ model, key, instruction, image, images, maxTokens }) {
     // Responses API: one user turn with the text and the pictures as data URIs. The
     // 5.x models reason before they answer; low effort keeps a prompt rewrite quick.
     const content = turn(instruction, image, images).map((p) => (p.png
         ? { type: "input_image", image_url: dataUri(p.png), detail: "auto" }
         : { type: "input_text", text: p.text }));
-    const body = { model, input: [{ role: "user", content }], max_output_tokens: maxTokens, reasoning: { effort: "low" } };
+    const body = { model, input: [{ role: "user", content }], max_output_tokens: maxTokens };
+    if (!OPENAI_NO_REASONING.test(String(model || ""))) body.reasoning = { effort: "low" };
     const r = await fetch("https://api.openai.com/v1/responses", {
         method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
@@ -359,7 +365,9 @@ async function askCompatible({ model, key, instruction, image, images = [], maxT
     }
     let text = msg.content;                                  // reasoning_content, when there is one, is not the answer
     if (Array.isArray(text)) text = text.filter((p) => p && (p.type === "text" || p.text)).map((p) => p.text || "").join("\n");
-    text = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();   // Qwen3 / DeepSeek think inside the content
+    // Qwen3 / DeepSeek think inside the content. A block the token limit cut before its </think> goes to the end of
+    // the text: what is left is empty and fails below with the finish_reason, instead of the reasoning as the prompt
+    text = String(text || "").replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "").trim();
     if (!text) {
         const why = (out.choices && out.choices[0] && out.choices[0].finish_reason) || (out.error && out.error.message) || "no text in the answer";
         throw new Error(`${model} at ${compatHost(url)}: ${why}`);
