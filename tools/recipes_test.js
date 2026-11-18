@@ -370,7 +370,7 @@ async function main() {
         // the text shapes that make a new image from the prompt alone (26f's "None" row): text-only or inpaint-only
         // models, a single-picture edit field, a Comfy Router dialect with no input picture, Reve (its edit cap unread)
         const TAKES_NONE = {
-            flux1_fill: ["bfl", "fal", "replicate", "wavespeed"], ideogram_4: ["fal", "comfyrouter", "oxen"], krea_2: ["fal", "openrouter", "comfyrouter", "oxen"],
+            ideogram_4: ["fal", "comfyrouter", "oxen"], krea_2: ["fal", "openrouter", "comfyrouter", "oxen"],
             recraft_v4: ["fal", "openrouter"], z_image: ["fal"], z_image_turbo: ["fal", "oxen", "magnific"], mystic: ["magnific"], reve: ["wavespeed"],
             qwen_image_edit: ["fal", "replicate"], grok_imagine: ["comfyrouter"], ideogram_4_5: ["replicate", "wavespeed", "comfyrouter"],
             // Comfy Cloud's text-to-image graphs (item 35 V6 step 5): a template that takes no picture
@@ -406,6 +406,11 @@ async function main() {
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });
         check("every takes-none entry names a shipped text shape without text.refs", !noneStale.length, noneStale.join(", "));
+        // (review provider-refusals/flux1-fill-text-routes-on-inpaint-only-endpoints) FLUX.1 Fill's endpoints require the picture
+        // and its mask: no host gets a made-up Generate new route (BFL's own answered 422, fal's lost its /fill)
+        const fill = list.find((x) => x.id === "flux1_fill");
+        const fillText = fill ? Object.entries(fill.providers).filter(([, v]) => v.text).map(([pid]) => pid) : ["no flux1_fill"];
+        check("flux1_fill has no text shape on any host (an inpaint-only model)", !fillText.length, fillText.join(", "));
 
         // the routes the table names: the variant's own edit model (an id the edit runs already use), another route
         // than the text one, on Magnific a route that takes references; options only where the table sets them
