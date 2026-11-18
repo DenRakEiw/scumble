@@ -93,6 +93,26 @@ folder; the new code keeps a whole `.part` that checks, so the next Download fin
 
 ## Open
 
+### Deep paint, Stay on surface: what the first build does not do (built 2026-11-18)
+
+The switch limits a brush or eraser stroke on a Deep paint layer to the surface under its first point
+(`inpaint_surface.js` `surfaceRegion`, `inpaint_ed_filters.js` `surfaceClipAt`). Seen on one picture with real maps (a
+street, a car, a table with a cup; 2416 x 1728, maps 768 x 549) and in the gates; not on the user's own pictures.
+- **The border is as coarse as the points map** (768 px on the long side): a clip of map pixels scaled to the picture,
+  its staircase smoothed. About 3 px a map pixel at 2,400 px, about 20 px at 15,000. A fix would refine the border
+  against the picture itself (an edge-aware upsample, as the depth limit's edge snap does), computed after the stroke
+  began and swapped in. Not built.
+- **The pixels of the model's ramp at a depth edge belong to neither side**, so a line of the surface up to two map
+  pixels wide beside an object in front can stay unpainted.
+- **Only what is connected is reached.** A wall behind a pole that runs through the whole picture is two regions. A
+  fix: when the region is a plane, take every smooth pixel on that plane. Not built.
+- **A shallow crease is one surface** (a ramp of a few degrees resting on a floor), and so is a paper lying flat on a
+  table when the model gives it no depth of its own. A thing narrower than the reach (about 9 map pixels) is found
+  with a shorter reach, where a contact no longer ends it.
+- Only the brush and the eraser: a gradient, a shape, Fill and the bucket on a Deep paint layer are not limited, and
+  no command sets the switch or paints a stroke.
+- The node's editor has the switch's row but no Deep paint (its host says `surfaceSupported: false`), so it never shows.
+
 ### Deep paint: small points left from the 0.1.56 release review (found 2026-11-14, read, not run)
 
 Three review agents read `e0ff04cd..` (Deep paint, Seedream 5.5 on OpenRouter, Gemini 4 Hydrogen). Fixed before the

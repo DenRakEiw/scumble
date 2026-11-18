@@ -4,6 +4,13 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Deep paint: Stay on surface.** A stroke of the brush or the eraser on a Deep paint layer now lands only on the
+  surface it begins on: paint a wall and the arm in front of it stays free, paint a table and the cup standing on it
+  stays free. The switch is in the options bar while a Deep paint layer is active and is on by default; off, a stroke
+  paints every surface under the brush, as before. The surface is read from the surface maps (it ends where the depth
+  jumps and where something rests on it), so its border is as fine as the maps are: a few pixels on a 2,000 pixel
+  picture, coarser on a very large one. A part of the same surface that is cut off entirely by what stands in front
+  is not reached; begin a second stroke there.
 - **Fixed: a selection by text stayed on "Segmenting ..." for good when ComfyUI was restarted while it ran** (issue
   #15): the tab refused a new selection and Generate new until Scumble was restarted, and Cancel knew nothing of the
   job. A helper job on your ComfyUI (a selection by text, a background removal, the object map, prompt upsampling

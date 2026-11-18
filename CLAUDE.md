@@ -84,6 +84,25 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **2026-11-18, later: Deep paint's Stay on surface built on `main` (local, not pushed), for the next update.** The
+  user painted a circle on a wall around an arm and expected the paint under the arm ("ja" to the switch). A
+  brush or eraser stroke on a Deep paint layer lands only on the surface under its first point: `inpaint_surface.js`
+  `surfaceRegion` (a flood over the points map: the disparity 1 / z is linear on a plane at any tilt, so its second
+  difference, between neighbours and over `REGION_SPAN` 4 map pixels, finds a jump in depth and the crease where
+  something rests on the surface; then back to the borders by the neighbours' test; about 10 ms), `surfaceClipAt` /
+  `surfaceClipInto` (`inpaint_ed_filters.js`: the region as a canvas at the map's size, drawn destination-in), the
+  pointer's `surf` beside its selection `clip` (`drawStrokeInto`, `strokePatch`; `commitStrokeTiles` leaves such a
+  stroke to the bands), the options bar's switch (`surfaceStay`, localStorage `ipc.surfaceStay`, on by default,
+  shown with the brush or eraser on a Deep paint layer). Normals were tried for the crease and dropped (MoGe-2's
+  are too smooth for a step limit, too detailed for a strict one). Tests: `tools/wrap_test.js` (8 cases on a
+  synthetic wall, slab and resting block), the deeppaint gate's Stay block (both backends), editor / brush / lint /
+  types green (the canvas editor gate's scope step went red once side by side, green alone). Seen on the hand-test
+  document (`dist/testfiles/handtest_deeppaint_profile`, doc 3): a stroke from the table runs under the cup. Its
+  limits are in `docs/BUGS.md` (the border as coarse as the 768 px map, only connected parts, brush and eraser
+  only). **Open:** the user's own test on the arm picture (a hand flat on the wall is the hard case).
+  Also: the fix for #15 is pushed (`9275d537`), no release yet (the user); the live node folder was fast-forwarded
+  to the 0.1.57 build `f7f278f` (its uncommitted older build is in that repo's stash); the Store has 0.1.57 (the
+  user, 2026-11-18: "store ist online").
 - **2026-11-18: issue #15 fixed on `main` (local, not pushed), for the next update.** hwatik: SAM3 hung on ComfyUI,
   ComfyUI was restarted, and the tab stayed on "Segmenting ..." until Scumble was restarted; Cancel knew nothing
   of the job. Reproduced on a stub (no run on the user's ComfyUI): a helper prompt's wait ended only on its output
@@ -101,8 +120,7 @@ code.
   `surfaceSupported` / `surfaceModels` / `surfaceAnalysis` (the node was pushed from a clone for 0.1.56 and
   0.1.57; the live folder is behind). Not run against a real ComfyUI restart. The reply on #15 is posted (it
   promises the fix for the next update and asks what ComfyUI's console showed); #14 (hwatik: a look at a
-  click-to-refine sampler node) answered with the user's idea, item 74. **Open:** the Store update for 0.1.57
-  (the user had the file and the text on 2026-11-17, not confirmed uploaded).
+  click-to-refine sampler node) answered with the user's idea, item 74.
 - **2026-11-16 evening: the public texts brought up to 0.1.57, and a workflow clip for Lighthouse Academy's article.**
   The clip (the user's key visual `Result.psd`, its 17 layers landing one by one in the Lighthouse Academy skin, a
   motion composition around the app take): `dist/lighthouse/scumble_workflow.gif` (720 x 405, 17.2 s, 8.5 MB, for

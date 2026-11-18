@@ -902,6 +902,63 @@ JS = r"""
             // a second ask with the same picture keeps the map
             const again = await e4.ensureDepthMap().catch((e) => String(e));
             check("depth from points: kept while the picture is the same", again === e4.maps.depth && again === dm);
+            // Stay on surface (the brush and the eraser on a Deep paint layer): a stroke lands only on the surface it
+            // begins on. Here the near wall (z 2, the left half) and the far one (z 4): a jump in depth at x = W / 2
+            {
+                const DP = e4.addSurfaceLayer();
+                check("stay on surface: a Deep paint layer", !!DP, e4.status);
+                if (DP) {
+                    const dp = () => e4.layers.find((l) => l.id === DP.id);
+                    e4.activeLayerId = DP.id; e4.renderLayers();
+                    e4.setTool("paint");
+                    e4.color = "#28c83c"; e4.brushSize = 40; e4.hardness = 1; e4.brushOpacity = 1;
+                    e4.fitView(); e4.sceneSig = null; e4.draw(); await wait(60);
+                    const r4 = e4.canvas.getBoundingClientRect();
+                    const c4 = (ix, iy) => { const [sx, sy] = e4.imageToScreen(ix, iy); return { clientX: r4.left + sx * r4.width / e4.canvas.width, clientY: r4.top + sy * r4.height / e4.canvas.height }; };
+                    const pe = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 25, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, c4(ix, iy)));
+                    const run4 = async (x0, x1) => {
+                        e4.canvas.dispatchEvent(pe("pointerdown", x0, 240));
+                        const surf = !!(e4.pointer && e4.pointer.surf);
+                        for (let i = 1; i <= 10; i++) { e4.canvas.dispatchEvent(pe("pointermove", x0 + (x1 - x0) * i / 10, 240)); await wait(16); }
+                        e4.canvas.dispatchEvent(pe("pointerup", x1, 240));
+                        await wait(60);
+                        await settle(e4);
+                        return surf;
+                    };
+                    const a4 = (x) => dp().px.readRect(x, 240, 1, 1).data[3];
+                    const keepStay = e4.surfaceStay;
+                    try {
+                        e4.surfaceStay = true;
+                        e4.updateOptsBar();
+                        check("stay on surface: the switch shows with the brush on a Deep paint layer", !!e4.surfaceStayRow && !e4.surfaceStayRow.hidden && e4.surfaceStayBox.checked === true);
+                        const on = await run4(120, 520);
+                        check("stay on surface: the stroke took its surface", on === true);
+                        check("stay on surface: paint on the wall the stroke began on", a4(200) === 255, a4(200));
+                        check("stay on surface: none beyond the jump in depth", a4(440) === 0 && a4(360) === 0, [a4(360), a4(440)]);
+                        // (the clip is a scaled map: a level or two under 255 inside it)
+                        check("stay on surface: the border within a map pixel of the jump", a4(300) >= 250 && a4(340) === 0, [a4(300), a4(340)]);
+                        e4.surfaceStay = false;
+                        const off = await run4(120, 520);
+                        check("stay on surface off: the stroke is not limited", off === false && a4(200) === 255 && a4(440) === 255, [off, a4(200), a4(440)]);
+                        // the eraser keeps to its surface too: begun on the far wall, the near wall's paint stays
+                        e4.surfaceStay = true;
+                        e4.setTool("erase");
+                        await run4(520, 120);
+                        check("stay on surface: the eraser takes only the surface it began on", a4(440) === 0 && a4(200) === 255, [a4(200), a4(440)]);
+                        // a paint layer is not limited: the switch belongs to Deep paint
+                        e4.setTool("paint");
+                        const PL = e4.addPaintLayer();
+                        e4.activeLayerId = PL.id; e4.renderLayers();
+                        check("stay on surface: no switch on a paint layer", !!e4.surfaceStayRow && e4.surfaceStayRow.hidden === true);
+                        const plain = await run4(120, 520);
+                        const pa = (x) => e4.layers.find((l) => l.id === PL.id).px.readRect(x, 240, 1, 1).data[3];
+                        check("stay on surface: a paint layer's stroke is not limited", plain === false && pa(200) === 255 && pa(440) === 255, [plain, pa(200), pa(440)]);
+                    } finally {
+                        e4.surfaceStay = keepStay;
+                        e4.setTool("paint");
+                    }
+                }
+            }
             // no points and no model: the download is named, as before
             await e4.setMaps({ points: null });
             let err = null;

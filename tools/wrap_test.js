@@ -234,6 +234,48 @@ const ROOT = path.join(__dirname, "..");
         check("a floor in perspective: a far line is narrower than a near one", wmaxAt(found[0]) > 0 && wmaxAt(found[0]) < wmaxAt(found[6]), [wmaxAt(found[0]), wmaxAt(found[6]), found[0], found[6], fbox]);
     }
 
+    // Stay on surface (Deep paint's brush): the surface under a pixel of the points map (inpaint_surface.js
+    // surfaceRegion). A wall seen at an angle, 3 m away; in front of it a slab 8 cm off the wall (a jump in depth), and
+    // a block that rests on the wall along its left edge, rising to 10 cm over ten pixels (no jump there, a crease); the
+    // top rows the sky
+    {
+        const S = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_surface.js")).href);
+        const w = 320, h = 200, f = 300, n = w * h;
+        const slab = [60, 60, 120, 140], wedge = [200, 60, 280, 140], skyRows = 20;
+        const inBox = (b, x, y) => x >= b[0] && x < b[2] && y >= b[1] && y < b[3];
+        const pts = new Float32Array(3 * n), keep = new Float32Array(n), alpha = new Uint8Array(4 * n);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const i = y * w + x;
+            if (y < skyRows) continue;
+            const a = (x + 0.5 - w / 2) / f, b = (y + 0.5 - h / 2) / f;
+            // the wall: z + 0.8 X = 3; what stands in front of it is that much nearer along the wall's own depth
+            let off = 0;
+            if (inBox(slab, x, y)) off = 0.08;
+            else if (inBox(wedge, x, y)) off = Math.min(0.10, 0.01 * (x - wedge[0]));
+            const z = (3 - off) / (1 + 0.8 * a);
+            pts[3 * i] = a * z; pts[3 * i + 1] = b * z; pts[3 * i + 2] = z;
+            keep[i] = 1; alpha[4 * i + 3] = 255;
+        }
+        const packed = S.packPoints(pts, keep, w, h);
+        const pmap = { data: packed.data, w, h, meta: packed.meta };
+        const nmap = { data: alpha, w, h };
+        const share = (r, b) => { let on = 0, all = 0; for (let y = b[1]; y < b[3]; y++) for (let x = b[0]; x < b[2]; x++) { all++; if (r.mask[y * w + x]) on++; } return on / all; };
+        const wallShare = (r) => { let on = 0, all = 0; for (let y = skyRows; y < h; y++) for (let x = 0; x < w; x++) { if (inBox(slab, x, y) || inBox(wedge, x, y)) continue; all++; if (r.mask[y * w + x]) on++; } return on / all; };
+        const wall = S.surfaceRegion(pmap, nmap, 160, 170);
+        check("stay on surface: the wall is one surface, at any tilt", !!wall && wallShare(wall) > 0.99, wall && wallShare(wall));
+        check("stay on surface: what stands off the wall is not on it", !!wall && share(wall, slab) < 0.02, wall && share(wall, slab));
+        check("stay on surface: what rests on the wall is not on it either, but for the reach at its foot", !!wall && share(wall, wedge) < 0.2, wall && share(wall, wedge));
+        check("stay on surface: the sky is not the wall", !!wall && share(wall, [0, 0, w, skyRows]) === 0);
+        const onSlab = S.surfaceRegion(pmap, nmap, 90, 100);
+        check("stay on surface: begun on the slab, it is the slab", !!onSlab && share(onSlab, slab) > 0.9 && wallShare(onSlab) < 0.01, onSlab && [share(onSlab, slab), wallShare(onSlab)]);
+        // a start right beside the slab (inside the reach of its border) still finds the wall
+        const beside = S.surfaceRegion(pmap, nmap, slab[2] + 1, 100);
+        check("stay on surface: a start beside a border finds the surface", !!beside && wallShare(beside) > 0.99 && share(beside, slab) < 0.02, beside && [wallShare(beside), share(beside, slab)]);
+        const sky = S.surfaceRegion(pmap, nmap, 100, 5);
+        check("stay on surface: the sky is one surface of its own", !!sky && share(sky, [0, 0, w, skyRows]) === 1 && wallShare(sky) === 0, sky && sky.count);
+        check("stay on surface: no points, no answer", S.surfaceRegion({ data: packed.data, w, h, meta: {} }, nmap, 10, 10) === null);
+    }
+
     for (const f of fails) console.log("[FAIL wrap]", f);
     console.log(fails.length ? "FAIL" : "PASS");
     process.exit(fails.length ? 1 : 0);

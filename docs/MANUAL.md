@@ -574,6 +574,13 @@ and picks the brush. On it:
 - **Where it lands:** a selection limits a stroke, the layer's mask limits the whole layer, and the layer's *Limit*
   (Depth, Luminosity or Colour) keeps it to a part of the picture, as on any filter layer: *Colour* is the quickest way
   to paint only the strap of a bag or only the car.
+- **Stay on surface** (in the options bar while the brush or the eraser is on a Deep paint layer; on by default): a
+  stroke lands only on the surface it begins on. Begin on a wall and paint across an arm in front of it, and the arm
+  stays free; begin on a table and the cup standing on it stays free. The surface is read from the surface maps: it
+  ends where the depth jumps and where something rests on it, as exactly as the maps are fine (a few pixels on a
+  2,000 pixel picture, more on a very large one). A part of the same surface that is cut off entirely by what stands
+  in front is not reached: begin a second stroke there. Turn the switch off to paint everything under the brush.
+  Where the surface maps hold no shapes to go by, a stroke is not limited; *Compute Surface Maps* again.
 
 **The light brush.** *Layer › New Light Brush Layer* adds a Relight layer with one warm light from the upper left whose
 mask hides all of it, and picks the brush: paint where the light should fall, and the eraser takes it away. The light
