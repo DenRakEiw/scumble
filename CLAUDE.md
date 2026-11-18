@@ -84,6 +84,25 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **2026-11-18: issue #15 fixed on `main` (local, not pushed), for the next update.** hwatik: SAM3 hung on ComfyUI,
+  ComfyUI was restarted, and the tab stayed on "Segmenting ..." until Scumble was restarted; Cancel knew nothing
+  of the job. Reproduced on a stub (no run on the user's ComfyUI): a helper prompt's wait ended only on its output
+  or an `execution_error`. Now `renderer/editor/host_helperwatch.js` (a host part, app only) watches the helper
+  prompts a document waits for (`segmentPending`, `objectsPending` stage run, `upsamplePending`, `cutoutPending`
+  with their prompt ids): the wait ends when /queue no longer holds the job twice in a row (then /history: an
+  output the socket missed is dispatched as `executed`, an error or interrupt said in its words, nothing found =
+  "no longer holds its job"), on `execution_interrupted`, when the server it was queued on is disconnected or
+  replaced, and after 20 s of a silent /queue with the socket down. Each helper older than 1.5 s has a row in the
+  title row (a token in `_providerRuns` with `helper: { kind, id }`), so Cancel and `cancel_run` take its job off
+  ComfyUI (`cancelComfyPrompt`) and free the document; an output of an ended id lands nowhere (`_helperEnded`).
+  Editor side (ships with the next node build): `upsamplePromptId` / `cutoutPromptId` are cleared when a run
+  starts. Gate step `a_helper_job_comfyui_never_answers_ends_its_wait` (editor gate, 11 s); gates `issue15`,
+  `issue15b` on tiles PASS but `nodecopy`, red before this change too: the live node folder's `js/host.js` lacks
+  `surfaceSupported` / `surfaceModels` / `surfaceAnalysis` (the node was pushed from a clone for 0.1.56 and
+  0.1.57; the live folder is behind). Not run against a real ComfyUI restart. The reply on #15 is posted (it
+  promises the fix for the next update and asks what ComfyUI's console showed); #14 (hwatik: a look at a
+  click-to-refine sampler node) answered with the user's idea, item 74. **Open:** the Store update for 0.1.57
+  (the user had the file and the text on 2026-11-17, not confirmed uploaded).
 - **2026-11-16 evening: the public texts brought up to 0.1.57, and a workflow clip for Lighthouse Academy's article.**
   The clip (the user's key visual `Result.psd`, its 17 layers landing one by one in the Lighthouse Academy skin, a
   motion composition around the app take): `dist/lighthouse/scumble_workflow.gif` (720 x 405, 17.2 s, 8.5 MB, for
@@ -1149,6 +1168,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   `docs/research/review_fable_2026-11-16/verified.json`, 138 confirmed. Fixed for 0.1.57: the 3 musts and the 19
   shoulds on data loss, money and security (lanes X, Y, Z). **Left for a later update:** the other ~58 shoulds
   (category bug and perf) and the 58 nice ones; pick them by file area, verify each against the code first.
+- 74: **An automated tile upscaler / refiner** (the user, 2026-11-18, as the answer to issue #14): the picture split
+  divide-and-conquer style into overlapping tiles small enough for the model to render at full detail, each tile
+  refined on its own and the results put back together; the prompt per tile either one general prompt or one a
+  vision model writes for each tile. Pieces that exist: *Each area* (one crop and run per area, item 54),
+  Florence-2's `describe` (item 62), edge fit and colour match per result. Not planned yet; hwatik was asked
+  whether that covers his use or the single click on one region matters most.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.

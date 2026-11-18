@@ -4,6 +4,15 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Fixed: a selection by text stayed on "Segmenting ..." for good when ComfyUI was restarted while it ran** (issue
+  #15): the tab refused a new selection and Generate new until Scumble was restarted, and Cancel knew nothing of the
+  job. A helper job on your ComfyUI (a selection by text, a background removal, the object map, prompt upsampling
+  through a node) now ends its wait when the server no longer holds it (a restart, a cleared queue), when it is
+  interrupted there or when the connection is lost, and the status line says which; a result the connection missed
+  is read from the server's history. A helper job that runs longer than a moment shows in the title row with its
+  seconds and *Cancel*, which takes the job off your ComfyUI and frees the document at once; `cancel_run` stops it
+  too, and a mask that still arrives after a Cancel is not applied.
+
 ## 0.1.57 - 2026-11-16
 
 - **Florence-2 as a helper model** (Microsoft, MIT): download it in *Settings › Helpers* (277 MB, every file checked by

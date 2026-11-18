@@ -30,6 +30,7 @@ import { HostQueuePart } from "./host_queue.js";
 import { HostDocumentsPart } from "./host_documents.js";
 import { HostHelpersPart } from "./host_helpers.js";
 import { HostVlmPart } from "./host_vlm.js";
+import { HostHelperWatchPart } from "./host_helperwatch.js";
 
 // ---- the contract ------------------------------------------------------------------------
 //
@@ -140,6 +141,7 @@ export const host = {
     ...HostDocumentsPart,
     ...HostHelpersPart,
     ...HostVlmPart,
+    ...HostHelperWatchPart,
 };
 bindUtil(host);
 
@@ -205,6 +207,12 @@ api.addEventListener("executed", ({ detail }) => {
         // waitLocal); one that landed nothing (an empty answer, a result seen before, a file that would not load) is not
         if (ed && pid) Promise.resolve(landed).then(() => { if (ed.history.length > h0) markLanded(ed, pid); }).catch(() => { /* the area waits for its prompt's end */ });
     }
+    // a helper prompt's output (host_helperwatch.js): one whose wait was ended (lost, cancelled) lands nowhere, any
+    // other ends the watch of its prompt
+    if ((out.inpaint_text || out.inpaint_mask) && detail.prompt_id != null) {
+        if (host._helperEnded.has(String(detail.prompt_id))) return;
+        host.helperAnswered(detail.prompt_id);
+    }
     // a closed tab's helper output (queued while it closed: no prompt id was known) lands nowhere either
     const forNode = (info) => (info && info.canvas_node != null && host._closedNodes.has(String(info.canvas_node)) ? null
         : host.editorById(info && info.canvas_node) || host.editorByPrompt(detail.prompt_id) || host.editor);
@@ -237,8 +245,10 @@ function closedPromptEnded(detail) {
     const id = detail && detail.prompt_id != null ? String(detail.prompt_id) : null;
     return !!id && host._closedPrompts.delete(id);
 }
-api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("success", detail); });
-api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("interrupted", detail); });
+api.addEventListener("execution_success", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("success", detail); host.helperEvent("success", detail); });
+api.addEventListener("execution_interrupted", ({ detail }) => { localRunEnded(detail); closedPromptEnded(detail); host.pictureRunEvent("interrupted", detail); host.helperEvent("interrupted", detail); });
+// the helper prompts a document waits for (host_helperwatch.js): a job ComfyUI will never answer ends its wait
+setInterval(() => { host.watchHelpers().catch((err) => console.warn("helper watch", err)); }, 1000);
 api.addEventListener("status", ({ detail }) => {
     const info = detail && detail.status && detail.status.exec_info;
     if (info && info.queue_remaining === 0) for (const ed of host.editors()) { if (ed._localRuns) ed._localRuns.clear(); if (ed.runProgress) ed.runProgress.idle(host.liveRunIds()); }

@@ -73,7 +73,8 @@ export const SelectCommandsPart = {
             const ok = await until(() => !ed.segmentPending, clampInt(a.timeout, 5, 3600, 300) * 1000);
             if (!ok) throw new Error("segmentation timed out: " + ed.status);
             await until(() => !/^(Segmenting|Asking)/.test(ed.status || ""), 30000);
-            if (/failed|could not/i.test(ed.status)) throw new Error(ed.status);
+            // a wait the host ended (host_helperwatch.js: the job gone from ComfyUI, the connection lost, a Cancel) made no selection either
+            if (/failed|could not|no longer holds its job|was lost|was interrupted|cancelled\.|without an answer/i.test(ed.status)) throw new Error(ed.status);
             return { selection: bounds(ed), status: ed.status };
         },
     },

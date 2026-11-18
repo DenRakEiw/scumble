@@ -13717,6 +13717,92 @@ if (!b || "model_name" in b) throw new Error("an older pack got model_name: " + 
 await run("close_document", { doc: d.id, force: true });
 return { current: a.model_name, older: Object.keys(b) };
 """),
+    ("a_helper_job_comfyui_never_answers_ends_its_wait", """
+// issue DenRakEiw/scumble#15 (2026-11-17): SAM3 hung, ComfyUI was restarted, and the tab stayed on "Segmenting ..."
+// until Scumble was restarted; Cancel knew nothing of the job. A helper prompt's wait now ends on a Cancel, an
+// interrupt, a lost connection and a job the server no longer holds, and an output the socket missed is read from
+// /history (renderer/editor/host_helperwatch.js)
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 200, height: 120, doc: d.id });
+const { api } = await import("./editor/host.js");
+const types0 = host._types, queue0 = api.queuePrompt, fetch0 = api.fetchApi, server0 = host.server;
+let nextId = "";
+const held = new Set(), history = {}, posts = [];
+const json = (o) => new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
+host._types = { ...(types0 || {}), InpaintCanvasLoadRef: { nodeData: { input: { required: {} } } }, InpaintCanvasMaskOut: { nodeData: { input: { required: {} } } },
+    SAM3Segment: { nodeData: { input: { required: { image: ["IMAGE"], prompt: ["STRING", { default: "" }], output_mode: [["Merged", "Separate"], { default: "Merged" }], confidence_threshold: ["FLOAT", { default: 0.5 }] } } } } };
+// the server takes each job and never answers it
+api.queuePrompt = async () => { held.add(nextId); return { prompt_id: nextId, node_errors: {} }; };
+api.fetchApi = async (path, init) => {
+    const m = (init && init.method) || "GET";
+    if (path === "/queue" && m === "GET") return json({ queue_running: [...held].map((id) => [0, id]), queue_pending: [] });
+    if (path.startsWith("/history/")) { const id = decodeURIComponent(path.slice(9)); return json(history[id] ? { [id]: history[id] } : {}); }
+    if (path.startsWith("/api/jobs/") || path === "/interrupt" || path === "/queue") { posts.push(m + " " + path); return json({ cancelled: true }); }
+    return fetch0.call(api, path, init);
+};
+const start = async (id) => {
+    nextId = id; ed.segInput.value = "the sky";
+    await ed.segmentByText();
+    if (!ed.segmentPending || !ed.segBtn.disabled) throw new Error(id + ": the selection did not start: " + ed.status);
+};
+const free = (what) => { if (ed.segmentPending || ed.segBtn.disabled) throw new Error(what + ": the document still waits: " + ed.status); };
+const until = async (fn, ms) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) return false; await wait(100); } return true; };
+const mask = (name) => ({ inpaint_mask: [{ filename: name, purpose: "segment", canvas_node: String(ed.node.id) }] });
+const out = {};
+try {
+    // a Cancel: the job is taken off ComfyUI by its id, the document is free at once, and its late mask lands nowhere
+    await start("h15-cancel");
+    const c = await run("cancel_run", { doc: d.id });
+    free("cancel_run");
+    if (c.cancelled.length !== 1 || c.cancelled[0].label !== "Selection by text" || !/^Selection by text cancelled/.test(ed.status)) throw new Error("cancel_run: " + JSON.stringify(c) + " / " + ed.status);
+    if (!posts.some((p) => p === "POST /api/jobs/h15-cancel/cancel")) throw new Error("the job was not taken off the server: " + posts.join(", "));
+    const said = ed.status;
+    api.dispatch("executed", { prompt_id: "h15-cancel", node: "seg_out", output: mask("late.png") });
+    await wait(200);
+    if (ed.status !== said) throw new Error("a cancelled job's late mask was taken: " + ed.status);
+    out.cancel = ed.status;
+    // an interrupt on the server
+    await start("h15-int");
+    api.dispatch("execution_interrupted", { prompt_id: "h15-int" });
+    free("interrupt");
+    if (!/was interrupted on your ComfyUI/.test(ed.status)) throw new Error("interrupt: " + ed.status);
+    // a job that ended while the socket was away: its output is in /history and goes to the editor as its event would
+    await start("h15-hist");
+    held.delete("h15-hist");
+    history["h15-hist"] = { outputs: { seg_out: mask("missing.png") }, status: { messages: [] } };
+    api.dispatch("execution_success", { prompt_id: "h15-hist" });
+    if (!(await until(() => !ed.segmentPending, 6000))) throw new Error("history: the wait did not end: " + ed.status);
+    if (!host._helperAnswered.has("h15-hist")) throw new Error("history: the output was not handed on: " + ed.status);
+    await until(() => !/^Segmenting/.test(ed.status || ""), 5000);
+    // the connection lost: the server the job was queued on is disconnected
+    host.setServerStatus({ state: "connected", url: "http://h15.invalid:8188" });
+    await start("h15-lost");
+    await wait(1200);   // the watch has seen the job on that server
+    host.setServerStatus({ state: "disconnected", url: "http://h15.invalid:8188" });
+    if (!(await until(() => !ed.segmentPending, 4000))) throw new Error("lost: the wait did not end: " + ed.status);
+    free("lost");
+    if (!/the connection to your ComfyUI was lost/.test(ed.status) || ed.statusKind !== "error") throw new Error("lost: " + ed.status + " (" + ed.statusKind + ")");
+    host.setServerStatus(server0);
+    // ComfyUI restarted: its queue and its history know nothing of the job
+    await start("h15-gone");
+    const row = await until(() => host.runsOf(ed).some((t) => t.helper && t.helper.id === "h15-gone"), 4000);
+    if (!row) throw new Error("the job got no row in the title row");
+    held.clear();
+    if (!(await until(() => !ed.segmentPending, 15000))) throw new Error("gone: the wait did not end: " + ed.status);
+    free("gone");
+    if (!/no longer holds its job/.test(ed.status) || ed.statusKind !== "error") throw new Error("gone: " + ed.status + " (" + ed.statusKind + ")");
+    if (host.runsOf(ed).length) throw new Error("gone: a row stayed in the title row");
+    if (host.generateNewBlocked(ed)) throw new Error("gone: the document is still held: " + host.generateNewBlocked(ed));
+    out.gone = ed.status;
+} finally {
+    host._types = types0; api.queuePrompt = queue0; api.fetchApi = fetch0; host.setServerStatus(server0);
+    ed.segmentPending = null; ed.segBtn.disabled = false;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("the_size_ceiling_refuses_before_it_costs", """
 const d = await run("new_document");
 const ed = ednow(d.id);

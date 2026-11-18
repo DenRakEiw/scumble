@@ -328,11 +328,15 @@ export const HostGeneratePart = {
     },
 
     /**
-     * Cancel the runs in the title row (API runs, and the picture runs on the user's ComfyUI that hold a document: the
-     * pass, an upscale of the whole picture, whose job is taken off the server), every tab's or only `editor`'s
+     * Cancel the runs in the title row (API runs, the picture runs on the user's ComfyUI that hold a document: the
+     * pass, an upscale of the whole picture, whose job is taken off the server, and the helper prompts there: a
+     * selection by text, the object map, an upsampling, a cutout), every tab's or only `editor`'s
      * (the cancel_run command, docs/PLAN_0_1_42.md F2a). Returns the tokens it cancelled.
      */
     cancelRuns(editor) {
+        // a helper prompt on the user's ComfyUI (a selection by text, a cutout: host_helperwatch.js) gets its row now, so
+        // it is among the runs however young it is
+        this.helperRows(true);
         const runs = Array.from(this._providerRuns).filter((t) => !editor || t.editor === editor);
         for (const t of runs) t.cancelled = true;
         // Each area (eacharea.js): the areas not yet sent never go
@@ -340,6 +344,8 @@ export const HostGeneratePart = {
         // Florence-2's describe jobs (host_vlm.js): the one running stops at its next step, waiting names never go
         if (this.cancelDescribes) this.cancelDescribes(editor);
         for (const t of runs) if (t.runId && window.scumble && window.scumble.providers && window.scumble.providers.cancel) window.scumble.providers.cancel(t.runId).catch(() => {});
+        // the helper prompts among them: off ComfyUI, and their documents free at once
+        this.cancelHelpers(runs);
         return runs;
     },
 
