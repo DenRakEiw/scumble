@@ -100,7 +100,7 @@ card that says why:
 - **`resize_image`, `rotate_canvas`, `flip_canvas`, `straighten_canvas`** - they change the whole picture,
   every layer with it (one undo step each); the card of `resize_image` shows the size it was asked for.
 - **Removing, merging, transforming (`transform_layer`) or editing a layer (or its mask) that is not the
-  assistant's own**, cutting pixels out of one (`copy_to_layer` with `cut`), pasting into another tab (which
+  assistant's own** (`set_layer`'s name, visibility, opacity, blend, role, colour match, alpha lock and clip), cutting pixels out of one (`copy_to_layer` with `cut`), pasting into another tab (which
   *Undo this turn* does not reach), unlocking a layer you locked, moving or retexting a locked one, `undo` /
   `redo`, reading a file, an export with a path, and the global settings.
 - **`cancel_run`** - always: the runs it would cancel are almost always yours (the assistant's own runs are refused

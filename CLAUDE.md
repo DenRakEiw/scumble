@@ -100,7 +100,8 @@ code.
   recipe from another tab, the assistant's deleted chat, describe as a read and `set_layer {role}`'s one undo
   step); its source diff read by the main loop, the plain-Node tests and lint / types / recipes / boxes /
   assistant on the merged state. None of it run live. Left of item 73: the shoulds under `renderer/`, the larger
-  ones, the 58 nice; and one that needs the user's word (may the assistant set `clip` on a user's layer unasked).
+  ones, the 58 nice. The one that needed the user's word is answered and built (2026-11-18, "ok"): `set_layer`'s
+  `clip` on a layer the assistant did not make asks, as the soft fields do (`policy.js` `setLayer`).
 - **2026-11-18, later: Deep paint's Stay on surface built on `main` (local, not pushed), for the next update.** The
   user painted a circle on a wall around an arm and expected the paint under the arm ("ja" to the switch). A
   brush or eraser stroke on a Deep paint layer lands only on the surface under its first point: `inpaint_surface.js`

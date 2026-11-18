@@ -1441,6 +1441,9 @@ async function main() {
             ["set_layer", { layer: "Lyours", opacity: 50 }, "ask"],
             ["set_layer", { layer: "Lmine", match: 60, match_source: "below" }, "auto"],
             ["set_layer", { layer: "Lyours", match: 60 }, "ask"],
+            ["set_layer", { layer: "Lmine", clip: true }, "auto"],
+            ["set_layer", { layer: "Lyours", clip: true }, "ask"],
+            ["set_layer", { layer: "Lyours", clip: false }, "ask"],
             ["set_layer", { layer: "Lyours", x: 10 }, "auto"],
             ["set_layer", { layer: "Llocked", x: 10 }, "ask"],
             ["set_layer", { layer: "Lmine", locked: false }, "ask"],
@@ -1639,6 +1642,7 @@ async function main() {
             // (review assistant-glb/set-layer-clip-auto-and-role-double-undo) the editor's setLayerRole pushes its own step:
             // role alone gets none from the shell (a second was an empty one), beside another soft field the field's step
             ["set_layer", { role: "reference" }, null], ["set_layer", { role: "reference", opacity: 50 }, "layers"], ["set_layer", { role: "none", match: 60 }, "match"],
+            ["set_layer", { clip: true }, null], ["set_layer", { clip: true, opacity: 50 }, "layers"],
             // (review p1-lanes-bce/assistant-describe-not-in-reads) describe writes nothing the editor undoes, with to_prompt or without
             ["describe", {}, null], ["describe", { to_prompt: true }, null],
             // F2b: set_filter pushes its own step (the type's, or the parameters')

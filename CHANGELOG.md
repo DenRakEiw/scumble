@@ -44,6 +44,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   back in the list when that answer ends. Asking the assistant to describe the picture no longer shows
   "Undo this turn" (nothing changed) and no longer takes the previous turn's undo away; a layer's role set by the
   assistant is one undo step, not two.
+- **Assistant: clipping a layer you made to the layer below, or releasing it, now asks first**, as changing its
+  opacity or blend mode does. On a layer the assistant made itself it goes on without asking.
 
 ## 0.1.57 - 2026-11-16
 

@@ -479,7 +479,9 @@ function extMatches(ext, format) {
 function setLayer(call, facts) {
     const args = call.args || {};
     const target = layerOf(call, facts);
-    const soft = SET_LAYER_SOFT.filter((k) => args[k] !== undefined);
+    // `clip` changes what the layer shows as the soft fields do, so it asks with them; it is not in SET_LAYER_SOFT
+    // because the editor's setLayerClip records its own undo step (undoStep below)
+    const soft = [...SET_LAYER_SOFT, "clip"].filter((k) => args[k] !== undefined);
 
     if (args.locked === false) return ASK("unlocks a layer you locked", card(call, facts, ["locked"]));
     // a locked layer against geometry is caught in `decide`, before any row runs
