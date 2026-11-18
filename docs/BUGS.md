@@ -10,10 +10,11 @@ the ones that were performance work.
 ---
 
 
-### A cancelled save still reads as a failure in the status line (found 2026-11-10, read)
-`renderer/shell.js` line 25 holds a literal backspace character where `\\b` was meant (twice, in the regex for "was cancelled / is already being saved / is already being opened"), so it never matches and those lines take `failKind`'s colour instead of plain. A one-character fix, left for the update after 0.1.54 because the installer was already built and gated.
-
 ## Fixed, waiting for its release
+
+### The `depth` gate ran a test that does not exist (found 2026-10-23, K0c; fixed 2026-11-18)
+`tools/run_gates.sh` had no rule for `depth`, so its default branch ran `python tools/depth_test.py`, which never
+existed, and the gate could only fail. It now runs `node tools/depth_test.js` (plain Node, no app).
 
 ### Deep paint: three small points of the 0.1.56 release review (fixed 2026-11-16 on `quick-wins`, lane C)
 
@@ -104,13 +105,23 @@ street, a car, a table with a cup; 2416 x 1728, maps 768 x 549) and in the gates
   began and swapped in. Not built.
 - **The pixels of the model's ramp at a depth edge belong to neither side**, so a line of the surface up to two map
   pixels wide beside an object in front can stay unpainted.
-- **Only what is connected is reached.** A wall behind a pole that runs through the whole picture is two regions. A
-  fix: when the region is a plane, take every smooth pixel on that plane. Not built.
+- **Only what is connected is reached.** A wall behind a pole that runs through the whole picture is two regions.
+  Two ways to reach the other part were built and taken out again on 2026-11-18, both on the hand-test picture
+  (`dist/testfiles/handtest_deeppaint_profile`, doc 3): (1) fit one plane to the region and take every pixel on
+  it: MoGe-2's planes are not flat enough, the table, the street and the house front lie 6 to 12 pixel-lengths
+  (root mean square) off their best plane, a cup 5.8, so no limit tells a plane from a curved thing; (2) carry
+  the surface's line on along each row and column behind what stands clearly in front and go on where the depth
+  comes back onto it with a jump: it works on the synthetic wall with a pole, but on the picture it took the
+  newspaper lying on the table back in (its edge stands in front, its sheet lies on the line), which the first
+  build leaves out. What would tell them apart is knowing the thing in front as an object (SAM2's object map),
+  not built.
 - **A shallow crease is one surface** (a ramp of a few degrees resting on a floor), and so is a paper lying flat on a
   table when the model gives it no depth of its own. A thing narrower than the reach (about 9 map pixels) is found
   with a shorter reach, where a contact no longer ends it.
-- Only the brush and the eraser: a gradient, a shape, Fill and the bucket on a Deep paint layer are not limited, and
-  no command sets the switch or paints a stroke.
+- The brush, the eraser and the bucket (since 2026-11-18). A gradient and the shapes refuse a Deep paint layer
+  altogether ("Filter layers have no pixels"), so there is nothing to limit; Fill (Shift+F) has no point to
+  begin on and fills the selection as before. No command sets the switch or paints a stroke. A bucket fill with
+  the switch on goes through the canvas route (the flood's shape at the region's box), not the tile kernel.
 - The node's editor has the switch's row but no Deep paint (its host says `surfaceSupported: false`), so it never shows.
 
 ### Deep paint: small points left from the 0.1.56 release review (found 2026-11-14, read, not run)
@@ -160,14 +171,6 @@ next frame at 15000 x 10000 (`perf_test.py` row `whole_1to1_lights`, 383 before 
 `docs/measurements/k12_2026-11-06/after/summary.txt`). There since relight shipped in 0.1.47, not a regression. A fix
 changes where the light's stats come from (say the behaviour first); the user places it (`docs/PLAN_WASM_BUILD.md` §7
 "Stop 5").
-
-### The `depth` gate runs a test that does not exist (found 2026-10-23, read, K0c)
-
-`tools/run_gates.sh` has no rule of its own for `depth`, so its default branch runs `python tools/depth_test.py`,
-which does not exist: only `tools/depth_test.js` does (`docs/TESTING.md` lists the `.py` as the gate). The gate can
-only fail (Python's "can't open file"), and whatever `depth_test.js` checks is not in any gate run. Fix: a rule
-`depth) node tools/depth_test.js` in `run_gates.sh` if the Node test is the gate (it needs no app), or the Python
-test written; then TESTING.md's line. Outside the kernel plan (`docs/PLAN_WASM_BUILD.md` §4.12).
 
 ### A relight recipe imported or saved under a new id is accepted and never run (found 2026-10-12, read)
 

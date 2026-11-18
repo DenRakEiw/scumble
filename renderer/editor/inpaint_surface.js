@@ -342,7 +342,8 @@ export const REGION_SPAN = 4;
  * jump in depth, and no further than the reach onto an object that touches the surface. A start inside such a margin
  * (or on something narrower than the reach) begins from what the direct test reaches around it, and with a shorter
  * reach when that finds next to nothing. A pixel the mask drops (the sky) is one surface with the dropped pixels
- * around it.
+ * around it. Only what is connected is reached: a part of the same surface behind something that cuts it in two is
+ * another region (two ways to follow it there were tried and dropped, docs/BUGS.md).
  * -> { mask (255 on the surface), w, h, count }, or null when the map cannot say
  * @param {{ data: Uint16Array, w: number, h: number, meta: { lo: number[], hi: number[], f: number } }} pmap packPoints' map
  * @param {{ data: Uint8Array|Uint8ClampedArray, w: number, h: number }|null} nmap the normals map, for its mask (same size), or null

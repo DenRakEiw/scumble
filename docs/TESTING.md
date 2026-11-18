@@ -165,8 +165,8 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `wand_and_bucket_flood_a_region_not_the_image` require `sel_combine` calls on tiles while the route is on Rust
   (`InpaintEditor.pxCalls`). `px_jobs.py` times the window's combine per row (`combine`, `combineN` in the JSON) and
   checks the route ran; `ab_median.py` takes `combine` as the `selCombine` route's kernel row and prints "not touched by
-  the route" for a row whose combine ran in neither arm. The `depth` gate has no script of its own (`docs/BUGS.md`):
-  run `node tools/depth_test.js` in its place.
+  the route" for a row whose combine ran in neither arm. The `depth` gate is `node tools/depth_test.js` (plain Node, no
+  app; it had no rule in `run_gates.sh` until 2026-11-18 and could only fail).
   W1 (the PNG writer's filter choice in SIMD lanes, `crates/px/src/png.rs` `row_filter` / `lanes`, no ABI change):
   `node tools/px_test.js`'s `pngFilterCases` twin `png_filter_rows` on both builds against `kernels_js.js`
   `pngFilterRows` (each case also at an odd offset), that twin against px_test's own `reference.pngFilterRows`, and the

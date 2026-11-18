@@ -84,6 +84,16 @@ code.
 
 ## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
 
+- **2026-11-18, evening: the user's four quick wins ("baue das"), on `main`, local.** (1) Stay on surface reaching
+  a part of the surface cut off by what stands in front: **not built**, two ways tried on the hand-test picture and
+  taken out (a plane fit: MoGe-2's planes are 6-12 pixel-lengths off flat; following the surface's line behind an
+  occluder: took the newspaper on the table back in); `docs/BUGS.md` has both, the way left is SAM2's object map.
+  (2) Stay on surface for the **bucket** (`bucketFillNow`: the flood's shape clipped by `surfaceClipInto`, the
+  canvas route); a gradient and the shapes refuse Deep paint layers, Fill has no start point. (3) The cancelled
+  save's line was fixed in 0.1.57 already; its stale BUGS.md entry is gone. (4) The `depth` gate has its rule in
+  `run_gates.sh` (`node tools/depth_test.js`). Gates: lint, types, depth, wrap, deeppaint, brush, editor on tiles,
+  deeppaint and editor on canvas, all PASS. A background agent took a small package of item 73 in a worktree (the
+  user: "evtl noch einen einfachen teil"); its branch is merged only after its report is read.
 - **2026-11-18, later: Deep paint's Stay on surface built on `main` (local, not pushed), for the next update.** The
   user painted a circle on a wall around an arm and expected the paint under the arm ("ja" to the switch). A
   brush or eraser stroke on a Deep paint layer lands only on the surface under its first point: `inpaint_surface.js`

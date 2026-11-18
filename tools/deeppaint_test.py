@@ -945,6 +945,29 @@ JS = r"""
                         e4.setTool("erase");
                         await run4(520, 120);
                         check("stay on surface: the eraser takes only the surface it began on", a4(440) === 0 && a4(200) === 255, [a4(200), a4(440)]);
+                        // the bucket: every colour counts (tolerance 255), so only the surface under the click limits the fill
+                        {
+                            const DB = e4.addSurfaceLayer();
+                            e4.activeLayerId = DB.id; e4.renderLayers();
+                            e4.setTool("bucket");
+                            check("stay on surface: the switch shows with the bucket", !!e4.surfaceStayRow && !e4.surfaceStayRow.hidden);
+                            const keepFill = { ...e4.fillOpts };
+                            const ba = (x, y) => e4.layers.find((l) => l.id === DB.id).px.readRect(x, y, 1, 1).data[3];
+                            try {
+                                e4.fillOpts.tolerance = 255; e4.fillOpts.contiguous = true;
+                                await e4.bucketFill(200, 240);
+                                await settle(e4);
+                                check("stay on surface: the bucket fills the surface under the click", ba(200, 240) === 255 && ba(60, 380) === 255, [ba(200, 240), ba(60, 380), e4.status]);
+                                check("stay on surface: the bucket fills nothing beyond the jump in depth or in the sky", ba(440, 240) === 0 && ba(200, 30) === 0, [ba(440, 240), ba(200, 30)]);
+                                e4.surfaceStay = false;
+                                await e4.bucketFill(200, 240);
+                                await settle(e4);
+                                check("stay on surface off: the bucket fills what the colour reaches", ba(440, 240) === 255 && ba(200, 30) === 255, [ba(440, 240), ba(200, 30)]);
+                            } finally {
+                                Object.assign(e4.fillOpts, keepFill);
+                                e4.surfaceStay = true;
+                            }
+                        }
                         // a paint layer is not limited: the switch belongs to Deep paint
                         e4.setTool("paint");
                         const PL = e4.addPaintLayer();

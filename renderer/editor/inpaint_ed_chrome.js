@@ -318,14 +318,14 @@ export class ChromePart {
         try { if (localStorage.getItem("ipc.surfaceStay") === "0") this.surfaceStay = false; } catch (_) { /* no storage */ }
         const stay = document.createElement("input");
         stay.type = "checkbox"; stay.checked = this.surfaceStay;
-        stay.title = "Stay on surface: a stroke lands only on the surface it begins on. What lies in front of it (an arm before a wall) or behind it stays free. Off: the stroke paints every surface under the brush";
+        stay.title = "Stay on surface: a stroke or a bucket fill lands only on the surface it begins on. What lies in front of it (an arm before a wall) or behind it stays free. Off: it paints every surface under it";
         stay.addEventListener("change", () => {
             this.surfaceStay = stay.checked;
             try { localStorage.setItem("ipc.surfaceStay", stay.checked ? "1" : "0"); } catch (_) { /* ignore */ }
             this.root.focus({ preventScroll: true });
         });
         this.surfaceStayBox = stay;
-        this.surfaceStayRow = row("paint erase", stay, "Stay on surface");
+        this.surfaceStayRow = row("paint erase bucket", stay, "Stay on surface");
         const gtype = selectInput(["linear", "radial"], "linear", "Gradient shape");
         gtype.addEventListener("change", () => { this.gradientOpts.type = gtype.value; });
         row("gradient", "Type", gtype);
@@ -578,10 +578,10 @@ export class ChromePart {
         this.optsHint.textContent = hints[tool] || "";
     }
 
-    /** The Stay on surface switch shows with the brush or the eraser while the active layer is a Deep paint layer. */
+    /** The Stay on surface switch shows with the brush, the eraser or the bucket while the active layer is a Deep paint layer. */
     syncSurfaceStayRow() {
         if (!this.surfaceStayRow) return;
-        const on = (this.tool === "paint" || this.tool === "erase") && this.hasOwnPixels(this.activeLayer());
+        const on = (this.tool === "paint" || this.tool === "erase" || this.tool === "bucket") && this.hasOwnPixels(this.activeLayer());
         if (this.surfaceStayRow.hidden === on) this.surfaceStayRow.hidden = !on;
     }
 
