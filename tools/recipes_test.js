@@ -1123,6 +1123,37 @@ async function main() {
         check("fromWorkflow: box_prompt's consumer takes the plain prompt, elements' link goes, setting_1 is Settings row 1",
             eq(r.prompt["2"].inputs.prompt, ["1", 7]) && !("bounding_boxes" in r.prompt["2"].inputs) && r.settings.length === 1 && r.settings[0].index === 1 && r.settings[0].node === "3"
             && r.notes.some((n) => /box_prompt/.test(n)), short({ inputs: r.prompt["2"].inputs, settings: r.settings, notes: r.notes }));
+
+        // (review main-net/workflow-import-drops-rerouted-and-fanout-settings) setting_1 through a Reroute into one
+        // sampler's steps and directly into a second sampler's steps (a fan-out), setting_2 through a bypassed node into
+        // cfg: every input is a Settings row with the value its widget held, none still reads the canvas node
+        const wf2 = {
+            nodes: [
+                { id: 1, type: "InpaintCanvas", mode: 0, inputs: [{ name: "result", type: "IMAGE", link: 5 }, { name: "result_local", type: "IMAGE", link: null }],
+                    outputs: names.map((n, i) => out(n, "*", i === 13 ? [4, 6] : i === 14 ? [7] : [])), widgets_values: [64, 1024, 16, 16, "{}"] },
+                { id: 2, type: "Decode", mode: 0, inputs: [], outputs: [{ name: "IMAGE", type: "IMAGE", links: [5] }], widgets_values: [] },
+                { id: 3, type: "Sampler", mode: 0, title: "First pass", inputs: [{ name: "steps", type: "INT", widget: { name: "steps" }, link: 10 }, { name: "cfg", type: "FLOAT", widget: { name: "cfg" }, link: 8 }], outputs: [], widgets_values: [28, 4.5] },
+                { id: 4, type: "Sampler", mode: 0, inputs: [{ name: "steps", type: "INT", widget: { name: "steps" }, link: 6 }], outputs: [], widgets_values: [12, 7] },
+                { id: 9, type: "Reroute", mode: 0, inputs: [{ name: "", type: "*", link: 4 }], outputs: [{ name: "", type: "*", links: [10] }] },
+                { id: 10, type: "FloatPass", mode: 4, inputs: [{ name: "value", type: "FLOAT", link: 7 }], outputs: [{ name: "FLOAT", type: "FLOAT", links: [8] }], widgets_values: [] },
+            ],
+            links: [[4, 1, 13, 9, 0, "*"], [10, 9, 0, 3, 0, "INT"], [6, 1, 13, 4, 0, "INT"], [7, 1, 14, 10, 0, "FLOAT"], [8, 10, 0, 3, 1, "FLOAT"], [5, 2, 0, 1, 0, "IMAGE"]],
+        };
+        const info2 = {
+            InpaintCanvas: info.InpaintCanvas, Decode: { input: { required: {} } }, FloatPass: { input: { required: { value: ["FLOAT", {}] } } },
+            Sampler: { input: { required: { steps: ["INT", { default: 20, min: 1, max: 100 }], cfg: ["FLOAT", { default: 8, min: 0, max: 100 }] } } },
+        };
+        r = recipes.fromWorkflow(wf2, info2, META12);
+        const rows = r.settings.map((s) => [s.index, s.node, s.input, s.label]);
+        const dangling = Object.entries(r.prompt).flatMap(([id, n]) => Object.entries(n.inputs).filter(([, v]) => Array.isArray(v) && String(v[0]) === "1" && +v[1] >= 13).map(([k]) => `${id}.${k}`));
+        check("fromWorkflow: a setting through a Reroute, through a bypassed node and into two inputs is a row per input, each with its widget's value",
+            eq(rows, [[1, "3", "steps", "First pass · steps"], [1, "4", "steps", "Sampler · steps"], [2, "3", "cfg", "First pass · cfg"]])
+            && r.prompt["3"].inputs.steps === 28 && r.prompt["4"].inputs.steps === 12 && r.prompt["3"].inputs.cfg === 4.5 && !dangling.length && !("9" in r.prompt) && !("10" in r.prompt),
+            short({ rows, inputs: [r.prompt["3"].inputs, r.prompt["4"].inputs], dangling }));
+        // the imported recipe queues: toPrompt wires each row back to its setting slot, both rows of slot 1 to setting_1
+        const queued = recipes.toPrompt({ ...r, id: "imported" });
+        check("... and the recipe wires the rows back for a run: both steps inputs to setting_1, cfg to setting_2",
+            eq(queued["3"].inputs.steps, ["1", 13]) && eq(queued["4"].inputs.steps, ["1", 13]) && eq(queued["3"].inputs.cfg, ["1", 14]), short([queued["3"].inputs, queued["4"].inputs]));
     });
 
     // ---- 13. boxes in the prompt on the user's ComfyUI: a recipe's `boxes` (the input the node's box_prompt goes to) ----
