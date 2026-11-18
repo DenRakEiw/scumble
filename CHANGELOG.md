@@ -4,6 +4,8 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+## 0.1.58 - 2026-11-18
+
 - **Deep paint: Stay on surface.** A stroke of the brush or the eraser and a bucket fill on a Deep paint layer now
   land only on the surface they begin on: paint a wall and the arm in front of it stays free, paint a table and the cup standing on it
   stays free. The switch is in the options bar while a Deep paint layer is active and is on by default; off, they
