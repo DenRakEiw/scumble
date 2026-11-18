@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-11-18: 0.1.58 released; the Store update and the MCP Registry open)
+## Where things stand (2026-11-18: 0.1.58 released; the Store update open)
 
 - **0.1.58 is out (2026-11-18; the user: "ok, dann lass den release machen").** It holds the three entries below
   (Stay on surface for brush, eraser and bucket; the fix of issue #15; the small package of item 73) and the
@@ -92,14 +92,14 @@ code.
   start test skipped, the user's Scumble was open); the post `v0-1-58` with the manual sync and hub 0.1.58
   (`Portfolio_vercel` `962b155`); the node's editor pushed from a clone (`ComfyUI-InpaintCanvas`
   `f7f278f..d8fc370`, no pyproject bump), `INPAINT_CANVAS_REF` moved (`c2afbd0e`), `server.json` 0.1.58
-  (`ef767a28`). Exe gates `rel58-exe-*` side by side (45 gates per backend), the reds rerun serially
+  (`ef767a28`), published to the MCP Registry (the user's device code; 0.1.58 latest, 0.1.57 was never published
+  there; the CLI is in session `2d41a0a1`'s scratchpad `mcppub/`, 1.8.1). Exe gates `rel58-exe-*` side by side (45 gates per backend), the reds rerun serially
   (`rel58-exe-rt`, `rel58-exe-rc`) and, after the rebuild, `rel58b-exe-t` / `rel58b-exe-c`: all green but
   comfyview's known control step on tiles. **Found by them:** the helper watch's module-scope `setInterval` in
   `host.js` kept every plain-Node test that imports the host alive (`limit` ran into its 420 s timeout, `relight`
   into 60 s); the timer is `unref`ed now (`85ea5c9f`, the app unchanged) and the release was rebuilt from it.
   **Open:** the Store update (`dist/Scumble-0.1.58.msix`, `dist/store-listing/whats-new-0.1.58.txt`, the user's
-  upload); the MCP Registry publish (0.1.57's is open too: `mcp-publisher login github` with the user ready, then
-  `publish`); the live node folder is at `f7f278f` (0.1.57), a fast-forward to `d8fc370` reloads the node in the
+  upload); the live node folder is at `f7f278f` (0.1.57), a fast-forward to `d8fc370` reloads the node in the
   user's ComfyUI (on the user's word); six merged agent worktrees under `.claude/worktrees/` (asked); the user's
   own test of Stay on surface on the arm picture (after the release, a fix in the next update if needed). Not
   run live: the #15 fix against a real ComfyUI restart, the review package against any provider.
