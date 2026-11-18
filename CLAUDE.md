@@ -82,8 +82,27 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-10-24: 0.1.51 released, `main` merged into `wasm-kernels`; the Store update open)
+## Where things stand (2026-11-18: 0.1.58 released; the Store update and the MCP Registry open)
 
+- **0.1.58 is out (2026-11-18; the user: "ok, dann lass den release machen").** It holds the three entries below
+  (Stay on surface for brush, eraser and bucket; the fix of issue #15; the small package of item 73) and the
+  assistant's `clip` question (`528e2022`). Tag v0.1.58 on `85ea5c9f`, published 2026-11-18T11:22:55Z, title
+  "Scumble 0.1.58: paint that stays on its surface, and helper jobs that end when ComfyUI is gone"; the tag build
+  green, the eight assets checked (the zip's layout, the `.mcpb` 0.1.58 with 124 tools, `latest.yml`; the zip's
+  start test skipped, the user's Scumble was open); the post `v0-1-58` with the manual sync and hub 0.1.58
+  (`Portfolio_vercel` `962b155`); the node's editor pushed from a clone (`ComfyUI-InpaintCanvas`
+  `f7f278f..d8fc370`, no pyproject bump), `INPAINT_CANVAS_REF` moved (`c2afbd0e`), `server.json` 0.1.58
+  (`ef767a28`). Exe gates `rel58-exe-*` side by side (45 gates per backend), the reds rerun serially
+  (`rel58-exe-rt`, `rel58-exe-rc`) and, after the rebuild, `rel58b-exe-t` / `rel58b-exe-c`: all green but
+  comfyview's known control step on tiles. **Found by them:** the helper watch's module-scope `setInterval` in
+  `host.js` kept every plain-Node test that imports the host alive (`limit` ran into its 420 s timeout, `relight`
+  into 60 s); the timer is `unref`ed now (`85ea5c9f`, the app unchanged) and the release was rebuilt from it.
+  **Open:** the Store update (`dist/Scumble-0.1.58.msix`, `dist/store-listing/whats-new-0.1.58.txt`, the user's
+  upload); the MCP Registry publish (0.1.57's is open too: `mcp-publisher login github` with the user ready, then
+  `publish`); the live node folder is at `f7f278f` (0.1.57), a fast-forward to `d8fc370` reloads the node in the
+  user's ComfyUI (on the user's word); six merged agent worktrees under `.claude/worktrees/` (asked); the user's
+  own test of Stay on surface on the arm picture (after the release, a fix in the next update if needed). Not
+  run live: the #15 fix against a real ComfyUI restart, the review package against any provider.
 - **2026-11-18, evening: the user's four quick wins ("baue das"), on `main`, local.** (1) Stay on surface reaching
   a part of the surface cut off by what stands in front: **not built**, two ways tried on the hand-test picture and
   taken out (a plane fit: MoGe-2's planes are 6-12 pixel-lengths off flat; following the surface's line behind an
