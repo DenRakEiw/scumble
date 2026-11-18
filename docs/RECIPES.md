@@ -977,7 +977,9 @@ ratio no steeper than 3:1; the 2.6 OpenAI, fal, ToAPIs and Comfy Cloud variants 
 gets more context instead of an answer of another shape), **GPT Image 2 2048 with the same budget** (the size rules of the
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
 for lite** (its `image_size` is a free size with an area range, not a side limit),
-**Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), **Seedream on
+**Seedream 5.0 on Comfy Cloud 2496 / 4992 with the node's own pixel range** (pro 921,600 to 4,624,220 px, lite
+3,686,400 to 16,777,216: what the partner node's `execute()` takes, read in ComfyUI v0.45.2; the sides alone let a
+near-square crop past it), **Seedream on
 ModelArk 4096 in 16 px steps with the model's own pixel range as budget and floor** (5.0 pro and 5.5 921,600 to
 4,624,220 px, lite 3,686,400 to 16,777,216; see "BytePlus ModelArk" below), **the OpenRouter
 variants of the three GPT recipes 2048 with neither budget nor floor** (OpenRouter takes no pixel

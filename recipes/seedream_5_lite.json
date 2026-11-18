@@ -232,7 +232,9 @@
       "limits": {
         "min": 1024,
         "max": 4992,
-        "step": 2
+        "step": 2,
+        "pixels": 16777216,
+        "minPixels": 3686400
       }
     },
     "openrouter": {
