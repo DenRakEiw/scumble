@@ -88,7 +88,8 @@ const SEEDREAM55_SIZE = { step: 2, max: 8594, minPixels: 921600, maxPixels: 4624
 // image links, g.mask() a MASK link (null without a mask), g.set(key, value) writes an input.
 const SHAPES = {
     OpenAIGPTImageNodeV2(g, v) {
-        g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed);
+        // the node's seed tops out at 2147483647 as Krea's and Seedream's (tools/refs/comfy_cloud/nodes/OpenAIGPTImageNodeV2.json)
+        g.set("prompt", v.prompt); g.set("model", v.model); g.set("n", 1); g.set("seed", v.seed % NODE_SEEDS);
         g.set("model.size", "auto"); g.set("model.background", "auto"); g.set("model.quality", "medium");
         // the node's default; a Complexity row overrides it, and AFTER_PARAMS holds the row to the rule
         if (GPT26.test(v.model)) g.set("model.complexity", "high");

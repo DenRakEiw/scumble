@@ -596,6 +596,11 @@ async function runToapis(req, verb = "edit") {
             check(`${r.id}: the rows set Complexity low and Quality max`, low["model.complexity"] === "low" && low["model.quality"] === "max", short(low));
             const bare = await graphOf(editReq("comfycloud", v, { params: {} }));
             check(`${r.id}: a call that names no row still sends model.complexity high (the node requires it) and Quality medium`, bare.inputs["model.complexity"] === "high" && bare.inputs["model.quality"] === "medium" && !specBad(bare.inputs, bare.graph).length, short(bare.inputs));
+            // (review provider-refusals/comfycloud-gpt-image-seed-overflow) the editor's seeds reach 2^32 - 1, the node's INT stops at 2147483647
+            const hi = await graphOf(editReq("comfycloud", v, { seed: 3e9 }));
+            const top = await graphOf(editReq("comfycloud", v, { seed: 4294967295 }));
+            check(`${r.id}: a seed of 3e9 and of 2^32 - 1 go inside the node's range (modulo 2^31), inside its spec`,
+                hi.inputs.seed === 3e9 % 2147483648 && top.inputs.seed === 2147483647 && hi.inputs.seed <= SPEC.inputs.seed.max && !specBad(hi.inputs, hi.graph).length, short([hi.inputs.seed, top.inputs.seed, specBad(hi.inputs, hi.graph)]));
             const odd = (await graphOf(editReq("comfycloud", v, { params: paramsOf(v, { "model.complexity": "EXTREME" }) }))).inputs;
             const upper = (await graphOf(editReq("comfycloud", v, { params: paramsOf(v, { "model.complexity": "MEDIUM" }) }))).inputs;
             check(`${r.id}: a value the node does not list goes as high, an upper-case one as itself`, odd["model.complexity"] === "high" && upper["model.complexity"] === "medium", `${odd["model.complexity"]} / ${upper["model.complexity"]}`);
@@ -639,6 +644,8 @@ async function runToapis(req, verb = "edit") {
             const plain = await graphOf(editReq("comfycloud", v, { width: 2048, height: 1152 }));
             const handed = (await graphOf(editReq("comfycloud", v, { width: 2048, height: 1152, params: paramsOf(v, { "model.complexity": "low" }) }))).inputs;
             const inSpec = v.model in SPEC.model_inputs ? specBad(plain.inputs, plain.graph) : [];
+            const hiSeed = (await graphOf(editReq("comfycloud", v, { width: 2048, height: 1152, seed: 3e9 }))).inputs.seed;
+            check(`${id} on Comfy Cloud: a seed of 3e9 goes modulo 2^31 as on 2.6`, hiSeed === 3e9 % 2147483648 && plain.inputs.seed === 42, String(hiSeed));
             check(`${id} on Comfy Cloud: no model.complexity (also when one is handed in), Custom 2048 x 1152, the rest as before${v.model in SPEC.model_inputs ? ", inside the node's spec" : ""}`,
                 !("model.complexity" in plain.inputs) && !("model.complexity" in handed) && plain.inputs.model === v.model && plain.inputs["model.size"] === "Custom" && plain.inputs["model.custom_width"] === 2048 && plain.inputs["model.custom_height"] === 1152 && !inSpec.length,
                 inSpec.join(" | ") || short(handed));
