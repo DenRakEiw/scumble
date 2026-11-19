@@ -133,6 +133,25 @@ turned up in NBA 2K27's early-access build and is in no public NVIDIA SDK (310.9
 GPL-3.0 app (none yet; RTX 40 support was announced for "later this fall"), or a written yes from NVIDIA or Comfy.
 Then look at the routes above again. OpenDLSS-NR loads the 310.8.0 network only and refuses any other.
 
+**Checked again 2026-11-19** (the user asked which of these runs on Linux or a Mac; read only, nothing cloned, built,
+downloaded or run). **Still parked**: nothing below is a cleaner way, every route needs the same extracted weights.
+- OpenDLSS-NR has not moved: the same 4 commits, no releases. Its README asks for Windows, an NVIDIA Ada or newer GPU
+  and a driver exposing `VK_KHR_cooperative_matrix`, so it is neither a Linux nor a Mac route. PR #1 (macOS scripts)
+  was closed unmerged; issue #8 (the command-line tool on Linux with GCC) and issue #12 (the small network of DLL
+  build 310.9.16) are open.
+- MLX-DLSS (iamwavecut, Apache-2.0, last push 2026-10-17, no releases) is the Mac route: MLX / Metal on Apple Silicon
+  (a native app that asks for macOS 26 or newer, a `process-image` command, a local web UI), PyTorch on other GPUs and
+  CPUs (its CI runs the Python side on macOS, Linux and Windows). It reads two builds of `nvngx_dlssnr.dll`:
+  310.8.0.0 (the 71-block network) and 310.9.16.0 (that one and a smaller FP8 network of 31 blocks, its default), and
+  checks the build by checksum before it extracts (`mlxdlss-weights`); its README says the extracted models keep the
+  vendor's terms and must not be redistributed. Its own numbers on an M2 Max at 1080p, temporal video: 6.2-6.3 fps for
+  the large network, 9.9-10.2 for the small one. Pictures and video files only, no game or real-time use.
+- NVIDIA's public DLSS SDK is at v310.9.16 (2026-10-16) and still holds no `nvngx_dlssnr.dll` (`nvngx_dlss`,
+  `nvngx_dlssd`, `nvngx_dlssg` and the Linux libraries only). The file comes with games that ship Neural Rendering,
+  nowhere else that is NVIDIA's own.
+- The user's disk holds one copy, the DLSS5 pack's modified 310.8.SF.0 (below). Whether MLX-DLSS's build check takes
+  that file, and whether its weights are NVIDIA's unchanged, was not tried.
+
 **Found on the way about today's path** (the user's disk, read only, 2026-10-05):
 - `custom_nodes/ComfyUI-DLSS5-Enhancer/runtime/nvngx_dlssnr.dll` is version **310.8.SF.0 and not signed**: a
   community-modified build, not NVIDIA's file; only `nvngx_dlss.dll` (310.8.0) carries NVIDIA's signature. So the

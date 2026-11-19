@@ -103,6 +103,11 @@ code.
   user's ComfyUI (on the user's word); six merged agent worktrees under `.claude/worktrees/` (asked); the user's
   own test of Stay on surface on the arm picture (after the release, a fix in the next update if needed). Not
   run live: the #15 fix against a real ComfyUI restart, the review package against any provider.
+- **2026-11-19: issues, and a second look at the parked reimplementations.** Issue #15 is closed (the user: "ja 15
+  schliesse"; its fix shipped in 0.1.58). Open: #14 (item 74, the reply owed) and #8 (waits for
+  Blueforcer/ComfyUI-DLSS5-Enhancer#17, open and unreviewed on 2026-11-19). The user asked which of the open
+  Neural Rendering reimplementations runs on Linux or a Mac: read again and written down in `docs/PLAN_RTX_VSR.md`
+  "Checked again 2026-11-19"; nothing changed for Scumble, the topic stays parked.
 - **2026-11-18, evening: the user's four quick wins ("baue das"), on `main`, local.** (1) Stay on surface reaching
   a part of the surface cut off by what stands in front: **not built**, two ways tried on the hand-test picture and
   taken out (a plane fit: MoGe-2's planes are 6-12 pixel-lengths off flat; following the surface's line behind an
@@ -1228,7 +1233,10 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   refined on its own and the results put back together; the prompt per tile either one general prompt or one a
   vision model writes for each tile. Pieces that exist: *Each area* (one crop and run per area, item 54),
   Florence-2's `describe` (item 62), edge fit and colour match per result. Not planned yet; hwatik was asked
-  whether that covers his use or the single click on one region matters most.
+  whether that covers his use or the single click on one region matters most. **His answer (2026-11-18):** the
+  single click: a brush with a radius, one click on a spot (an eye), redrawn at once, about 2 s with Flux.2 Klein.
+  The user is not keen on it as a tool of its own (2026-11-19); a selection, a prompt and Generate do the same in
+  three steps today. The reply on #14 is not written yet (the user's word).
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
