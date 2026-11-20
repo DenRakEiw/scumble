@@ -1058,6 +1058,14 @@ sequential gate (`run_gates_both.sh` without `--shards`, or `run_gates.sh`) befo
 
 Known flakes; **re-run before believing any of these**:
 
+- 2026-11-20 (0.1.59's exe gates, `rel59-exe`, both backends side by side): `log` `status_kinds` (the blink still on
+  after 8 s, both sides), `generate` `cancel_and_a_closed_tab_add_nothing` (canvas, the deadline's take-off),
+  `videoframe` (a frame callback timed out: an occluded window, both sides), `clip` "base off the view" (the view
+  still over the base: the window's size, both sides; GPU and Canvas 2D equal), `comfyview` (canvas, 28 of 29) and
+  `layered` `an_ora_opens_through_the_parted_reader` (tiles, arena slots 64 > 61 after the open). Every one green on
+  the rerun with one instance at a time against the same exe (`rel59r-t`, `rel59r-c`). Ruled out: the code under test
+  (no change of those paths between the runs; the one real failure of that run, `skins`, was fixed before the rerun).
+
 - 2026-11-16 (`rr57-c`, canvas): `videoframe` `a_video_without_a_duration` failed once with "the fixture had a
   duration (1.967): it no longer tests this": Chromium read a duration from the MediaRecorder WebM it usually
   reports as Infinity. Green on the rerun (`rr57-c2`) and on tiles; side by side (`all57`) the 25 fps step also
