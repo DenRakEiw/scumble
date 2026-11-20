@@ -66,6 +66,12 @@ export const HostRelightPart = {
             if (!liveLayer) throw Object.assign(new Error(`${L}: the relight layer was removed while the maps were made.`), { kind: "cancelled" });
             layer = liveLayer;
             const W = editor.width, H = editor.height;
+            // the picture goes out at most 2048 px on its long side and at least 256 on its short one, both at one scale:
+            // a strip steeper than 8:1 has no such size (each side was clamped alone, which stretched the picture and put
+            // the light map's lights out of place; review 2026-11-16 relight-depth-key/relight-whole-narrow-aspect-stretches-send-and-lightmap)
+            if (Math.max(W, H) > 8 * Math.min(W, H)) {
+                throw refusal(`${L}: the whole picture is relit at up to 2048 px on its long side and at least 256 on its short one; ${W} x ${H} is steeper than 8:1. Crop it, or relight a part of it.`);
+            }
             if ((layer.params || {}).detail !== false && W * H > realism.MAX_AREA) {
                 throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
             }
@@ -109,9 +115,10 @@ export const HostRelightPart = {
             }
 
             const longSide = Math.max(W, H);
-            const scaleFactor = Math.min(1.0, 2048 / longSide);
-            const wSend = Math.max(256, Math.round(W * scaleFactor));
-            const hSend = Math.max(256, Math.round(H * scaleFactor));
+            // one scale for both sides: down to 2048 on the long side, up to 256 on the short one (a small picture)
+            const scaleFactor = Math.max(Math.min(1.0, 2048 / longSide), 256 / Math.min(W, H));
+            const wSend = Math.min(2048, Math.round(W * scaleFactor));
+            const hSend = Math.min(2048, Math.round(H * scaleFactor));
 
             let cSend = cFull;
             if (wSend !== W || hSend !== H) {

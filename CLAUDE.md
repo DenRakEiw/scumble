@@ -318,8 +318,19 @@ planning it. A new item gets its number and a few lines here; its research goes 
   surface).
 - 73: the rest of the whole-code review of 2026-11-16 (`docs/research/review_fable_2026-11-16/verified.json`): the 3
   musts and the shoulds on data, money and security shipped in 0.1.57, a small package in `electron/**` and
-  `recipes/**` in 0.1.58. Left: the shoulds under `renderer/`, the larger ones, the 58 nice. Verify each against the
-  code first.
+  `recipes/**` in 0.1.58. **2026-11-20, unreleased (commits `4a0a58fd` and the one after it):** 31 more shoulds fixed
+  in three packages, the editor's (CHANGELOG "Fixed, from the code review"); found already fixed on checking:
+  `depth-map-raw-floats-in-state-json`, `range-add-nothing-matched-bounds-whole-picture`, `glb-edit-locked-kept-control-layer`
+  (but the plugin `setPixels`, now done), `box-desc-unknown-or-cased-token-sent-to-api` (main's `clean` refuses since 0.1.58).
+  The gates of what they touch passed on both backends; no new test step was written for them. **Left, 13 shoulds:**
+  `untick-row-falls-to-comfy-default` and `fanout-setting-slot-clobbers-targets` (a fanned-out setting slot: one shared
+  row or one per target is the user's call), `local-generate-new-leaves-boxes-in-old-pixels`, three 15k perf ones
+  (`relight-whole-full-canvas-15k-and-huge`, `wrap-paint-layer-full-canvas-15k`, `own-pixels-mips-block-main-thread`),
+  three medium ones (`distort-warp-mesh-seams-on-half-transparent-pixels`, `select-range-untracked-undo-and-cancel-crash`
+  past its byte count, `selection-from-layer-full-canvas-and-filter-wipe`), `flat-psd-extra-channel-as-transparency`
+  (needs a fixture from Photoshop and one from another writer first), `plain-limit-darkens-over-transparency` (a
+  shader), `wrap-points-bilinear-across-mask-zero`, and the smudge and rotate clicks of `noop-steps-left-after-1b2f05d7`.
+  Then the 58 nice. Verify each against the code first.
 - 74: an automated tile upscaler / refiner (the user, 2026-11-18, as the answer to issue #14): the picture split into
   overlapping tiles small enough for the model to render at full detail, each refined on its own and put back
   together, one general prompt or one a vision model writes per tile. Pieces that exist: *Each area* (item 54),

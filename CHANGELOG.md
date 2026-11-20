@@ -35,6 +35,23 @@ the section for its version; `docs/` and the commit history hold the technical d
   - A wrap read from a file took the geometry of the first turn or crop after it, and erased the wrong part.
   - Florence-2 read a long strip at full size (a 46 MB canvas, or a failure above 65,535 px) and squashed it; it is
     fitted now. A local Generate freed its memory only in the tab where it ran.
+  - With *Sample: layer*, the eyedropper, the bucket and the wand on a Deep paint layer read the whole picture instead
+    of the layer's own paint.
+  - Opening a `.scumble` did not tell the plugin panels and *Each area* once the document was all in.
+  - Undoing a turn of the picture or a named snapshot could turn the depth and surface maps a second time.
+  - On the canvas backend, a text being typed when a result landed came back at the wrong size on undo.
+  - The assistant's switch of recipe or tab took a turn snapshot of the tab in front, which *Undo this turn* then
+    took back too.
+  - A box description cut at 400 characters could cut a reference marker in two and send it as text.
+  - Opening a PSD or ORA made its bottom layer the background even when it was in a group or had a layer clipped to
+    it; the clipped layer then spread over the whole picture.
+  - The range bar's *Pick* and *Invert* left the red preview on the canvas and the dialog's own Invert box out of step;
+    a cancelled *Pick* on a filter's limit could put a stale undo step on the next slider drag.
+  - A wrap's live link was cut by an undo of a crop or turn, and did not follow a recolour, a flip or a stroke on its
+    source.
+  - Relight of a whole strip steeper than 8:1 stretched the picture it sent; it is refused with a note now.
+  - A click with a selection tool and nothing selected put an empty step on the undo list (and dropped the redo
+    steps); a click that deselects is one step, not two.
 - **Fixed: the assistant stopped longer tasks in the middle** with "the step limit of this turn was reached". A turn
   ended after 25 tool calls, and every screenshot and every read of the layers counted. The limit is now 100 by
   default (*Settings › Assistant*, up to 1,000), the note has a **Continue** button that goes on with the same task,

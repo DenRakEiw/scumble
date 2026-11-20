@@ -126,9 +126,11 @@ function clean(b, s, what) {
 
 /** `s` with the {@ref:i} markers resolved to the route's names ("image 2"), folded to one line; `b` names the box. */
 function resolved(req, lay, b, s) {
-    const r = resolveMarkers(fold(s), lay.pictures, patternOf(req));
+    // resolved before the fold: a fold first could cut a {@ref:i} in two (a Text box's clause goes in front of it), and the
+    // stump went to the model as text (review 2026-11-16 prompt-refs/box-desc-marker-cut-at-400)
+    const r = resolveMarkers(String(s == null ? "" : s).replace(/\s+/g, " ").trim(), lay.pictures, patternOf(req));
     if (r.left.length) throw new Error(`Box ${b.id} names reference picture ${r.left[0].ref + 1}, which this run does not send: nothing was sent.`);
-    return clean(b, r.text, "description");
+    return clean(b, fold(r.text), "description");
 }
 
 /**

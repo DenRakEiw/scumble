@@ -1464,10 +1464,15 @@ export class SelectPart {
 
     // ---- selection ops -----------------------------------------------------
 
-    clearSelection() {
+    /**
+     * Deselect. Nothing selected: no step (a push drops the redo steps; review 2026-11-16 canvas-tools/noop-steps-left-after-1b2f05d7).
+     * `undo: false` for a gesture whose own step, pushed at its press, already holds the selection.
+     */
+    clearSelection({ undo = true } = {}) {
         if (!this.sel) return;
+        if (undo && !this.getBounds()) return;
         this.selectionLabel = "";
-        this.pushUndo({ kind: "selection", label: "Deselect" });
+        if (undo) this.pushUndo({ kind: "selection", label: "Deselect" });
         this.sel.clear();
         this.markSelectionChanged(null);
         this.draw();

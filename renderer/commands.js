@@ -84,6 +84,7 @@ import { DepthCommandsPart, bindDepthCommands } from "./commands_depth.js";
  * @property {number} version
  * @property {() => string[]} names
  * @property {(name: string) => boolean} has
+ * @property {(name: string) => string} scopeOf
  * @property {() => CommandDescriptor[]} describe
  * @property {(name: string, args?: any) => Promise<any>} run
  * @property {(name: string, args?: any) => Promise<{ ok: boolean, result?: any, error?: string }>} call
@@ -114,6 +115,8 @@ export const commands = {
     version: VERSION,
     names: () => Object.keys(COMMANDS),
     has: (name) => Object.prototype.hasOwnProperty.call(COMMANDS, name),
+    /** "app" for a command that takes no document, else "doc" (the shell's turn snapshot asks). */
+    scopeOf: (name) => (Object.prototype.hasOwnProperty.call(COMMANDS, name) && COMMANDS[name].scope) || "doc",
     describe,
     /** Run one command. Throws with a readable message on any failure. */
     async run(name, args = {}) {

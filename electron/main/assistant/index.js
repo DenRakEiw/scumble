@@ -930,7 +930,8 @@ class Assistant {
         turn.undo = undoKind ? { kind: undoKind, id: canonical.args.layer || null } : null;
         // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
         // that only read leaves `lastTurn` null
-        if (!policy.isRead(name, canonical.args) && doc !== undefined && doc !== null) turn.docs.add(doc);
+        // (an app command such as select_recipe or new_document, and a tab switch, reach no document of their own)
+        if (takesDoc && name !== "activate_document" && !policy.isRead(name, canonical.args) && doc !== undefined && doc !== null) turn.docs.add(doc);
         // an approved call's card keeps what its question would have said: the reason and the card's lines
         if (approved) this.emit("call", { call: call.id, name, args: canonical.args, action: "approved", reason: decision.reason, card: decision.card });
         else this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });

@@ -1470,7 +1470,10 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
         // a missing layer) would have thrown the redo steps away and left an empty step behind.
         turnEd = editorOf(args && args.doc);
         if (turnEd) mark = [turnEd.historyGen, turnEd.compositeVersion, turnEd.undo && turnEd.undo.length];
-        turnTaken = snapshotTurn(meta, args && args.doc) === "taken";
+        // an app command (a new tab, a recipe, a brush) and a tab switch change no document: no turn snapshot of the tab
+        // in front, which "Undo this turn" would then take back (review 2026-11-16 prompt-refs/assistant-app-calls-snapshot-untouched-tab)
+        const appCall = commands.scopeOf(name) === "app" || name === "activate_document";
+        turnTaken = !appCall && snapshotTurn(meta, args && args.doc) === "taken";
         if (meta.undo && meta.undo.kind && turnEd && typeof turnEd.snapshot === "function" && turnEd.sel) {
             // labelled by the command, so the Undo history says what the assistant did
             const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
