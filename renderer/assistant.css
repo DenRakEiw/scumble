@@ -101,10 +101,10 @@
 .as-chat-del { background: none; border: 0; color: var(--sc-faint, #777); font-size: 15px; padding: 0 8px; cursor: pointer; }
 .as-chat-del:hover { color: var(--sc-error, #e0533d); background: var(--sc-error-bg, #2a2020); }
 .as-card.as-undo { border-left-color: var(--sc-ok, #6a8f4a); }
-}
 /* the template list sits in the foot, whose button rule would dress its rows as buttons */
 .as-foot .as-templates button.as-chat-open, .as-foot .as-templates button.as-chat-del { background: none; border: 0; border-radius: 0; }
 .as-foot .as-templates button.as-chat-open { padding: 5px 8px; }
 .as-foot .as-templates button.as-chat-del { padding: 0 8px; font-size: 15px; color: var(--sc-faint, #777); }
 .as-foot .as-templates button.as-chat-open:hover { background: var(--sc-raised, #262626); }
 .as-foot .as-templates button.as-chat-del:hover { color: var(--sc-error, #e0533d); background: var(--sc-error-bg, #2a2020); }
+}
