@@ -929,7 +929,7 @@ ui.setAsReset.addEventListener("click", async () => {
     const yes = ed
         ? await ed.ask({
             title: "Delete all assistant data",
-            message: "Deletes every assistant chat and its screenshots, the privacy-notice dates, the assistant settings and the assistant's lines in the app log. Your API keys stay; they belong to Settings > API providers.",
+            message: "Deletes every assistant chat and its screenshots, the privacy-notice dates, the assistant settings (your templates with them) and the assistant's lines in the app log. Your API keys stay; they belong to Settings > API providers.",
             ok: "Delete", cancel: "Cancel", danger: true,
         })
         : true;

@@ -748,6 +748,8 @@ It asks before it does anything expensive or irreversible: generating, upscaling
 
 For a long task you do not want to sit beside, *Approve everything* under the chat field switches the questions off for that chat. Scumble asks once whether you mean it; after that every call runs without a question, paid runs and files included, and each card says what it would have asked. What the assistant refuses stays refused. Paid runs and runs on your ComfyUI are counted: after 30 in one turn (Settings › Assistant sets the number) the next one asks again. The switch belongs to the chat it was set in, a new chat asks as before. Keep in mind what it means: the model reads layer names, file names and text in the picture, and with everything approved such text can make it spend money or overwrite a file.
 
+A task you give again and again can be kept as a template: *Templates* beside *Send* lists them, a name and *Save* keep the text in the chat field as one, and a click puts a template's text back into the field to send as it is or changed. A template is only text; it never switches *Approve everything* on.
+
 A turn ends after 100 tool calls (Settings › Assistant, up to 1,000), which is there to stop a loop that runs away. When a task needs more, the note has a *Continue* button that goes on where the turn stood.
 
 And it can be taken back. Ctrl+Z undoes its steps one at a time like your own, and Undo this turn puts every document the turn touched back to where it was before — even when the turn was longer than the undo stack. Chats are saved with their screenshots and can be reopened; Settings › Assistant deletes everything it ever stored, your keys excepted.

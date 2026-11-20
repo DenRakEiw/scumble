@@ -178,6 +178,10 @@ export function initAssistant(options = {}) {
 
     // footer
     const foot = el("div", "as-foot");
+    // the saved task texts (item 76): a list over the field, filled when it opens
+    ui.tplList = el("div", "as-chats as-templates");
+    ui.tplList.hidden = true;
+    foot.appendChild(ui.tplList);
     ui.text = el("textarea");
     ui.text.rows = 3;
     ui.text.spellcheck = false;
@@ -190,9 +194,13 @@ export function initAssistant(options = {}) {
     ui.approve = el("button", "as-approve", "Approve everything");
     ui.approve.type = "button";
     ui.approve.setAttribute("aria-pressed", "false");
-    // Send stays the first button of the footer (the tests find it that way); assistant.css draws the switch left of it
+    ui.tpl = el("button", "as-tpl", "Templates");
+    ui.tpl.type = "button";
+    ui.tpl.title = "Saved task texts: put one into the field, or save the text in the field as one";
+    // Send stays the first button of the footer (the tests find it that way); assistant.css draws the others left of it
     frow.appendChild(ui.cost);
     frow.appendChild(ui.send);
+    frow.appendChild(ui.tpl);
     frow.appendChild(ui.approve);
     foot.appendChild(frow);
     dialog.appendChild(foot);
@@ -206,6 +214,7 @@ export function initAssistant(options = {}) {
     ui.chats.addEventListener("click", () => toggleChats());
     ui.send.addEventListener("click", () => (busy ? stop() : send()));
     ui.approve.addEventListener("click", () => toggleApprove());
+    ui.tpl.addEventListener("click", () => toggleTemplates());
     ui.model.addEventListener("change", () => pickModel(ui.model.value));
     ui.freeUse.addEventListener("click", () => pickModel("openrouter:" + ui.freeId.value.trim()));
     ui.text.addEventListener("focus", () => { handedOff = false; });
@@ -298,6 +307,12 @@ function syncButton() {
 
 function onKey(e) {
     if (!started || !ui.dialog.open || !ui.dialog.contains(e.target)) return;
+    if (e.key === "Enter" && !e.isComposing && ui.tplName && e.target === ui.tplName) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        saveTemplate(ui.tplName.value, ui.text.value);
+        return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.target === ui.text) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -704,6 +719,7 @@ function askThenUndo(card, button, turn) {
 
 async function toggleChats() {
     if (!ui.chatList.hidden) { ui.chatList.hidden = true; return; }
+    if (ui.tplList) ui.tplList.hidden = true;
     ui.chatList.textContent = "";
     ui.chatList.hidden = false;
     ui.chatList.appendChild(el("div", "as-note", "reading \u2026"));
@@ -810,6 +826,121 @@ function continueButton(card) {
     continueRow = el("div", "as-card-buttons");
     continueRow.appendChild(b);
     card.appendChild(continueRow);
+}
+
+// ---- templates (item 76) --------------------------------------------------------------------
+
+const TEMPLATES_MAX = 100;
+const TEMPLATE_NAME_MAX = 60;
+const TEMPLATE_TEXT_MAX = 20000;
+
+/**
+ * The saved task texts, `settings.assistant.templates`: [{ name, text }], oldest first. Only text: a template carries
+ * no model, no step limit and never Approve everything, so starting one asks what any message asks. "Delete all
+ * assistant data" takes them with the assistant's other settings.
+ */
+export function cleanTemplates(list) {
+    const out = [];
+    const seen = new Set();
+    for (const t of Array.isArray(list) ? list : []) {
+        if (!t || typeof t !== "object") continue;
+        const name = String(t.name == null ? "" : t.name).replace(/\s+/g, " ").trim().slice(0, TEMPLATE_NAME_MAX);
+        const text = String(t.text == null ? "" : t.text).slice(0, TEMPLATE_TEXT_MAX);
+        if (!name || !text.trim() || seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        out.push({ name, text });
+        if (out.length >= TEMPLATES_MAX) break;
+    }
+    return out;
+}
+
+async function readTemplates() {
+    const all = await window.scumble.settings.get();
+    return cleanTemplates(((all && all.assistant) || {}).templates);
+}
+
+async function writeTemplates(list) {
+    const all = await window.scumble.settings.get();
+    await window.scumble.settings.set({ assistant: { ...((all && all.assistant) || {}), templates: cleanTemplates(list) } });
+}
+
+async function toggleTemplates() {
+    if (!ui.tplList.hidden) { ui.tplList.hidden = true; return; }
+    ui.chatList.hidden = true;
+    ui.tplList.hidden = false;
+    await renderTemplates();
+}
+
+async function renderTemplates() {
+    const box = ui.tplList;
+    box.textContent = "";
+    let list = [];
+    try { list = await readTemplates(); } catch (_) { box.appendChild(el("div", "as-note", "the templates could not be read")); return; }
+    if (!list.length) box.appendChild(el("div", "as-note as-tpl-empty", "no template yet: write a task in the field below, name it here and save it"));
+    for (const t of list) box.appendChild(templateRow(t));
+    // the text in the field, saved under a name (the same name replaces that template, after a question)
+    const save = el("div", "as-chat as-tpl-save");
+    const name = el("input");
+    name.type = "text";
+    name.maxLength = TEMPLATE_NAME_MAX;
+    name.placeholder = "name for the text in the field";
+    const btn = el("button", null, "Save");
+    btn.type = "button";
+    btn.title = "Save the text in the chat field as a template under this name";
+    btn.addEventListener("click", () => saveTemplate(name.value, ui.text.value));
+    ui.tplName = name;   // Enter in it saves (onKey: the panel's capture listener sees the key first)
+    save.appendChild(name);
+    save.appendChild(btn);
+    box.appendChild(save);
+}
+
+function templateRow(t) {
+    const node = el("div", "as-chat as-tpl-row");
+    node.dataset.template = t.name;
+    const use = el("button", "as-chat-open");
+    use.type = "button";
+    use.title = "Put this text into the chat field (it is sent when you send it)";
+    use.appendChild(el("div", "as-chat-title", t.name));
+    use.appendChild(el("div", "as-chat-note", t.text.replace(/\s+/g, " ").trim().slice(0, 120)));
+    use.addEventListener("click", () => {
+        if (ui.text.disabled) return;
+        ui.text.value = t.text;
+        ui.tplList.hidden = true;
+        ui.text.focus();
+    });
+    const del = el("button", "as-chat-del", "×");
+    del.type = "button";
+    del.title = "Delete this template";
+    del.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const yes = await confirm(`Delete the template "${t.name}"?`, { title: "Assistant", ok: "Delete", cancel: "Cancel", danger: true });
+        if (!yes) return;
+        await writeTemplates((await readTemplates()).filter((x) => x.name !== t.name));
+        await renderTemplates();
+    });
+    node.appendChild(use);
+    node.appendChild(del);
+    return node;
+}
+
+async function saveTemplate(rawName, rawText) {
+    const name = String(rawName || "").replace(/\s+/g, " ").trim().slice(0, TEMPLATE_NAME_MAX);
+    const text = String(rawText || "");
+    if (!name || !text.trim()) { note(!name ? "a template needs a name" : "the chat field is empty: write the task there first, then save it"); return false; }
+    if (text.length > TEMPLATE_TEXT_MAX) { note(`a template holds at most ${TEMPLATE_TEXT_MAX.toLocaleString("en")} characters`); return false; }
+    const list = await readTemplates();
+    const i = list.findIndex((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (i >= 0) {
+        const yes = await confirm(`Replace the template "${list[i].name}"?`, { title: "Assistant", ok: "Replace", cancel: "Cancel" });
+        if (!yes) return false;
+        list[i] = { name, text };
+    } else {
+        if (list.length >= TEMPLATES_MAX) { note(`at most ${TEMPLATES_MAX} templates: delete one first`); return false; }
+        list.push({ name, text });
+    }
+    await writeTemplates(list);
+    await renderTemplates();
+    return true;
 }
 
 // ---- approve everything (item 75) -----------------------------------------------------------

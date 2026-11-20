@@ -347,11 +347,12 @@ planning it. A new item gets its number and a few lines here; its research goes 
   they ask again. Switching it on answers a waiting question with Allow. Tested with the scripted model
   (`tools/assistant_test.js`, the gate step `approve_everything_asks_once_then_runs_unasked`), never with a real
   model. Not built: levels (only what Ctrl+Z takes back), a default for every chat, a money cap in dollars.
-- 76: agent templates (the user, 2026-11-20: "man soll auch agent prompts speichern können als agent templates"):
-  the text of a task for the assistant saved under a name and started again from a list in the panel. Open: where
-  they are kept (settings, or files in the app data folder that can be shared), whether a template carries more
-  than its text (the model, Approve everything, the step limit, blanks to fill in), whether Scumble ships some.
-  Not planned, not built.
+- 76: agent templates (the user, 2026-11-20: "man soll auch agent prompts speichern können als agent templates";
+  "das soll aber noch ins release rein"). **Built 2026-11-20 for 0.1.59**: a name and the text only, in
+  `settings.assistant.templates` (at most 100, 20,000 characters each; *Delete all assistant data* takes them), the
+  list under *Templates* beside *Send* in `renderer/assistant.js` (`cleanTemplates`, a click fills the field, a name
+  that exists asks before it replaces, × asks before it deletes); the gate step `templates_save_fill_replace_and_delete`.
+  Not built: blanks to fill in, a model or Approve everything per template, shared template files, shipped ones.
 - Not numbered: **B3, the macOS build** (`docs/PLAN_0_1_24.md`; the user tests on their MacBook, a friend signs and
   releases, memory `scumble-macos-friend`; the public texts say "coming soon"). Linux is built by CI and was never
   run. Types stage 3 (`docs/PLAN_TYPES.md`). A parked idea, not a plan: a mobile companion.

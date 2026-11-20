@@ -71,6 +71,14 @@ a loop that runs away; every call counts, a screenshot and a read of the layers 
 reaches it ends with a note and a **Continue** button: one click goes on with the same task, and
 the model is told that its turn was cut short, so it does not start over.
 
+**Templates** keep the text of a task you give more than once (an upscale, a detail pass on the eyes, a grade):
+*Templates* beside *Send* opens the list. Write the task in the chat field, give it a name in the list's field and
+press Enter or *Save*; a click on a template puts its text into the chat field, where you can change it before you
+send it. Saving under a name that exists asks before it replaces that template, and × deletes one after a question.
+A template is only its text, at most 20,000 characters, up to 100 of them: it carries no model, no step limit and
+never *Approve everything*, so a task started from one asks what any message asks. They are kept with the assistant's
+settings, and *Delete all assistant data* takes them too.
+
 **Stop** ends the turn: the model request is aborted, a call that has not started is dropped, and
 a command that has started runs on in the editor. Your next message continues the same chat.
 

@@ -648,6 +648,77 @@ return { before, words, afterCancel, labels, on, shown, asks: events.filter((e) 
             raise RuntimeError("a new chat kept the switch on: " + json.dumps(out))
         return f"asked in the app's dialog, boxes_clear ran unasked ({out['reason']}), and a new chat asks again"
 
+    async def templates(self):
+        """Item 76: the field's text saved under a name, put back by a click, replaced after a question, deleted; nothing sent."""
+        self.mock.reset()
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const saved = (await window.scumble.settings.get()).assistant || {};
+await window.scumble.settings.set({ assistant: { ...saved, templates: [] } });
+const field = d.querySelector(".as-foot textarea");
+const list = d.querySelector(".as-templates");
+const question = async () => {
+    for (let i = 0; i < 40; i++) { const q = document.querySelector("dialog.sc-dialog[open]"); if (q) return q.querySelector("div").shadowRoot; await wait(50); }
+    return null;
+};
+const stored = async () => (((await window.scumble.settings.get()).assistant || {}).templates || []);
+const events0 = (await window.scumble.assistant.state()).events.length;
+d.querySelector("button.as-tpl").click();
+await wait(300);
+const opened = !list.hidden;
+const empty = !!list.querySelector(".as-tpl-empty");
+field.value = "Upscale 2x, then fix the eyes and grade it warm";
+const name = list.querySelector(".as-tpl-save input");
+name.value = "Portrait finish";
+// Enter in the name field saves and sends nothing
+name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+await wait(400);
+const afterSave = await stored();
+const rows = Array.from(list.querySelectorAll(".as-tpl-row")).map((r) => r.dataset.template);
+// the same name again: a question, then the new text replaces it
+field.value = "Upscale 2x, fix the eyes, grade it cool";
+list.querySelector(".as-tpl-save input").value = "portrait finish";
+list.querySelector(".as-tpl-save button").click();
+let q = await question();
+const replaceAsked = q ? q.textContent : "";
+if (q) q.querySelectorAll("button")[0].click();
+await wait(400);
+const afterReplace = await stored();
+// a click on the row puts the text into the field and closes the list
+field.value = "";
+list.querySelector(".as-tpl-row button.as-chat-open").click();
+await wait(150);
+const filled = field.value;
+const closed = list.hidden;
+// delete, after a question
+d.querySelector("button.as-tpl").click();
+await wait(300);
+list.querySelector(".as-tpl-row button.as-chat-del").click();
+q = await question();
+const deleteAsked = q ? q.textContent : "";
+if (q) q.querySelectorAll("button")[0].click();
+await wait(400);
+const afterDelete = await stored();
+const sent = (await window.scumble.assistant.state()).events.slice(events0).filter((e) => e.type === "user").length;
+d.querySelector("button.as-tpl").click();
+field.value = "";
+await window.scumble.settings.set({ assistant: saved });
+return { opened, empty, afterSave, rows, replaceAsked, afterReplace, filled, closed, deleteAsked, afterDelete, sent };""", timeout=60)
+        if not out["opened"] or not out["empty"]:
+            raise RuntimeError("the list did not open empty: " + json.dumps(out))
+        if out["afterSave"] != [{"name": "Portrait finish", "text": "Upscale 2x, then fix the eyes and grade it warm"}] or out["rows"] != ["Portrait finish"]:
+            raise RuntimeError("Enter in the name field did not save: " + json.dumps(out))
+        if "Replace" not in out["replaceAsked"] or out["afterReplace"] != [{"name": "portrait finish", "text": "Upscale 2x, fix the eyes, grade it cool"}]:
+            raise RuntimeError("the same name did not ask and replace: " + json.dumps(out))
+        if out["filled"] != "Upscale 2x, fix the eyes, grade it cool" or not out["closed"]:
+            raise RuntimeError("a click on the row did not fill the field: " + json.dumps(out))
+        if "Delete" not in out["deleteAsked"] or out["afterDelete"] != [] or out["sent"]:
+            raise RuntimeError("the delete did not ask, or something was sent: " + json.dumps(out))
+        return "saved by Enter, replaced after a question, put into the field by a click, deleted after a question; nothing sent"
+
     async def undo_turn_two_documents(self):
         """A turn that changed two documents restores both."""
         if not await self.tiles():
@@ -1941,6 +2012,7 @@ async def main():
             await g.run_step("an_undo_card_belongs_to_its_own_turn", g.undo_card_is_its_own_turns)
             await g.run_step("turn_undo_is_refused_on_the_canvas_backend", g.undo_turn_on_canvas)
             await g.run_step("approve_everything_asks_once_then_runs_unasked", g.approve_everything)
+            await g.run_step("templates_save_fill_replace_and_delete", g.templates)
             await g.run_step("the_reset_deletes_every_chat_and_keeps_the_keys", g.reset_all)
         except Exception as e:  # noqa: BLE001
             g.results.append(False)

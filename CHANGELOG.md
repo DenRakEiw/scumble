@@ -2,8 +2,11 @@
 
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
-## Unreleased
+## 0.1.59 - 2026-11-20
 
+- **The assistant: templates.** A task you give more than once (upscale, a detail pass on the eyes, a grade) can be
+  kept under a name: *Templates* beside *Send* lists them, and a click puts one into the chat field, where you can
+  change it before you send it. A template is only its text; it never switches *Approve everything* on.
 - **The assistant: Approve everything.** A switch beside *Send* takes the questions away for one chat, for a task
   of many steps you do not want to answer card by card. It asks once whether you mean it; after that every call
   runs without a question, paid runs and files included, and each card says what it would have asked. What the
