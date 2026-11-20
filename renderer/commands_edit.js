@@ -195,6 +195,13 @@ export const EditCommandsPart = {
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (l.kind !== "text") throw new Error(`${l.name} is not a text layer`);
+            // a locked layer keeps its angle: said before anything changes, not after the text did
+            if (a.angle != null && l.locked) throw new Error(`${l.name} is locked: its angle cannot change`);
+            // one undo step of its own, for every caller (an external agent's set_text recorded none, and Ctrl+Z undid the
+            // edit before it; review 2026-11-16 shell/mcp-set-text-records-no-undo-step). An edit held in the layer's fields
+            // goes in first as its own step; an angle turns the mask too, which only a "layers" step holds
+            if (ed.settleTextUndo) ed.settleTextUndo(l);
+            ed.pushUndo(a.angle != null ? { kind: "layers", label: "Edit text" } : { kind: "text", id: l.id, label: "Edit text" });
             const spacing = textSpacing(a);
             const t = l.text;
             Object.assign(t, spacing);
@@ -205,8 +212,6 @@ export const EditCommandsPart = {
             if (a.italic != null) t.italic = !!a.italic;
             if (a.outline != null) t.outline = Math.max(0, +a.outline);
             await ed.renderTextLayer(l, { keepScale: true });
-            // a locked layer keeps its angle: said, not silently skipped
-            if (a.angle != null && l.locked) throw new Error(`${l.name} is locked: its angle cannot change`);
             if (a.angle != null) await ed.setTextAngle(l, +a.angle || 0, { step: false });
             touch(ed);
             return layerSummary(ed, l);

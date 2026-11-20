@@ -1721,7 +1721,7 @@ async function main() {
             ["describe", {}, null], ["describe", { to_prompt: true }, null],
             // F2b: set_filter pushes its own step (the type's, or the parameters')
             ["set_filter", { params: { a: 1 } }, null], ["set_filter", { type: "blur", params: { a: 1 } }, null],
-            ["set_text", { text: "x" }, "text"], ["set_text", { angle: 30 }, "layers"], ["set_prompt", { prompt: "x" }, null],
+            ["set_text", { text: "x" }, null], ["set_text", { angle: 30 }, null], ["set_prompt", { prompt: "x" }, null],
             ["list_layers", {}, null], ["screenshot", {}, null],
             // they push their own step
             ["duplicate_layer", {}, null], ["frequency_separation", {}, null], ["dodge_burn_layer", {}, null],

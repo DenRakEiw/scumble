@@ -210,7 +210,7 @@ export function activate(scumble) {
             placeAt(layerId, r.x, r.y, r.w, r.h);
             layer = await doc.run("set_layer", { layer: layerId, active: true });
         } else {
-            layer = doc.addLayer(r.canvas, { name: layerName, x: r.x, y: r.y, w: r.w, h: r.h });
+            layer = doc.addLayer(r.canvas, { name: layerName, x: r.x, y: r.y, w: r.w, h: r.h, undo: false });   // the step pushed above
         }
         const ctl = {};
         CONTROLS.forEach((c, i) => {
@@ -222,7 +222,7 @@ export function activate(scumble) {
                 placeAt(was.id, 0, 0, doc.width, doc.height);
                 ctl[c.key] = doc.layer(was.id);
             } else {
-                const made = doc.addLayer(frame, { name: `${layerName} ${c.suffix}`, x: 0, y: 0, w: doc.width, h: doc.height, activate: false });
+                const made = doc.addLayer(frame, { name: `${layerName} ${c.suffix}`, x: 0, y: 0, w: doc.width, h: doc.height, activate: false, undo: false });
                 // a control layer, hidden: on the raw layer (set_layer's role pushes a "layers" step of its own)
                 Object.assign(doc.rawLayer(made.id), { role: "control", visible: false });
                 doc.refresh(made.id);

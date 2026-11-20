@@ -137,7 +137,9 @@ export class HistoryPart {
 
     releaseSnapshot(snap) {
         if (!snap) return;
-        this.undoBytes -= snap.bytes || 0;
+        // only a step whose bytes the budget counted takes them off again: a held snapshot never pushed, a named snapshot
+        // and a step taken out by hand once drove the count below zero, and trimUndo then let the budget overrun
+        if (snap._counted) { this.undoBytes -= snap.bytes || 0; snap._counted = false; }
         for (const k of ["url", "mask", "selection"]) {
             const v = snap[k];
             if (!v || v === true) continue;   // a layerrect step's `mask` is a flag
@@ -491,7 +493,7 @@ export class HistoryPart {
         for (const s of this.redo) this.releaseSnapshot(s);
         this.redo = [];
         this.undo.push(snap);
-        this.undoBytes += snap.bytes || 0;
+        if (!snap._counted) { this.undoBytes += snap.bytes || 0; snap._counted = true; }
         this.trimUndo();
         this.scheduleDetachedRelease();
         this.historyChanged();
@@ -695,7 +697,7 @@ export class HistoryPart {
             const outgoing = this.layers;
             this.layers = snap.layers.map((l) => {
                 const kept = byId.get(l.id);
-                const copy = installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null }, this.pixels);
+                const copy = installLayerAliases({ ...l, dirty: l.kind !== "filter" || this.hasOwnPixels(l), exportRef: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null }, this.pixels);
                 // the clones move into the document; the step must not hand them out twice
                 if (kept) {
                     if (kept.px) { copy.px = kept.px; kept.px = null; }
@@ -756,7 +758,7 @@ export class HistoryPart {
             this.width = snap.width;
             this.height = snap.height;
             const outgoing = this.layers;
-            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
+            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: l.kind !== "filter" || this.hasOwnPixels(l), exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
             this.releaseDroppedEdits(outgoing);
             this.activeLayerId = snap.activeLayerId;
             let sel = snap.selPx || null;   // on tiles the step's clone, taken out of the step (it is released after this)
@@ -1101,7 +1103,7 @@ export class HistoryPart {
         this.cancelPreviews();
         // the present, as the other stack's step: it keeps the step's label and time, so the list reads the same
         const current = this.snapshot(snap);
-        if (current) { (redo ? this.undo : this.redo).push(current); this.undoBytes += current.bytes || 0; }
+        if (current) { (redo ? this.undo : this.redo).push(current); this.undoBytes += current.bytes || 0; current._counted = true; }
         try {
             this.applySnapshot(snap, images);
             if (snap.kind === "turn") this.setStatus(`${redo ? "Redone" : "Undone"}: ${snap.label || UNDO_LABELS.turn}.`);   // the whole document changed

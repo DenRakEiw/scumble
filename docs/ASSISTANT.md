@@ -153,9 +153,9 @@ back; it does not take back a file written to disk or a run that was charged.
 ## Taking it back
 
 - **Ctrl+Z undoes each step**, including the ones the editor records no step for by itself: a new
-  layer, `set_layer`'s name, visibility, opacity, blend, role or colour match, `set_text`. For those
+  layer, `set_layer`'s name, visibility, opacity, blend, role or colour match. For those
   the assistant pushes the editor's own step before the call (`set_filter` pushes its own since
-  0.1.42).
+  0.1.42, `set_text` its own for every caller, an external agent included).
   A `set_layer` that also moves the layer ends as two steps, so it takes two Ctrl+Z.
 - **"Undo this turn"** appears on the turn's card when it changed something. It takes every
   document the turn touched back to what it was **before the turn's first change there** - the

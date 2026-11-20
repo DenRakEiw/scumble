@@ -141,7 +141,8 @@ export class Document {
         const l = findLayer(this.editor, layerKey);
         // a Deep paint layer's px is its paint (hasOwnPixels): written as a pixel layer's
         if (l.kind === "filter" && !(typeof this.editor.hasOwnPixels === "function" && this.editor.hasOwnPixels(l))) throw new Error(`${l.name} is a filter layer`);
-        if (l.locked) throw new Error(`${l.name} is locked`);
+        // locked by itself or by its group (the editor's own rule)
+        if (typeof this.editor.isLocked === "function" ? this.editor.isLocked(l) : l.locked) throw new Error(`${l.name} is locked`);
         if (!imageData || !imageData.width || !imageData.data) throw new Error("setPixels needs an ImageData");
         const same = l.px.width === imageData.width && l.px.height === imageData.height;
         if (l.kind === "filter" && !same) throw new Error(`${l.name} takes pixels of its own size, ${l.px.width} x ${l.px.height}`);
@@ -161,16 +162,21 @@ export class Document {
      * size. A canvas is adopted: it becomes the layer's pixels, so the plugin must not draw
      * into it afterwards (write through setPixels, or rawLayer(key).px and refresh(key)).
      */
-    addLayer(source, { name, x = 0, y = 0, w, h, activate = true } = {}) {
+    addLayer(source, { name, x = 0, y = 0, w, h, activate = true, undo = true } = {}) {
         this._need();
+        // one Ctrl+Z takes the new layer back (it undid the user's edit before it, review 2026-11-16
+        // prompt-refs/plugin-addlayer-pushes-no-undo-step); `undo: false` for a plugin that pushed its own step first,
+        // a string for the step's label
         let px;
         if (source instanceof ImageData) px = this.editor.pixels.Layer.fromImageData(source);
         else if (source && source.getContext) px = this.editor.pixels.Layer.fromCanvas(source);
         else if (source == null) px = this.editor.pixels.Layer.empty(this.width, this.height);
         else throw new Error("addLayer needs an ImageData, a canvas or nothing");
         this.editor.paintCounter += 1;
+        const layerName = name || "Paint " + this.editor.paintCounter;
+        if (undo) this.editor.pushUndo({ kind: "layers", label: typeof undo === "string" ? undo : `Add ${layerName}` });
         const layer = this.editor.addLayer({
-            name: name || "Paint " + this.editor.paintCounter, kind: "paint", ref: null, px,
+            name: layerName, kind: "paint", ref: null, px,
             x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w || px.width)), h: Math.max(1, Math.round(h || px.height)), dirty: true,
         }, { activate });
         return layerSummary(this.editor, layer);

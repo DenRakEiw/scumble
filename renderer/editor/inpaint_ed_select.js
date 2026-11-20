@@ -606,7 +606,6 @@ export class SelectPart {
                 this.rangePending = null;
                 const popped = this.takeUndoEntry(snap);
                 if (popped) {
-                    this.undoBytes -= popped.bytes || 0;
                     this.applySnapshot(popped);
                     this.releaseSnapshot(popped);
                     this.historyChanged();
@@ -646,8 +645,7 @@ export class SelectPart {
     dropStaleSelectionEdit(snap, what) {
         const popped = this.takeUndoEntry(snap);
         if (popped) {
-            this.undoBytes -= popped.bytes || 0;
-            this.releaseSnapshot(popped);
+            this.releaseSnapshot(popped);   // it takes the step's bytes off the budget
             this.historyChanged();
         }
         this.setStatus(`${what} dropped: the selection changed while it ran.`);
@@ -663,7 +661,6 @@ export class SelectPart {
 
         const popped = this.takeUndoEntry(pending.snap);
         if (popped) {
-            this.undoBytes -= popped.bytes || 0;
             this.applySnapshot(popped);
             this.releaseSnapshot(popped);
         } else if (pending.snap) {

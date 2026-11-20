@@ -707,6 +707,7 @@ export const HostHelpersPart = {
             if (ed === this.editor || ed.pointer) continue;
             try { ed.releaseCaches({ deep: true, mirrors: true }); } catch (err) { console.warn(err); }
         }
+        this.vlmLoaded = false;
         return window.scumble.helpers.free();
     },
 };

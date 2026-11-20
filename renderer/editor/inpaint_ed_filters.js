@@ -1527,9 +1527,10 @@ export class FiltersPart {
     // once the filter has run: its input's statistics may walk the stack again): the result goes over the picture where the
     // base is, `mix(in, filtered, baseAlpha)`
     applyFilterLayer(ctx, layer, index, forRun, chain = null, more = false, clip = null) {
-        if (!forRun) {
+        if (!forRun && !this.isFillLayer(layer)) {
             // While something below the filter is being painted or moved, the cached
             // result would hide the live change: show the layers unfiltered instead.
+            // A fill layer reads nothing below it, so it stays (it vanished during the gesture before).
             const p = this.pointer;
             const gestureLayer = (p && p.layer) || (this.pending && this.pending.layer) || null;
             // a hidden layer changes nothing below: the filter stays (a wrap's source moved while its wrap follows)

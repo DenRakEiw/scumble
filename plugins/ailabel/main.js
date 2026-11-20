@@ -99,8 +99,11 @@ export function activate(scumble) {
         const canvas = await rasterise(await svgText(stem), width);
         const { x, y } = place(doc, canvas.width, canvas.height, o.anchor, o.margin);
         const old = find(doc);
+        // a replace is one step: the removal's step holds the old label, the new layer goes in without one of its own
         if (old) await doc.run("remove_layer", { layer: old.id });
-        const layer = doc.addLayer(canvas, { name: LAYER_NAME, x, y });
+        const step = old && doc.editor.undo && doc.editor.undo[doc.editor.undo.length - 1];
+        if (step && step.label === "Delete layer") step.label = "Replace AI label";
+        const layer = doc.addLayer(canvas, { name: LAYER_NAME, x, y, undo: old ? false : "Add AI label" });
         if (o.opacity < 100) await doc.run("set_layer", { layer: layer.id, opacity: o.opacity / 100 });
         labelLayers.set(doc.id, layer.id);
         doc.status(`${LABELS[o.label].label} placed ${ANCHORS[o.anchor].toLowerCase()}, ${canvas.width} × ${canvas.height}${old ? ", the previous label replaced" : ""}. It is an ordinary layer now: T moves and scales it.`);

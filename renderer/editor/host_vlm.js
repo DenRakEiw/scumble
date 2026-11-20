@@ -55,6 +55,9 @@ export const HostVlmPart = {
         const run = { editor, jobId: jobId || "vlm" + Date.now().toString(36) + "-" + ++this.vlmSeq };
         if (!this._vlmRuns) this._vlmRuns = new Set();
         this._vlmRuns.add(run);
+        // the helpers' process is one for every tab and loads Florence-2 before its first step: a local Generate in any
+        // tab frees it, and a describe that was cancelled has loaded it too (review 2026-11-16 p1-lanes-bce/vlm-used-per-tab-leaks-helper-vram)
+        this.vlmLoaded = true;
         try {
             const res = await this.describeImage(image, { detailed, jobId: run.jobId, timeoutMs });
             if (editor) editor.vlmUsed = true;
@@ -75,8 +78,8 @@ export const HostVlmPart = {
     },
 
     /**
-     * A layer as Florence-2 sees it: its own pixels with its mask, on neutral grey, squashed into 768 x 768. On tiles
-     * read from the layer's levels (as the object tool's input is), on canvases its masked canvas.
+     * A layer as Florence-2 sees it: its own pixels with its mask, fitted onto a 768 x 768 square of neutral grey (its
+     * shape kept). On tiles read from the layer's levels (as the object tool's input is), on canvases its masked canvas.
      */
     async layerVlmInput(editor, layer) {
         const S = VLM_SIDE;
@@ -89,12 +92,16 @@ export const HostVlmPart = {
         const px = layer.px;
         const mask = editor.liveMask ? editor.liveMask(layer) : layer.maskPx;
         const tiled = editor.tileMode && px && typeof px.primeRegion === "function" && !editor.liveStrokeOn(layer) && (!mask || editor.tileMaskOf(layer));
+        if (!(layer.w > 0 && layer.h > 0)) return new Uint8Array(ctx.getImageData(0, 0, S, S).data.buffer);
+        // the layer's box fitted onto the square, centred: a 15000 x 600 strip is read near 768 px wide and its shape
+        // kept, not squashed from level 0 (a 46 MB canvas on the window, or a throw above 65,535 px; review 2026-11-16
+        // p1-lanes-bce/layer-vlm-input-wide-layer-level-zero-canvas)
+        const s = Math.min(S / layer.w, S / layer.h);
+        const dw = layer.w * s, dh = layer.h * s, ox = (S - dw) / 2, oy = (S - dh) / 2;
         if (!tiled) {
-            ctx.drawImage(editor.layerPixels(layer), 0, 0, S, S);
+            ctx.drawImage(editor.layerPixels(layer), ox, oy, dw, dh);
             return new Uint8Array(ctx.getImageData(0, 0, S, S).data.buffer);
         }
-        // the layer's box onto the square; the levels at the scale of its longer side
-        const s = Math.max(S / layer.w, S / layer.h);
         const fx = layer.w / px.width;
         const level = editor.tileLevel(Math.min(1, fx * s));
         const jobs = await Promise.all([px, mask].filter(Boolean).map((q) => q.primeRegion([0, 0, px.width, px.height], level)));
@@ -103,7 +110,7 @@ export const HostVlmPart = {
             scratch.width = S; scratch.height = S;
             const x = scratch.getContext("2d");
             x.imageSmoothingEnabled = true;
-            x.setTransform(S / layer.w, 0, 0, S / layer.h, -layer.x * S / layer.w, -layer.y * S / layer.h);
+            x.setTransform(s, 0, 0, s, ox - layer.x * s, oy - layer.y * s);
             const vp = { x: layer.x, y: layer.y, w: layer.w, h: layer.h, sx: Math.min(1 / fx, s), sy: Math.min(1 / fx, s), sample: true };
             editor.drawPixelsInto(x, layer, px, vp);
             if (mask) {

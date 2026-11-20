@@ -11,6 +11,30 @@ the section for its version; `docs/` and the commit history hold the technical d
   (*Settings › Assistant* sets the number). A new chat asks as before. Mind what it means: the model reads layer
   names, file names and text in the picture, and with everything approved such text can make it spend money or
   overwrite a file.
+- **Fixed, from the code review of 2026-11-16** (the editor's part):
+  - A layer clipped to the layer under a reference picture clipped to the reference instead, and was left out of
+    exports and runs.
+  - Colour and gradient fill layers vanished while you painted or moved a layer under them.
+  - The Scope counted visible reference pictures into the histogram and the clipping warning.
+  - Choosing a filter option from the preview list left the layer's own menu on the old option.
+  - Dragging a corner of a polygon control point could not be undone; an unfinished polygon stayed on screen in
+    other tools and moved into another tab.
+  - An AI label and the sample plugin's *Selection to new layer* added their layer without an undo step, so Ctrl+Z
+    undid the edit before it.
+  - `set_text` from an external agent recorded no undo step.
+  - *Extend canvas* moved a full-size paint layer that had been moved away from the corner, kept the clip of a hidden
+    layer whose base went into the picture, and wrote untouched layers again.
+  - An undo of a crop or turn re-encoded every filter layer's empty pixels.
+  - The undo memory budget could count below zero and then let the history grow past it.
+  - A contact shadow of a clipped layer went under the layer it clips to, where it was hidden.
+  - Undoing a reference change rewrote the box descriptions inside restored snapshots.
+  - Relight of the whole picture could send a layer an undo had just taken away, or the old relight result through a
+    cached filter.
+  - Surface maps made while you painted were fitted to the new strokes under the old picture's fingerprint; they are
+    dropped now, with a note.
+  - A wrap read from a file took the geometry of the first turn or crop after it, and erased the wrong part.
+  - Florence-2 read a long strip at full size (a 46 MB canvas, or a failure above 65,535 px) and squashed it; it is
+    fitted now. A local Generate freed its memory only in the tab where it ran.
 - **Fixed: the assistant stopped longer tasks in the middle** with "the step limit of this turn was reached". A turn
   ended after 25 tool calls, and every screenshot and every read of the layers counted. The limit is now 100 by
   default (*Settings › Assistant*, up to 1,000), the note has a **Continue** button that goes on with the same task,

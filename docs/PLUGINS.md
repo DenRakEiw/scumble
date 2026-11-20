@@ -103,7 +103,7 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `getPixels()` | `{ data: ImageData, x: 0, y: 0, w, h }` of the flattened picture |
 | `getPixels(layer)` | the layer's own pixels (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
 | `setPixels(layer, imageData, { undo = true })` | write a layer's pixels back (same size, or the pixels are replaced and the placement kept); filter and locked layers refuse |
-| `addLayer(imageData \| canvas \| null, { name, x, y, w, h, activate })` | a new paint layer, placed at `x, y`; `null` = empty at image size; a canvas is adopted (do not draw into it afterwards) |
+| `addLayer(imageData \| canvas \| null, { name, x, y, w, h, activate, undo })` | a new paint layer, placed at `x, y`; `null` = empty at image size; a canvas is adopted (do not draw into it afterwards). It pushes one undo step ("Add <name>") so Ctrl+Z takes it back; `undo` a string labels that step, `false` pushes none (for a plugin that pushed its own step first) |
 | `selection({ box })` | `{ mask: Uint8Array(width × height), bounds: {x, y, w, h}, width, height }` or `null`; with `box: true` the mask of the bounds only (`width` × `height` are the bounds' size, `x`, `y` where they sit). Only the bounds are read either way |
 | `setSelection(mask, mode)` | from a `Uint8Array` (>0 = selected); `replace`, `add`, `subtract` |
 | `undo()`, `redo()` | |

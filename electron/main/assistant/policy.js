@@ -580,9 +580,9 @@ function undoStep(call, facts = {}) {
     // the pass pushes its own "layers" step for the layer it adds (a second one would be an empty step)
     if (name === "realism_pass") return null;
     if (name === "relight") return args.layer ? null : "layers";
-    // set_filter pushes its own "filter" step since docs/PLAN_0_1_42.md F2b (a second one would be an empty step)
-    // an angle turns the mask with the text, which only a "layers" step holds
-    if (name === "set_text") return args.angle !== undefined ? "layers" : "text";
+    // set_filter pushes its own "filter" step since docs/PLAN_0_1_42.md F2b, set_text its own "text" or "layers" step
+    // since the review of 2026-11-16 (a second one would be an empty step)
+    if (name === "set_text") return null;
     if (name === "set_layer") {
         // `role` asks like the other soft fields (setLayer) but the editor's setLayerRole pushes its own "layers" step:
         // a second one from the shell was an empty step under it

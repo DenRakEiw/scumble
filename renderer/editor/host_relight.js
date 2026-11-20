@@ -59,6 +59,12 @@ export const HostRelightPart = {
 
         try {
             if (editor.relightSettled) await editor.relightSettled(layer);   // its own maps too when it is hidden: the light map reads them
+            // the live layer by id: an undo of a layers step during the wait put a copy in its place, or took it away (and
+            // a paid run for a layer that is gone must not go out; review 2026-11-16 relight-depth-key/relight-whole-hides-stale-layer-and-keeps-fcache)
+            if (gone()) throw cancelled();
+            const liveLayer = editor.layers.find((x) => x.id === layer.id);
+            if (!liveLayer) throw Object.assign(new Error(`${L}: the relight layer was removed while the maps were made.`), { kind: "cancelled" });
+            layer = liveLayer;
             const W = editor.width, H = editor.height;
             if ((layer.params || {}).detail !== false && W * H > realism.MAX_AREA) {
                 throw new Error(`${L}: detail restoration supports pictures up to 27.9 megapixels (${W} x ${H} is ${((W * H) / 1e6).toFixed(1)} MP). Turn off detail restoration or scale the picture down first.`);
@@ -76,6 +82,8 @@ export const HostRelightPart = {
                     hiddenRelight.push(l);
                 }
             }
+            // the hidden layers change the composite: a filter cached at this version above them still holds their pixels
+            editor.uploaded.baseHash = null;
             let picBytes = null;
             let cFull = null;
             try {
@@ -97,6 +105,7 @@ export const HostRelightPart = {
                 const lr = live(layer);
                 if (lr) lr.visible = wasVis;
                 for (const l of hiddenRelight) { const h = live(l); if (h) h.visible = true; }
+                editor.uploaded.baseHash = null;   // and back: what was cached while they were hidden is stale again
             }
 
             const longSide = Math.max(W, H);

@@ -103,7 +103,12 @@ export function makePoints(scumble) {
     const run = makeRunner(scumble);
     const { ui } = scumble;
     let drag = null;   // { docId, layerId, mode, pt, start, orig, changed }
-    let drawing = null; // { pts: number[][], lastClickTime: number, lastClickPos: [number, number], cursor?: [number, number] }
+    let drawing = null; // { docId, pts: number[][], lastClickTime: number, lastClickPos: [number, number], cursor?: [number, number] }
+    // a polygon being placed belongs to the tab it was started in, and ends when the tool is left
+    const drawingHere = (doc) => {
+        if (drawing && drawing.docId !== doc.id) drawing = null;
+        return drawing;
+    };
     let newShape = "circle";
 
     // ---- the filter ---------------------------------------------------------------------------
@@ -211,12 +216,15 @@ export function makePoints(scumble) {
         key: "U",
         hint: "Control points: click adds a point (drag to size it), drag the centre to move, handles to resize, Delete removes it. Sliders for the point are in its layer row.",
         drawAlways: true,
+        onDeselect(doc) {
+            if (drawing) { drawing = null; doc.draw(); }
+        },
         onDown(doc, ev) {
             if (!doc.loaded) return;
             const view = viewOf(doc);
             let layer = pointsLayer(doc);
 
-            if (drawing != null) {
+            if (drawingHere(doc) != null) {
                 // Polygon creation in progress
                 const dt = Date.now() - (drawing.lastClickTime || 0);
                 const dp = Math.hypot(ev.x - drawing.lastClickPos[0], ev.y - drawing.lastClickPos[1]);
@@ -283,6 +291,7 @@ export function makePoints(scumble) {
 
             if (newShape === "polygon") {
                 drawing = {
+                    docId: doc.id,
                     pts: [[Math.round(ev.x), Math.round(ev.y)]],
                     lastClickTime: Date.now(),
                     lastClickPos: [ev.x, ev.y],
@@ -327,7 +336,7 @@ export function makePoints(scumble) {
             doc.status(`Point ${pt.id} added: drag to set its size, then adjust it in the layer row.`);
         },
         onMove(doc, ev) {
-            if (drawing != null) {
+            if (drawingHere(doc) != null) {
                 drawing.cursor = [ev.x, ev.y];
                 doc.draw();
                 return;
@@ -381,7 +390,9 @@ export function makePoints(scumble) {
             } else if (drag.mode.startsWith("corner_")) {
                 const idx = parseInt(drag.mode.slice(7), 10);
                 if (pt.shape === "polygon" && Array.isArray(pt.pts) && pt.pts[idx]) {
-                    pt.pts[idx] = [Math.round(ev.x), Math.round(ev.y)];
+                    // a new array: the points are shallow copies, so writing into pt.pts wrote into the live layer and
+                    // into the undo step taken from it, and Ctrl+Z left the corner where it was dragged
+                    pt.pts = pt.pts.map((v, i) => (i === idx ? [Math.round(ev.x), Math.round(ev.y)] : [v[0], v[1]]));
                 }
             } else if (drag.mode === "r") {
                 const ex = ev.x - pt.x, ey = ev.y - pt.y;
@@ -429,7 +440,7 @@ export function makePoints(scumble) {
         },
         onKey(doc, ev) {
             const layer = pointsLayer(doc);
-            if (drawing != null) {
+            if (drawingHere(doc) != null) {
                 if (ev.key === "Escape") {
                     drawing = null;
                     doc.status("Polygon creation cancelled.");
@@ -492,8 +503,8 @@ export function makePoints(scumble) {
             const activeLayer = doc.editor.activeLayer && doc.editor.activeLayer();
             const s = view.scale, lw = 1.5 * view.dpr / s;
 
-            // Draw polygon in progress
-            if (drawing && Array.isArray(drawing.pts) && drawing.pts.length) {
+            // Draw polygon in progress (only in its own tab, and only while the tool is held: drawAlways draws in every tool)
+            if (drawing && drawing.docId === doc.id && view.active !== false && Array.isArray(drawing.pts) && drawing.pts.length) {
                 ctx.lineWidth = lw;
                 ctx.strokeStyle = "#ffd166";
                 ctx.beginPath();
