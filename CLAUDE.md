@@ -82,7 +82,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-11-19: 0.1.58 released; the Store update open)
+## Where things stand (2026-11-20: 0.1.59 released; the Store update open)
 
 The hand-overs of 2026-10-13 to 2026-11-19 (0.1.47 to 0.1.58) are in `docs/HISTORY.md`, verbatim, under "Where things
 stand, 2026-10-13 to 2026-11-19" (moved on 2026-11-19; the user: "kannst du nochmal die claude.md aufräumen"). Read a
@@ -90,17 +90,14 @@ release's block there before touching what it built. Check `gh release list` bef
 written down anywhere.
 
 **The state**
-- **0.1.58 is out** (2026-11-18, tag v0.1.58 on `85ea5c9f`): Stay on surface for brush, eraser and bucket on Deep
-  paint layers, the fix of issue #15 (a helper job ends its wait when ComfyUI is gone,
-  `renderer/editor/host_helperwatch.js`), a small package of item 73, the assistant's `clip` question. The post
-  `v0-1-58` is live with the manual sync, the MCP Registry has 0.1.58, the node's editor is pushed
-  (`ComfyUI-InpaintCanvas` `d8fc370`, no pyproject bump), `INPAINT_CANVAS_REF` moved. After the tag `main` holds only
-  the RunPod ref, `server.json` and docs; `main` equals origin.
-- **Unreleased on `main`** (2026-11-20, CHANGELOG "Unreleased"): the assistant's step limit is 100 by default
-  instead of 25 (the field takes up to 1,000; every call counts, reads too), a turn that reaches it shows a
-  *Continue* button, and the next message's state note tells the model that its turn was cut short (`chat.capped`,
-  `prompt.stateNote`). The user's report: "längere agentic tasks funktionieren nicht richtig". Item 75 (Approve everything)
-  is built too, see the list; item 76 (agent templates) is asked for the same update and not built.
+- **0.1.59 is out** (2026-11-20, tag v0.1.59 on `fb7073d0`, published 10:23:56Z; the user: "ja, mach den release"):
+  the assistant's step limit 100 with *Continue*, Approve everything (item 75), templates (item 76; the user: "das soll
+  aber noch ins release rein"), 31 shoulds of item 73. The post `v0-1-59` is live with the manual sync and hub 0.1.59
+  (`Portfolio_vercel` `2b43494`, Vercel success), the MCP Registry has 0.1.59, the node's editor is pushed
+  (`ComfyUI-InpaintCanvas` `01ccccf`, no pyproject bump), `INPAINT_CANVAS_REF` moved (`329679ba`). Exe gates
+  `rel59-exe` side by side: the one real failure (`skins`, the template rules outside `@layer app`) fixed before the
+  tag, the six flakes green one at a time (`rel59r-t`, `rel59r-c`; `docs/TESTING.md`). Built: `dist/Scumble-0.1.59.msix`
+  and `dist/store-listing/whats-new-0.1.59.txt`.
 - **The releases since 0.1.47, one line each** (CHANGELOG has the text, HISTORY the hand-over): 0.1.48 status and
   feedback (red error lines, the progress bar, prompts from the history); 0.1.49 Comfy Cloud and Comfy Router on
   Comfy's SDK, FLUX 3 Klein and boxes on the user's ComfyUI; 0.1.50 MOSS-Image with boxes, the Klein prompt upsampler;
@@ -109,7 +106,8 @@ written down anywhere.
   kernel release (`docs/PLAN_WASM_BUILD.md`, done), MiniMax-H3-Image, Split into layers; 0.1.55 new work in a tab of
   its own, Settings kept per recipe, requests through curl, the long files split (item 56); 0.1.56 Deep paint;
   0.1.57 Generate the new border after an extend, layers that name themselves (Florence-2), one undo step per result,
-  the scope, a frame from a video, the contact shadow, the mannequin; 0.1.58 above.
+  the scope, a frame from a video, the contact shadow, the mannequin; 0.1.58 Stay on surface, the fix of issue #15;
+  0.1.59 above.
 - **GitHub:** the branches `main` and `gh-pages`; open issues #14 (item 74, the reply owed) and #8 (waits for
   Blueforcer/ComfyUI-DLSS5-Enhancer#17, open and unreviewed on 2026-11-19); #15 closed 2026-11-19. Local only:
   `demo-video` (the private demo-video commits, never pushed), `archive/k2-inflate-z`, six merged
@@ -122,9 +120,9 @@ written down anywhere.
   be gone: download it again then).
 
 **Open: the user's step or word**
-- **The Store update for 0.1.58:** `dist/Scumble-0.1.58.msix` with `dist/store-listing/whats-new-0.1.58.txt` (the
-  user's upload).
-- **The live node folder** to `d8fc370` (a fast-forward; it reloads the node in the running ComfyUI).
+- **The Store update for 0.1.59:** `dist/Scumble-0.1.59.msix` with `dist/store-listing/whats-new-0.1.59.txt` (the
+  user's upload; 0.1.58's was never uploaded, this one replaces it).
+- **The live node folder** to `01ccccf` (a fast-forward from `f7f278f`; it reloads the node in the running ComfyUI).
 - **The six merged agent worktrees** and their `worktree-agent-*` branches: remove them (asked, no answer; a
   `node_modules` junction goes first with `cmd //c rmdir`).
 - **The reply on issue #14** (item 74).
