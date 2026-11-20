@@ -1458,6 +1458,7 @@ function installIpc() {
     ipcMain.handle("assistant:send", (_e, req) => getAssistant().begin(String(req && req.text != null ? req.text : "")));
     ipcMain.handle("assistant:stop", () => getAssistant().stop());
     ipcMain.handle("assistant:answer", (_e, req) => getAssistant().answer(req && req.call, !!(req && req.allow)));
+    ipcMain.handle("assistant:approveAll", (_e, req) => getAssistant().setApproveAll(!!(req && req.on === true)));
     ipcMain.handle("assistant:reset", (_e, opts) => getAssistant().reset(opts || {}));
     ipcMain.handle("assistant:state", () => getAssistant().state());
     ipcMain.handle("assistant:models", () => getAssistant().models());

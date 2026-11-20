@@ -265,6 +265,7 @@ contextBridge.exposeInMainWorld("scumble", {
         send: (text) => ipcRenderer.invoke("assistant:send", { text }),
         stop: () => ipcRenderer.invoke("assistant:stop"),
         answer: (call, allow) => ipcRenderer.invoke("assistant:answer", { call, allow }),
+        approveAll: (on) => ipcRenderer.invoke("assistant:approveAll", { on: on === true }),
         reset: (opts) => ipcRenderer.invoke("assistant:reset", opts || {}),
         state: () => ipcRenderer.invoke("assistant:state"),
         models: () => ipcRenderer.invoke("assistant:models"),

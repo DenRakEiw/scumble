@@ -113,7 +113,7 @@ const ui = {
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     skins: $("set-skins"), skinsReload: $("set-skins-reload"), skinsFolder: $("set-skins-folder"), skinsNote: $("set-skins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setUndoSteps: $("set-undo-steps"), setUndoMB: $("set-undo-mb"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setUndoSteps: $("set-undo-steps"), setUndoMB: $("set-undo-mb"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsRuns: $("set-as-runs"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"), aboutStar: $("set-about-star"), aboutShare: $("set-about-share"),
     shareRow: $("set-about-share-row"), shareCopy: $("set-share-copy"), shareTargets: $("set-share-targets"), shareNote: $("set-share-note"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
@@ -916,6 +916,13 @@ ui.setAsSteps.addEventListener("change", async () => {
     ui.setAsSteps.value = v;
     shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), maxSteps: v } });
 });
+// "Approve everything" (the switch under the chat): the paid or queued runs it starts per turn; 0 makes each of them ask
+ui.setAsRuns.addEventListener("change", async () => {
+    const n = Math.round(Number(ui.setAsRuns.value));
+    const v = ui.setAsRuns.value.trim() === "" || !Number.isFinite(n) ? 30 : Math.min(1000, Math.max(0, n));
+    ui.setAsRuns.value = v;
+    shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), autoRuns: v } });
+});
 ui.setAsReset.addEventListener("click", async () => {
     // the editor's own question, not a native confirm: it says exactly what goes and what stays
     const ed = host.editor;
@@ -934,6 +941,7 @@ ui.setAsReset.addEventListener("click", async () => {
         shellState.settings = await window.scumble.settings.get();
         ui.setAsKeep.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).keepChats) || 20));
         ui.setAsSteps.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).maxSteps) || 100));
+        ui.setAsRuns.value = 30;
         ui.setAsNote.textContent = "every chat, screenshot and log line of the assistant is gone; the keys are untouched";
     } catch (err) {
         ui.setAsNote.textContent = "could not delete: " + ((err && err.message) || err);

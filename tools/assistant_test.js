@@ -1314,9 +1314,73 @@ async function main() {
             await a.close();
         }
         {
+            // "Approve everything" (item 75): what would ask runs unasked and its card says why it would have asked; a paid
+            // run past the turn's limit asks as before; switching it on answers the question that waits; off in a new chat
+            const editor = new FakeEditor();
+            const { a, events } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "flatten", input: { doc: 1 } }]),
+                anthropicStream([{ type: "tool_use", id: "c2", name: "generate", input: { doc: 1 } }]),
+                anthropicStream([{ type: "tool_use", id: "c3", name: "generate", input: { doc: 1 } }]),
+                anthropicStream([{ type: "text", text: "done" }]),
+            ], { assistant: { autoRuns: 1 } });
+            await a.connect();
+            a.chat = await a.newChat();
+            const on = a.setApproveAll(true);
+            const stopAnswers = answerAsks(a, events, false);          // the one question left is declined
+            const out = await a.send("flatten, then render twice");
+            stopAnswers();
+            const callOf = (id) => events.find((e) => e.type === "call" && e.call === id) || {};
+            const asks = events.filter((e) => e.type === "ask");
+            const runs = (name) => editor.calls.filter((c) => c.name === name).length;
+            check("approve_everything_runs_what_would_ask_and_says_why",
+                on.approveAll === true && on.autoRuns === 1 && out.reason === "end" && runs("flatten") === 1
+                && callOf("c1").action === "approved" && /bakes|base/.test(callOf("c1").reason || "")
+                && callOf("c2").action === "approved" && events.some((e) => e.type === "note" && /Approve everything is on/.test(e.text)),
+                `${out.reason}, c1 ${callOf("c1").action} "${callOf("c1").reason}", c2 ${callOf("c2").action}`);
+            check("approve_everything_asks_again_past_its_runs_per_turn",
+                asks.length === 1 && asks[0].callId === "c3" && /its limit/.test(asks[0].reason) && runs("generate") === 1,
+                `${asks.length} asks (${asks.map((e) => e.callId)}), ${runs("generate")} generate`);
+
+            // switched on while a question waits: the question is answered, the call runs
+            a.setApproveAll(false);
+            a.deps.fetchImpl = scriptedFetch([
+                anthropicStream([{ type: "tool_use", id: "c5", name: "flatten", input: { doc: 1 } }]),
+                anthropicStream([{ type: "text", text: "flat" }]),
+            ]);
+            const before = events.length;
+            const turn = a.send("flatten again");
+            await waitFor(() => events.slice(before).some((e) => e.type === "ask"));
+            const waited = runs("flatten");
+            a.setApproveAll(true);
+            const again = await turn;
+            check("switching_approve_everything_on_answers_the_waiting_question",
+                waited === 1 && again.reason === "end" && runs("flatten") === 2 && callOf("c5").action === "allowed",
+                `${again.reason}, flatten ${waited} then ${runs("flatten")}, c5 ${callOf("c5").action}`);
+            await a.reset();
+            check("a_new_chat_starts_with_approve_everything_off", a.approveAll === false && (await a.state()).approveAll === false);
+            await a.close();
+        }
+        {
+            // what the policy refuses stays refused with everything approved: a run on a document that is rendering
+            const editor = new FakeEditor({ busy: true });
+            const { a, events } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "generate", input: { doc: 1 } }]),
+                anthropicStream([{ type: "text", text: "it is busy" }]),
+            ]);
+            await a.connect();
+            a.chat = await a.newChat();
+            a.setApproveAll(true);
+            const out = await a.send("render");
+            const call = events.find((e) => e.type === "call" && e.call === "c1") || {};
+            check("approve_everything_leaves_a_refusal_refused",
+                out.reason === "end" && call.action === "refuse" && !editor.calls.some((c) => c.name === "generate") && !events.some((e) => e.type === "ask"),
+                `${out.reason}, ${call.action}, ${call.reason}`);
+            await a.close();
+        }
+        {
             const editor = new FakeEditor();
             const { a } = assistantOn(editor, [anthropicStream([{ type: "text", text: "hi" }])], { assistant: { base: "http://127.0.0.1:5599" } });
-            check("a_partial_assistant_setting_keeps_the_defaults", a.settings().maxSteps === 100 && a.settings().keepImages === 3 && a.settings().maxTokens === 32000,
+            check("a_partial_assistant_setting_keeps_the_defaults", a.settings().maxSteps === 100 && a.settings().keepImages === 3 && a.settings().maxTokens === 32000 && a.settings().autoRuns === 30,
                 JSON.stringify(a.settings()));
             await a.close();
         }

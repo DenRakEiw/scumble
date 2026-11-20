@@ -585,6 +585,69 @@ return { first: first.reason, detail: first.detail, had: !!b, note, second: seco
             raise RuntimeError("Continue did not run the next turn, or its button stayed: " + json.dumps(out))
         return f"the turn ended at the limit ({out['detail']}), Continue ran the next one and the model was told"
 
+    async def approve_everything(self):
+        """The chat's switch: asked for in the app's dialog, then a call that would ask runs unasked; off in a new chat."""
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "boxes_clear", "args": {}}]}),
+            Turn(answer={"text": "keine boxen mehr"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const sw = d.querySelector("button.as-approve");
+const state = () => window.scumble.assistant.state();
+const question = async () => {
+    for (let i = 0; i < 40; i++) { const q = document.querySelector("dialog.sc-dialog[open]"); if (q) return q.querySelector("div").shadowRoot; await wait(50); }
+    return null;
+};
+const idle = async () => {
+    for (let i = 0; i < 120; i++) { await wait(250); const s = await state(); if (!s.busy) break; }
+    await wait(300);
+};
+const before = (await state()).approveAll;
+// Cancel leaves it off
+sw.click();
+let q = await question();
+const words = q ? q.textContent : "";
+if (q) q.querySelectorAll("button")[1].click();
+await wait(200);
+const afterCancel = (await state()).approveAll;
+// the yes switches it on
+sw.click();
+q = await question();
+const labels = q ? Array.from(q.querySelectorAll("button")).map((b) => b.textContent) : [];
+if (q) q.querySelectorAll("button")[0].click();
+await wait(300);
+const on = (await state()).approveAll;
+const shown = { text: sw.textContent, pressed: sw.getAttribute("aria-pressed") };
+const from = (await state()).events.length;
+await window.scumble.assistant.send("entferne alle boxen");
+await idle();
+const events = (await state()).events.slice(from);
+const call = events.find((e) => e.type === "call" && e.name === "boxes_clear") || {};
+const card = d.querySelector(".as-card.as-approved");
+const done = [...events].reverse().find((e) => e.type === "turn:done") || {};
+// a new chat asks again
+Array.from(d.querySelectorAll(".as-head button")).find((b) => b.textContent === "New chat").click();
+await wait(600);
+const afterNew = (await state()).approveAll;
+return { before, words, afterCancel, labels, on, shown, asks: events.filter((e) => e.type === "ask").length, action: call.action, reason: call.reason || "",
+    card: card ? card.textContent : "", done: done.reason, afterNew, textNew: sw.textContent, open: !!document.querySelector("dialog.sc-dialog[open]") };""", timeout=120)
+        if out["before"] or out["afterCancel"] or "spend money" not in out["words"] or out["labels"] != ["Approve everything", "Cancel"]:
+            raise RuntimeError("the switch did not ask first, or Cancel switched it on: " + json.dumps(out))
+        if not out["on"] or out["shown"] != {"text": "Approving everything", "pressed": "true"}:
+            raise RuntimeError("the yes did not switch it on: " + json.dumps(out))
+        if out["asks"] or out["action"] != "approved" or "approved without asking" not in out["card"] or out["done"] != "end":
+            raise RuntimeError("the call did not run unasked with its reason on the card: " + json.dumps(out))
+        if out["afterNew"] or out["textNew"] != "Approve everything" or out["open"]:
+            raise RuntimeError("a new chat kept the switch on: " + json.dumps(out))
+        return f"asked in the app's dialog, boxes_clear ran unasked ({out['reason']}), and a new chat asks again"
+
     async def undo_turn_two_documents(self):
         """A turn that changed two documents restores both."""
         if not await self.tiles():
@@ -1877,6 +1940,7 @@ async def main():
             await g.run_step("the_model_is_told_its_turn_was_undone", g.undo_turn_tells_the_model)
             await g.run_step("an_undo_card_belongs_to_its_own_turn", g.undo_card_is_its_own_turns)
             await g.run_step("turn_undo_is_refused_on_the_canvas_backend", g.undo_turn_on_canvas)
+            await g.run_step("approve_everything_asks_once_then_runs_unasked", g.approve_everything)
             await g.run_step("the_reset_deletes_every_chat_and_keeps_the_keys", g.reset_all)
         except Exception as e:  # noqa: BLE001
             g.results.append(False)

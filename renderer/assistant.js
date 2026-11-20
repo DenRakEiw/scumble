@@ -18,6 +18,7 @@
 import { host } from "./editor/host.js";
 import { turnState, restoreTurn, forgetTurns } from "./assistant_turns.js";
 import { protectAsk, releaseAsk } from "./skins.js";
+import { confirm } from "./dialogs.js";
 
 const OPEN_KEY = "shell.assistant.open";
 const THUMB_MAX = 240;
@@ -28,6 +29,8 @@ let started = false;
 let busy = false;
 let openAsk = null;          // the token of the ask card that is waiting
 let continueRow = null;      // the Continue button under the last step-limit note
+let approveAll = false;      // "Approve everything" of this chat, as main holds it (item 75)
+let autoRuns = 30;           // the paid or queued runs it lets one turn start
 let streamBubble = null;     // the bubble the model's text streams into
 let streamText = null;       // its text node
 let cards = new Map();       // call id -> its card, for this turn only: ids repeat across turns
@@ -184,8 +187,13 @@ export function initAssistant(options = {}) {
     ui.cost = el("span", "as-cost", "");
     ui.send = el("button", null, "Send");
     ui.send.type = "button";
+    ui.approve = el("button", "as-approve", "Approve everything");
+    ui.approve.type = "button";
+    ui.approve.setAttribute("aria-pressed", "false");
+    // Send stays the first button of the footer (the tests find it that way); assistant.css draws the switch left of it
     frow.appendChild(ui.cost);
     frow.appendChild(ui.send);
+    frow.appendChild(ui.approve);
     foot.appendChild(frow);
     dialog.appendChild(foot);
 
@@ -197,6 +205,7 @@ export function initAssistant(options = {}) {
     ui.newChat.addEventListener("click", () => newChat());
     ui.chats.addEventListener("click", () => toggleChats());
     ui.send.addEventListener("click", () => (busy ? stop() : send()));
+    ui.approve.addEventListener("click", () => toggleApprove());
     ui.model.addEventListener("change", () => pickModel(ui.model.value));
     ui.freeUse.addEventListener("click", () => pickModel("openrouter:" + ui.freeId.value.trim()));
     ui.text.addEventListener("focus", () => { handedOff = false; });
@@ -402,7 +411,12 @@ function toolCard(e) {
     card.appendChild(head);
     const args = argsOf(e.args);
     if (args) card.appendChild(el("div", "as-card-args", short(args, 200)));
-    if (e.reason) card.appendChild(el("div", "as-reason", e.reason));
+    // a call "Approve everything" let through says what its question would have said
+    if (e.action === "approved") {
+        card.classList.add("as-approved");
+        card.appendChild(el("div", "as-reason", "approved without asking" + (e.reason ? ": " + e.reason : "")));
+        for (const line of cardLines(e)) card.appendChild(el("div", "as-note", line));
+    } else if (e.reason) card.appendChild(el("div", "as-reason", e.reason));
     if (e.action === "refuse") card.classList.add("as-bad");
     cards.set(String(e.call), card);
     return add(card);
@@ -752,6 +766,7 @@ async function openChat(id) {
         ui.text.disabled = false;
         ui.send.disabled = false;
     }
+    showApprove();
 }
 
 /** Settings deleted everything the assistant stored: the panel goes back to how it started. */
@@ -772,6 +787,8 @@ export function resetAssistant() {
     ui.send.textContent = "Send";
     ui.text.disabled = false;
     ui.send.disabled = false;
+    approveAll = false;
+    showApprove();
     showCost();
     open(false);
     store(false);
@@ -793,6 +810,44 @@ function continueButton(card) {
     continueRow = el("div", "as-card-buttons");
     continueRow.appendChild(b);
     card.appendChild(continueRow);
+}
+
+// ---- approve everything (item 75) -----------------------------------------------------------
+
+/**
+ * The chat's switch: on, every call the assistant would ask about runs without a question. Switching it on asks
+ * first, in the app's own dialog (renderer/dialogs.js, which no skin reaches); main answers a question that is
+ * waiting, so a turn does not stand still behind it. It belongs to this chat and is off in the next one.
+ */
+async function toggleApprove() {
+    if (ui.approve.disabled) return;
+    if (approveAll) {
+        showApprove(await api().approveAll(false).catch(() => null));
+        return;
+    }
+    const yes = await confirm("Approve everything in this chat?", {
+        title: "Assistant",
+        detail: `The assistant then runs every call without asking first: paid runs and runs on your ComfyUI (at most ${autoRuns} per turn, Settings › Assistant), reading and overwriting files, and changes Ctrl+Z does not take back. What it refuses stays refused, and every call still shows as a card.\n\nThe model reads layer names, file names and text in the picture. With everything approved, such text can make it spend money or overwrite a file.\n\nThis holds for this chat only; a new chat asks again.`,
+        ok: "Approve everything", cancel: "Cancel", danger: true,
+    });
+    if (!yes) return;
+    showApprove(await api().approveAll(true).catch(() => null));
+}
+
+/** The switch as main holds it (`state()`, or the answer of `approveAll`). */
+function showApprove(state) {
+    if (state) {
+        approveAll = !!state.approveAll;
+        if (Number.isFinite(Number(state.autoRuns))) autoRuns = Number(state.autoRuns);
+    }
+    if (!ui.approve) return;
+    ui.approve.classList.toggle("as-on", approveAll);
+    ui.approve.setAttribute("aria-pressed", approveAll ? "true" : "false");
+    ui.approve.textContent = approveAll ? "Approving everything" : "Approve everything";
+    ui.approve.title = approveAll
+        ? `On for this chat: nothing asks first (at most ${autoRuns} paid or queued runs per turn). Click to make the assistant ask again.`
+        : "Let the assistant run every call of this chat without asking, paid runs included";
+    ui.approve.disabled = !!ui.text.disabled;              // a chat opened to read takes no turn
 }
 
 function dropContinue() {
@@ -852,6 +907,8 @@ async function newChat() {
     openAsk = null;
     streamBubble = null;
     ui.send.textContent = "Send";
+    approveAll = false;                                    // main's reset() switched it off with the chat
+    showApprove();
     showCost();
     syncButton();
 }
@@ -880,6 +937,7 @@ async function refresh() {
         ui.send.disabled = true;
     }
     await fillPicker(state);
+    showApprove(state);
     showNotice();
     showCost();
     if (!ui.list.childNodes.length && Array.isArray(state.events) && state.events.length) {

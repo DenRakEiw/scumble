@@ -121,6 +121,35 @@ card that says why:
 Neither button of an ask card is the default, and Enter in the chat field never answers one. An
 export without a path, or with an extension that does not match the format, is refused outright.
 
+### Approve everything
+
+**Approve everything**, the switch beside *Send*, takes the questions away for one chat, for a task
+of many steps that you do not want to answer card by card.
+
+- Switching it on asks once, in a dialog of the app that no skin can restyle, and says what it
+  means. Switching it off needs no question.
+- While it is on, every call of the list above runs without a card to answer: paid runs and runs
+  on your ComfyUI, reading a file, an export or a save over an existing file, the changes Ctrl+Z
+  does not take back, the global settings. Each call's card says "approved without asking" and
+  what the question would have said (the reason, the recipe, the file).
+- **What the assistant refuses stays refused**: a call that failed twice, a run on a document that
+  is already rendering, an export without a path, a tool that is not in the chat.
+- **Paid and queued runs are counted per turn.** After 30 of them in one turn the next one asks
+  again, with that reason on its card (*Settings › Assistant*, 0 to 1,000; at 0 every such run
+  asks). They are the calls that ask because they cost money or queue on your server: `generate`,
+  `generate_new`, `upscale`, `realism_pass`, `select_by_text`, `cutout_layer`, `upsample_prompt`,
+  `relight`, `key_screen`, `split_layers`, and an `extend_canvas` that generates the new border.
+- Switching it on while a question is waiting answers that question with Allow, so a turn does
+  not stand still behind it.
+- It belongs to the chat on screen and is stored nowhere: a new chat, a reopened chat and a
+  restart of Scumble start with it off. A line in the chat records when it was switched on and off.
+
+**What you give up.** The model reads layer names, file names, the log and the text in your
+picture. A question is where you would notice that such text made it do something you did not ask
+for. With everything approved it can spend money on runs (up to the limit per turn, and again in
+the next turn) or overwrite a file before you see it. "Undo this turn" still takes the picture
+back; it does not take back a file written to disk or a run that was charged.
+
 ## Taking it back
 
 - **Ctrl+Z undoes each step**, including the ones the editor records no step for by itself: a new

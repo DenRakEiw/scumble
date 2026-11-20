@@ -76,6 +76,12 @@
 .as-foot-row { display: flex; align-items: center; gap: 6px; }
 .as-foot button { background: var(--sc-btn, #2d2d2d); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius, 3px); padding: 4px 12px; font: inherit; cursor: pointer; }
 .as-foot button:hover { background: var(--sc-btn-hover, #3a3a3a); }
+.as-foot-row > button { order: 2; }
+.as-foot-row > button.as-approve { order: 1; }
+.as-foot button.as-approve { padding: 4px 8px; font-size: 11px; color: var(--sc-fg-2, #aaa); white-space: nowrap; }
+.as-foot button.as-approve.as-on { color: var(--sc-warn, #f0c674); border-color: var(--sc-warn, #f0c674); }
+.as-foot button.as-approve:disabled { opacity: 0.5; cursor: default; }
+.as-card.as-approved { border-left-color: var(--sc-warn, #f0c674); }
 .as-cost { color: var(--sc-faint, #777); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- the chats on disk (A6) ---------------------------------------------------------- */

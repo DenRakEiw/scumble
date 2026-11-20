@@ -30,6 +30,7 @@ const EVENTS_MAX = 2000;            // the events a chat keeps for its replay (e
 const DEFAULTS = {
     model: DEFAULT_MODEL,
     maxSteps: 100,
+    autoRuns: 30,                   // "Approve everything": the paid or queued runs one turn may start unasked
     screenshotMax: 1024,
     keepImages: 3,
     maxTokens: 32000,
@@ -55,6 +56,7 @@ class Assistant {
         this.turnSeq = 0;
         this.askSeq = 0;
         this.pending = null;        // the ask a turn is waiting on
+        this.approveAll = false;    // "Approve everything" of the chat on screen (item 75): never stored, off in every new chat
         this.client = null;
         this.server = null;
         this.events = [];
@@ -342,6 +344,38 @@ class Assistant {
         return true;
     }
 
+    /** The most paid or queued runs one turn starts unasked while "Approve everything" is on (0: each of them asks). */
+    autoRuns() {
+        const n = Math.round(Number(this.settings().autoRuns));
+        return Number.isFinite(n) ? Math.min(1000, Math.max(0, n)) : DEFAULTS.autoRuns;
+    }
+
+    /**
+     * "Approve everything" for the chat on screen (item 75): every call the policy would ask about
+     * runs unasked, a paid or queued run up to `autoRuns` per turn. What the policy refuses stays
+     * refused. Switching it on answers the question that is waiting, so a turn does not stand
+     * still behind a card nobody is there to click. The window asks the user before it calls this
+     * with `true` (renderer/assistant.js); a new, reopened or deleted chat starts with it off.
+     */
+    setApproveAll(on) {
+        const want = !!on && !this.readOnly && !(this.chat && this.chat.readOnly);
+        if (want !== this.approveAll) {
+            this.approveAll = want;
+            const limit = this.autoRuns();
+            this.emit("note", {
+                text: want
+                    ? `Approve everything is on for this chat: nothing asks first, paid runs and files included (at most ${limit} paid or queued run${limit === 1 ? "" : "s"} per turn)`
+                    : "Approve everything is off: the assistant asks again",
+            });
+        }
+        if (this.approveAll && this.pending) {
+            const p = this.pending;
+            this.pending = null;
+            p.resolve(true);
+        }
+        return { approveAll: this.approveAll, autoRuns: this.autoRuns() };
+    }
+
     // ---- the turn ------------------------------------------------------------------------
 
     /** The whole turn: resolves with its `done` record (the plain-Node tests, the checkpoint's console). */
@@ -398,6 +432,7 @@ class Assistant {
         const turn = {
             id: `t${Date.now().toString(36)}${(++this.turnSeq).toString(36)}`,
             askSeq: 0,
+            autoRuns: 0,                             // the paid or queued runs "Approve everything" let through
             abort: new AbortController(),
             stopped: false,
             steps: 0,
@@ -444,6 +479,7 @@ class Assistant {
         this.stop();
         if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
         this.chat = null;
+        this.approveAll = false;
         this.events = [];
         this.lastTurn = null;
         this.toolsDirty = false;
@@ -472,6 +508,8 @@ class Assistant {
             base: loopbackBase(s.base),
             events: this.events.map((e) => (e && e.image ? { ...e, image: null } : e)),
             pending: this.pending ? this.pending.card : null,
+            approveAll: this.approveAll,
+            autoRuns: this.autoRuns(),
             usage: chat ? { ...chat.usage } : null,
             toolsChanged: null,
             agents: this.deps.agents ? this.deps.agents() : 0,
@@ -541,6 +579,7 @@ class Assistant {
             };
         }
         this.chat = chat;
+        this.approveAll = false;
         this.events = (saved.events || []).slice();
         this.lastTurn = null;
         this.toolsChanged = null;
@@ -580,7 +619,7 @@ class Assistant {
         }
         await this.savesDone();
         await this.deps.store.remove(id);
-        if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; }
+        if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; this.approveAll = false; }
         return true;
     }
 
@@ -614,6 +653,7 @@ class Assistant {
         if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
         await Promise.race([this.savesDone(), new Promise((r) => setTimeout(r, 5000))]);
         this.chat = null;
+        this.approveAll = false;
         this.events = [];
         this.lastTurn = null;
         this.toolsDirty = false;
@@ -849,7 +889,20 @@ class Assistant {
             this.emit("call", { call: call.id, name, args: canonical.args, action: "refuse", reason: decision.reason });
             return errorResult(`refused by Scumble: ${decision.reason}`);
         }
-        if (decision.action === "ask") {
+        // "Approve everything" (item 75): the chat's switch answers the question. A refusal never gets
+        // here, and a paid or queued run past the turn's limit asks as it always did, saying why.
+        let approved = false;
+        if (decision.action === "ask" && this.approveAll) {
+            const run = policy.renders(canonical);
+            const limit = this.autoRuns();
+            if (!run || turn.autoRuns < limit) {
+                approved = true;
+                if (run) turn.autoRuns++;
+            } else {
+                decision = { ...decision, reason: `${decision.reason} (Approve everything has started ${limit} paid or queued run${limit === 1 ? "" : "s"} in this turn, its limit)` };
+            }
+        }
+        if (decision.action === "ask" && !approved) {
             const allowed = await this.ask(call, canonical, decision, turn);
             // Stop answers the ask too (stop()): that is the user stopping the turn, not declining this call
             if (!allowed && turn.stopped) return errorResult("not run: the user stopped the turn before answering");
@@ -878,7 +931,9 @@ class Assistant {
         // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
         // that only read leaves `lastTurn` null
         if (!policy.isRead(name, canonical.args) && doc !== undefined && doc !== null) turn.docs.add(doc);
-        this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
+        // an approved call's card keeps what its question would have said: the reason and the card's lines
+        if (approved) this.emit("call", { call: call.id, name, args: canonical.args, action: "approved", reason: decision.reason, card: decision.card });
+        else this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
         const before = layers.map((l) => l.id);
         const startedAt = Date.now();
         let res;

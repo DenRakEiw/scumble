@@ -4,6 +4,13 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **The assistant: Approve everything.** A switch beside *Send* takes the questions away for one chat, for a task
+  of many steps you do not want to answer card by card. It asks once whether you mean it; after that every call
+  runs without a question, paid runs and files included, and each card says what it would have asked. What the
+  assistant refuses stays refused, and after 30 paid or queued runs in one turn the next one asks again
+  (*Settings › Assistant* sets the number). A new chat asks as before. Mind what it means: the model reads layer
+  names, file names and text in the picture, and with everything approved such text can make it spend money or
+  overwrite a file.
 - **Fixed: the assistant stopped longer tasks in the middle** with "the step limit of this turn was reached". A turn
   ended after 25 tool calls, and every screenshot and every read of the layers counted. The limit is now 100 by
   default (*Settings › Assistant*, up to 1,000), the note has a **Continue** button that goes on with the same task,

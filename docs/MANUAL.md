@@ -746,6 +746,10 @@ It runs on your own API key. Anthropic, OpenAI and Google directly, or anything 
 
 It asks before it does anything expensive or irreversible: generating, upscaling, selecting by text, anything that queues on your ComfyUI or costs a provider call, anything that clears the undo stack, anything that touches a layer that is not its own. The question card shows the reason, the file, the recipe and the old and new values, and neither button is the default one.
 
+For a long task you do not want to sit beside, *Approve everything* under the chat field switches the questions off for that chat. Scumble asks once whether you mean it; after that every call runs without a question, paid runs and files included, and each card says what it would have asked. What the assistant refuses stays refused. Paid runs and runs on your ComfyUI are counted: after 30 in one turn (Settings › Assistant sets the number) the next one asks again. The switch belongs to the chat it was set in, a new chat asks as before. Keep in mind what it means: the model reads layer names, file names and text in the picture, and with everything approved such text can make it spend money or overwrite a file.
+
+A turn ends after 100 tool calls (Settings › Assistant, up to 1,000), which is there to stop a loop that runs away. When a task needs more, the note has a *Continue* button that goes on where the turn stood.
+
 And it can be taken back. Ctrl+Z undoes its steps one at a time like your own, and Undo this turn puts every document the turn touched back to where it was before — even when the turn was longer than the undo stack. Chats are saved with their screenshots and can be reopened; Settings › Assistant deletes everything it ever stored, your keys excepted.
 
 ### Notes
