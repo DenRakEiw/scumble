@@ -94,7 +94,7 @@ written down anywhere.
   the assistant's step limit 100 with *Continue*, Approve everything (item 75), templates (item 76; the user: "das soll
   aber noch ins release rein"), 31 shoulds of item 73. The post `v0-1-59` is live with the manual sync and hub 0.1.59
   (`Portfolio_vercel` `2b43494`, Vercel success), the MCP Registry has 0.1.59, the node's editor is pushed
-  (`ComfyUI-InpaintCanvas` `01ccccf`, no pyproject bump), `INPAINT_CANVAS_REF` moved (`329679ba`). Exe gates
+  (`ComfyUI-InpaintCanvas` `01ccccf`, then `36c1aac` with the new repo address, no pyproject bump), `INPAINT_CANVAS_REF` moved. Exe gates
   `rel59-exe` side by side: the one real failure (`skins`, the template rules outside `@layer app`) fixed before the
   tag, the six flakes green one at a time (`rel59r-t`, `rel59r-c`; `docs/TESTING.md`). Built: `dist/Scumble-0.1.59.msix`
   and `dist/store-listing/whats-new-0.1.59.txt`.
@@ -133,7 +133,7 @@ written down anywhere.
 **Open: the user's step or word**
 - **The Store update for 0.1.59:** `dist/Scumble-0.1.59.msix` with `dist/store-listing/whats-new-0.1.59.txt` (the
   user's upload; 0.1.58's was never uploaded, this one replaces it).
-- **The live node folder** to `01ccccf` (a fast-forward from `f7f278f`; it reloads the node in the running ComfyUI).
+- **The live node folder** to `36c1aac` (a fast-forward from `f7f278f`; it reloads the node in the running ComfyUI).
 - **The six merged agent worktrees** and their `worktree-agent-*` branches: remove them (asked, no answer; a
   `node_modules` junction goes first with `cmd //c rmdir`).
 - **The reply on issue #14** (item 74).
