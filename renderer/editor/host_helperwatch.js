@@ -1,7 +1,7 @@
 // @ts-check
 // The helper prompts a document waits for on the user's ComfyUI (a selection by text, the object map, a prompt
 // upsampling through a node, a background removal): their wait ends here when ComfyUI will never answer (issue
-// DenRakEiw/scumble#15, 2026-11-17: SAM3 hung, ComfyUI was restarted, and the tab stayed on "Segmenting ..." until
+// scumble-app/scumble#15, 2026-11-17: SAM3 hung, ComfyUI was restarted, and the tab stayed on "Segmenting ..." until
 // Scumble was restarted). The editor ends such a wait itself on the helper's output, and host.js on ComfyUI's
 // execution_error; neither comes after a restart of the server, a cleared queue or an interrupt. Each helper also has
 // a row in the title row, so Cancel (and the cancel_run command) stops it.

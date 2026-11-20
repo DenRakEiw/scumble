@@ -19,7 +19,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const SRC = path.join(ROOT, "mcpb");
-const REPO = "DenRakEiw/scumble";
+const REPO = "scumble-app/scumble";
 const MCPB_VERSION = "2.1.2";
 
 function pkg() {

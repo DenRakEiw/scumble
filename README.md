@@ -6,16 +6,16 @@
 </p>
 
 <h3 align="center">
-  ⭐ <a href="https://github.com/DenRakEiw/scumble">Star on GitHub</a>
+  ⭐ <a href="https://github.com/scumble-app/scumble">Star on GitHub</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/DenRakEiw/scumble/releases/latest">Download</a>
+  <a href="https://github.com/scumble-app/scumble/releases/latest">Download</a>
   &nbsp;·&nbsp;
   <a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R">Microsoft Store</a>
 </h3>
 
 <p align="center">
-  <a href="https://github.com/DenRakEiw/scumble"><img alt="Star Scumble on GitHub" src="https://img.shields.io/github/stars/DenRakEiw/scumble?style=social"></a>
-  <a href="https://github.com/DenRakEiw/scumble/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/DenRakEiw/scumble?label=download"></a>
+  <a href="https://github.com/scumble-app/scumble"><img alt="Star Scumble on GitHub" src="https://img.shields.io/github/stars/scumble-app/scumble?style=social"></a>
+  <a href="https://github.com/scumble-app/scumble/releases/latest"><img alt="Download the latest release" src="https://img.shields.io/github/v/release/scumble-app/scumble?label=download"></a>
   <a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R"><img alt="Get it from the Microsoft Store" src="https://img.shields.io/badge/Microsoft%20Store-get%20it-0078d4"></a>
   <a href="LICENSE"><img alt="Licence: GPL-3.0" src="https://img.shields.io/badge/licence-GPL--3.0-blue"></a>
 </p>
@@ -31,9 +31,9 @@
 | Platform | Get it | Notes |
 |---|---|---|
 | **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R), or `winget install scumble` | Signed by Microsoft, no SmartScreen warning, updated by the Store |
-| **Windows** | [Installer](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-Setup-<version>.exe` | Updates itself; not code-signed yet, so SmartScreen asks once |
-| **Windows, portable** | [Zip](https://github.com/DenRakEiw/scumble/releases/latest): `Scumble-<version>-portable-win-x64.zip` | No install; keeps its data in a folder beside it |
-| **Linux** (x64) | [AppImage or .deb](https://github.com/DenRakEiw/scumble/releases/latest) | Early builds made by CI, not run by the author yet; reports welcome |
+| **Windows** | [Installer](https://github.com/scumble-app/scumble/releases/latest): `Scumble-Setup-<version>.exe` | Updates itself; not code-signed yet, so SmartScreen asks once |
+| **Windows, portable** | [Zip](https://github.com/scumble-app/scumble/releases/latest): `Scumble-<version>-portable-win-x64.zip` | No install; keeps its data in a folder beside it |
+| **Linux** (x64) | [AppImage or .deb](https://github.com/scumble-app/scumble/releases/latest) | Early builds made by CI, not run by the author yet; reports welcome |
 | **macOS** | coming soon | In the works |
 
 Scumble is free and needs no account of its own. The details, and what it needs to render, are under
@@ -124,7 +124,7 @@ Three boxes drawn and described on an empty canvas (left), and the picture FLUX 
   after Microsoft has certified it, so sometimes a little after the GitHub release. The Store copy keeps its own
   settings, keys and files (`%APPDATA%\Scumble Store`), so it can sit beside the GitHub one.
 - **Installer from GitHub:** `Scumble-Setup-<version>.exe` from the
-  [latest release](https://github.com/DenRakEiw/scumble/releases/latest). It is not code-signed yet, so SmartScreen
+  [latest release](https://github.com/scumble-app/scumble/releases/latest). It is not code-signed yet, so SmartScreen
   shows "Windows protected your PC" once: click *More info*, then *Run anyway*. After that the app downloads its own
   updates and asks before it restarts into a new version.
 - **Portable zip:** `Scumble-<version>-portable-win-x64.zip` from the same release. Unpack it into a folder you can
@@ -138,7 +138,7 @@ Three boxes drawn and described on an empty canvas (left), and the picture FLUX 
 
 The same release carries `scumble-<version>.AppImage` and `scumble-<version>.deb` (x64). **They are built by CI and
 have not been run by the author yet; reports are welcome** in the
-[issues](https://github.com/DenRakEiw/scumble/issues). Details are under [Linux notes](#linux-notes) below.
+[issues](https://github.com/scumble-app/scumble/issues). Details are under [Linux notes](#linux-notes) below.
 
 ### macOS
 
@@ -183,8 +183,8 @@ descriptions) run on your own machine once downloaded.
 
 ## ⭐ If you like it
 
-If Scumble is useful to you, a [star on GitHub](https://github.com/DenRakEiw/scumble) helps other people find it.
-Something broken? Open an [issue](https://github.com/DenRakEiw/scumble/issues) with what you did and what happened;
+If Scumble is useful to you, a [star on GitHub](https://github.com/scumble-app/scumble) helps other people find it.
+Something broken? Open an [issue](https://github.com/scumble-app/scumble/issues) with what you did and what happened;
 Ctrl+Shift+L opens the console, which shows the path of the log file. What is being built, what was measured and what
 did not work is on the [dev blog](https://www.denrakeiw.com/scumble/blog), and [CHANGELOG.md](CHANGELOG.md) lists
 every version.

@@ -269,7 +269,7 @@ me. Keep backups. Tell me what breaks.
 
 **HER:** That's how I get you to report the bugs.
 
-**END CARD: github.com/DenRakEiw/scumble · Download for Windows and Linux · Manual, videos and the
+**END CARD: github.com/scumble-app/scumble · Download for Windows and Linux · Manual, videos and the
 dev blog on denrakeiw.com/scumble**
 
 ---
@@ -290,7 +290,7 @@ dev blog on denrakeiw.com/scumble**
   site's media; one entry in `videos` in `lib/scumble.ts` with a poster frame, and the videos card
   on the hub stops saying "In preparation" by itself.
 - **Addresses:** on the end card without `https://` (nobody clicks a picture, the line reads larger);
-  in the video's description in full, `https://github.com/DenRakEiw/scumble`, so it is a link everywhere.
+  in the video's description in full, `https://github.com/scumble-app/scumble`, so it is a link everywhere.
 - **The honest line stays in:** the version number, "keep backups", "tell me what breaks". It is the
   README's voice, and it is why people trust the rest of it.
 
@@ -1051,7 +1051,7 @@ The same two voices and the same bookends, shortened (intro 4 s, outro 7 s). He 
 
 **OUTRO (4:13–4:20)**
 
-*outro.mp4 from 3.0 s. The coat strip completes, and the end sting (Static Resolve, raised about 10 dB) plays. End card: github.com/DenRakEiw/scumble · Download for Windows and Linux · Manual, videos and the dev blog on denrakeiw.com/scumble*
+*outro.mp4 from 3.0 s. The coat strip completes, and the end sting (Static Resolve, raised about 10 dB) plays. End card: github.com/scumble-app/scumble · Download for Windows and Linux · Manual, videos and the dev blog on denrakeiw.com/scumble*
 
 ---
 

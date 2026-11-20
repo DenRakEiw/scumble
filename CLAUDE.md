@@ -70,7 +70,7 @@ code.
 - Licence: **GPL-3.0** (decided 2026-09-09; `LICENSE`, `package.json`, About, README).
   The same licence as the node, no CLA, no dual licensing (that is also what the free
   SignPath Foundation signing requires). Only MIT/Apache/BSD/OFL dependencies in the app.
-- Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public); `electron-updater` reads `latest.yml`; a
+- Release channel: **GitHub Releases** of `scumble-app/scumble` (public); `electron-updater` reads `latest.yml`; a
   `v<version>` tag (matching `package.json`) builds a **draft** release in CI, and publishing it makes it visible.
   **Every release needs its CHANGELOG section first** (the tag build fails without it; the app shows the same text).
   Installers are **unsigned**; signing goes **the Microsoft Store first** (an MSIX re-signed by Microsoft; the GitHub
@@ -98,6 +98,17 @@ written down anywhere.
   `rel59-exe` side by side: the one real failure (`skins`, the template rules outside `@layer app`) fixed before the
   tag, the six flakes green one at a time (`rel59r-t`, `rel59r-c`; `docs/TESTING.md`). Built: `dist/Scumble-0.1.59.msix`
   and `dist/store-listing/whats-new-0.1.59.txt`.
+- **The repository moved** (2026-11-20, the user: "ok, dann lass uns den umzug machen"): `DenRakEiw/scumble` ->
+  **`scumble-app/scumble`**, an organisation on GitHub Free (the name `scumble` belongs to a stranger's account), so
+  42lux can be an admin (done: admin on the repo; a personal account's repos have no roles). The old links forward
+  (301; web, git, the API, release downloads), as long as no repo or fork named `scumble` appears under DenRakEiw again.
+  The update feed is `owner: scumble-app` from 0.1.60 on (0.1.59 and older read the old place through the forward).
+  Pages moved to https://scumble-app.github.io/scumble/ (Pages is never forwarded; the old denrakeiw.github.io URL is
+  dead, the user's own `DenRakEiw.github.io` repo has the custom domain `schoeneberg.me` and answered 404 at its root on
+  2026-11-20, so no forward page was put there: the user's call). The website and `gh-pages` point at the new place.
+  Kept on DenRakEiw: the author, the Store identity `DenRakEiw.Scumble` and publisher, the node repo
+  `DenRakEiw/ComfyUI-InpaintCanvas`, the Hugging Face repo `DenRakEiw/scumble-intrinsic-onnx`, and `server.json`'s
+  registry name `io.github.DenRakEiw/scumble` (see `docs/RELEASING.md`). Older plans under `docs/` keep the old links.
 - **The releases since 0.1.47, one line each** (CHANGELOG has the text, HISTORY the hand-over): 0.1.48 status and
   feedback (red error lines, the progress bar, prompts from the history); 0.1.49 Comfy Cloud and Comfy Router on
   Comfy's SDK, FLUX 3 Klein and boxes on the user's ComfyUI; 0.1.50 MOSS-Image with boxes, the Klein prompt upsampler;
@@ -240,7 +251,7 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   Center (the user logged in; the upload of the ~190 MB MSIX through the extension never tried yet; *Submit for
   certification* only after the user's yes in chat each time). If the upload does not work: essential changes only,
   the user's three steps by hand (`docs/RELEASING.md`).
-- **The GitHub Pages site** (2026-10-10, a Discord comment asked for a github.io page): https://denrakeiw.github.io/scumble/,
+- **The GitHub Pages site** (2026-10-10, a Discord comment asked for a github.io page): https://scumble-app.github.io/scumble/ (until the move of 2026-11-20 denrakeiw.github.io/scumble),
   one `index.html` on the branch `gh-pages` (downloads, what it does, links to the hub, manual, videos, blog, MCP docs;
   canonical to the hub, which stays the one source). Update: edit `index.html` on `gh-pages` and push; Pages rebuilds
   in a minute. A `scumble.github.io` would need a GitHub organisation named scumble (not made).

@@ -237,7 +237,7 @@ check("the_fallback_answers_the_protocol_with_one_tool_naming_the_missing_path",
     eq(r.answers[1].result.tools.map((t) => t.name), ["scumble_not_installed"], "one tool");
     eq(r.answers[1].result.tools[0].annotations.readOnlyHint, true, "read-only");
     const text = r.answers[2].result.content[0].text;
-    ok(text.includes(gone) && text.includes("github.com/DenRakEiw/scumble/releases") && text.includes("apps.microsoft.com"), "the call's text: " + text);
+    ok(text.includes(gone) && text.includes("github.com/scumble-app/scumble/releases") && text.includes("apps.microsoft.com"), "the call's text: " + text);
     eq(r.answers[3].result, {}, "ping");
     eq(r.answers[4].error.code, -32601, "unknown method");
     ok(r.stderr.includes(gone), "stderr names the path once");

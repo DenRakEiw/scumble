@@ -34,7 +34,7 @@ Platforms:     Windows 10/11 (Microsoft Store, Installer, Portable ZIP, winget)
 OFFICIAL LINKS
 --------------
 Website:       https://www.denrakeiw.com/scumble
-Source Code:   https://github.com/DenRakEiw/scumble
+Source Code:   https://github.com/scumble-app/scumble
 Documentation: https://www.denrakeiw.com/scumble/manual
 Blog / News:   https://www.denrakeiw.com/scumble/blog
 Contact:       schoenebergde@gmail.com

@@ -11,7 +11,7 @@ import { referencesRule, referencesText } from "./reftokens.js";
  * A helper prompt with every required widget input its builder left out set to the server's own default for it (the
  * node's spec in /object_info: a combo's default or its first option, a value's default). Node packs add required
  * inputs: comfyui-rmbg's SAM3Segment got `model_name` (sam3.1_multiplex_fp16 / sam3) in 2026-10, and a prompt without
- * it fails validation (DenRakEiw/scumble#7); an older pack without the input is sent nothing more. Links (IMAGE, MASK,
+ * it fails validation (scumble-app/scumble#7); an older pack without the input is sent nothing more. Links (IMAGE, MASK,
  * ...) have no default and stay as they are. Changes and returns `nodes`.
  */
 function withSpecDefaults(nodes) {

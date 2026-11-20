@@ -13680,7 +13680,7 @@ await run("close_document", { doc: d.id, force: true });
 return { align: fin.align, lastRowAlpha: last, insideAlpha: inside, k, calls };
 """),
     ("select_by_text_sends_the_inputs_the_node_requires", """
-// issue DenRakEiw/scumble#7 (2026-10-19): comfyui-rmbg's SAM3Segment now requires model_name, and the helper prompt
+// issue scumble-app/scumble#7 (2026-10-19): comfyui-rmbg's SAM3Segment now requires model_name, and the helper prompt
 // without it failed validation; the prompt gets every required input it left out at the node's own default, and an
 // older pack without the input is sent nothing more
 const d = await run("new_document");
@@ -13718,7 +13718,7 @@ await run("close_document", { doc: d.id, force: true });
 return { current: a.model_name, older: Object.keys(b) };
 """),
     ("a_helper_job_comfyui_never_answers_ends_its_wait", """
-// issue DenRakEiw/scumble#15 (2026-11-17): SAM3 hung, ComfyUI was restarted, and the tab stayed on "Segmenting ..."
+// issue scumble-app/scumble#15 (2026-11-17): SAM3 hung, ComfyUI was restarted, and the tab stayed on "Segmenting ..."
 // until Scumble was restarted; Cancel knew nothing of the job. A helper prompt's wait now ends on a Cancel, an
 // interrupt, a lost connection and a job the server no longer holds, and an output the socket missed is read from
 // /history (renderer/editor/host_helperwatch.js)

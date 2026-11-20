@@ -427,7 +427,7 @@ check("a_key_this_account_cannot_decrypt_reads_as_stale_and_is_never_rewritten",
 
 const zlib = require("node:zlib");
 const pzip = require("./portable_zip");
-const FEED = "owner: DenRakEiw\nrepo: scumble\nprovider: github\nreleaseType: draft\nupdaterCacheDirName: scumble-updater\n";
+const FEED = "owner: scumble-app\nrepo: scumble\nprovider: github\nreleaseType: draft\nupdaterCacheDirName: scumble-updater\n";
 
 /** An asar as the app's: the 8-byte size pickle, the header pickle with its JSON, the files after it. */
 function writeAsar(file, files) {
@@ -532,7 +532,7 @@ check("the_portable_zip_refuses_a_layout_it_cannot_ship", () => {
         const cases = [
             ["no-exe", { exe: false }, /no Scumble\.exe in .*run npm run dist first/],
             ["no-feed", { feed: null }, /no resources\\app-update\.yml in .*dist:store/],
-            ["another-feed", { feed: "provider: generic\nurl: https://example.com/\n" }, /does not name the GitHub releases of DenRakEiw\/scumble/],
+            ["another-feed", { feed: "provider: generic\nurl: https://example.com/\n" }, /does not name the GitHub releases of scumble-app\/scumble/],
             ["another-version", { version: "9.9.8" }, /holds version 9\.9\.8, package\.json says 9\.9\.9/],
             ["no-asar", { asar: false }, /cannot read the version of resources\\app\.asar/],
             ["a-data-folder", { data: true }, /has a "data" folder .*settings and keys/],

@@ -75,8 +75,8 @@ function problems(src, version) {
         out.push(`no resources\\app-update.yml in ${src}: a copy without it cannot read the update feed (npm run dist:store rewrites win-unpacked without it); run npm run dist again`);
     } else {
         const t = fs.readFileSync(yml, "utf8");
-        if (!/^provider:\s*github\s*$/m.test(t) || !/^owner:\s*DenRakEiw\s*$/m.test(t) || !/^repo:\s*scumble\s*$/m.test(t)) {
-            out.push(`resources\\app-update.yml in ${src} does not name the GitHub releases of DenRakEiw/scumble`);
+        if (!/^provider:\s*github\s*$/m.test(t) || !/^owner:\s*scumble-app\s*$/m.test(t) || !/^repo:\s*scumble\s*$/m.test(t)) {
+            out.push(`resources\\app-update.yml in ${src} does not name the GitHub releases of scumble-app/scumble`);
         }
     }
     const built = builtVersion(src);

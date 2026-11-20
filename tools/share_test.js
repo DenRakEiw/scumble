@@ -14,8 +14,8 @@ function check(what, ok, detail) {
 }
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-check("the shared link is the GitHub repo", share.REPO === "https://github.com/DenRakEiw/scumble");
-check("Copy link: the line and the link", share.copyText() === "Scumble: a free, open-source editor for AI inpainting https://github.com/DenRakEiw/scumble", share.copyText());
+check("the shared link is the GitHub repo", share.REPO === "https://github.com/scumble-app/scumble");
+check("Copy link: the line and the link", share.copyText() === "Scumble: a free, open-source editor for AI inpainting https://github.com/scumble-app/scumble", share.copyText());
 check("four targets: X, LinkedIn, Bluesky, Reddit", eq(share.TARGETS.map((t) => t.id), ["x", "linkedin", "bluesky", "reddit"]));
 for (const t of share.TARGETS) {
     const u = new URL(share.urlFor(t.id));

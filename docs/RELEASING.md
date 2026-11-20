@@ -44,10 +44,13 @@ writes it without sizes; the `sizes` job at the end of the tag build writes the 
 size read from the release), for a draft only, only while the body is still the generated one, and never failing the
 build. To fix a body by hand (a re-run, an edited draft, a published release on the user's word), from Git Bash
 (PowerShell's `>` re-encodes the file): `python tools/release_notes.py v<version> --assets > notes.md`, then `gh release
-edit v<version> --repo DenRakEiw/scumble --notes-file notes.md`. The block's wording lives in the script's `block()`,
+edit v<version> --repo scumble-app/scumble --notes-file notes.md`. The block's wording lives in the script's `block()`,
 not in CHANGELOG.md.
 
-**The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`): after the release is published,
+**The official MCP Registry** (listed since 2026-10-04, `docs/PLAN_MCP_LISTINGS.md`; the repository lives at
+`scumble-app/scumble` since 2026-11-20 while the registry name stays `io.github.DenRakEiw/scumble`, the namespace of the
+user's own GitHub login: if a publish refuses the release's URL under the organisation, the way out is the name
+`io.github.scumble-app/scumble`, with the login granted the organisation, and the old entry left as it is): after the release is published,
 `node tools/mcpb_build.js --server-json v<version>` sets `server.json`'s `version` and writes its `packages` entry for
 the release's `.mcpb` (the registry wants the file's SHA-256; the script reads the asset's digest through `gh`, and
 refuses a draft, since the registry checks the asset's URL), the description adjusted by hand if the tools changed (at
@@ -72,7 +75,7 @@ Scumble › Start update; Packages: drop the new MSIX in, delete the old one, le
 save; Store listings › English › What's new in this version, save; Submit for certification. Certification takes hours
 to about three working days; the Store then updates its users by itself.
 
-- Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public since 2026-09-09).
+- Release channel: **GitHub Releases** of `scumble-app/scumble` (public since 2026-09-09).
   `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
   installer and the portable zip on `windows-latest` and publishes a **draft** release on a `v<version>` tag
   (the tag must match `package.json`); publishing the draft makes it visible to the app. A portable copy reads the

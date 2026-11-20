@@ -4,17 +4,17 @@
   "display_name": "Scumble",
   "version": "0.0.0",
   "description": "Drive the Scumble AI inpainting editor: select by text, inpaint into layers, masks, filters, PSD/ORA export.",
-  "long_description": "Scumble is a free, open-source (GPL-3.0) desktop editor for AI inpainting on Windows. This extension gives Claude every command of the editor as a tool: open images and .scumble documents, select by rectangle, mask, point or a text description, prompt and inpaint the selection into a new layer, work with masks, blend modes, colour match, filter and text layers, take snapshots, look at screenshots, and export PNG, JPEG, WebP, TIFF or layered PSD and ORA. It drives the Scumble window that is open, so you can watch and step in, or starts the app without a window when none runs.\n\nScumble itself must be installed: the GitHub installer, the Microsoft Store copy or the portable zip (https://github.com/DenRakEiw/scumble). The installed copy is found by itself; a portable copy or an install in another folder is named in this extension's settings. The pixels come from your own ComfyUI (local or remote) or from image APIs on your own keys; this extension ships no models and sets no keys. Documentation: https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md",
+  "long_description": "Scumble is a free, open-source (GPL-3.0) desktop editor for AI inpainting on Windows. This extension gives Claude every command of the editor as a tool: open images and .scumble documents, select by rectangle, mask, point or a text description, prompt and inpaint the selection into a new layer, work with masks, blend modes, colour match, filter and text layers, take snapshots, look at screenshots, and export PNG, JPEG, WebP, TIFF or layered PSD and ORA. It drives the Scumble window that is open, so you can watch and step in, or starts the app without a window when none runs.\n\nScumble itself must be installed: the GitHub installer, the Microsoft Store copy or the portable zip (https://github.com/scumble-app/scumble). The installed copy is found by itself; a portable copy or an install in another folder is named in this extension's settings. The pixels come from your own ComfyUI (local or remote) or from image APIs on your own keys; this extension ships no models and sets no keys. Documentation: https://github.com/scumble-app/scumble/blob/main/docs/MCP.md",
   "author": {
     "name": "DenRakEiw",
     "url": "https://github.com/DenRakEiw"
   },
   "homepage": "https://www.denrakeiw.com/scumble",
-  "documentation": "https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md",
-  "support": "https://github.com/DenRakEiw/scumble/issues",
+  "documentation": "https://github.com/scumble-app/scumble/blob/main/docs/MCP.md",
+  "support": "https://github.com/scumble-app/scumble/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DenRakEiw/scumble"
+    "url": "https://github.com/scumble-app/scumble"
   },
   "license": "GPL-3.0",
   "icon": "icon.png",

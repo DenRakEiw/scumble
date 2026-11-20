@@ -29,9 +29,9 @@ const UNINSTALL_KEY = `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\
 const LAUNCHER = ["resources", "app.asar", "electron", "main", "mcp", "launch.js"];
 const EXE = "Scumble.exe";
 const ALIAS = "scumble.exe";
-const RELEASES = "https://github.com/DenRakEiw/scumble/releases/latest";
+const RELEASES = "https://github.com/scumble-app/scumble/releases/latest";
 const STORE_URL = "https://apps.microsoft.com/detail/9NDBTNNMXF2R";
-const DOCS = "https://github.com/DenRakEiw/scumble/blob/main/docs/MCP.md";
+const DOCS = "https://github.com/scumble-app/scumble/blob/main/docs/MCP.md";
 
 let VERSION = "0.0.0";
 try { VERSION = String(require("../manifest.json").version || VERSION); } catch (_) { /* unpacked without the manifest */ }

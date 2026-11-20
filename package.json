@@ -8,9 +8,9 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/DenRakEiw/scumble.git"
+    "url": "https://github.com/scumble-app/scumble.git"
   },
-  "homepage": "https://github.com/DenRakEiw/scumble",
+  "homepage": "https://github.com/scumble-app/scumble",
   "main": "electron/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -78,7 +78,7 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "DenRakEiw",
+      "owner": "scumble-app",
       "repo": "scumble",
       "releaseType": "draft"
     },

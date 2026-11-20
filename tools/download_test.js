@@ -144,7 +144,7 @@ function tokenRuleTable() {
     const no = [
         "http://huggingface.co/x", "https://huggingface.co.evil.com/x", "https://evil.com/huggingface.co/x", "https://evilhuggingface.co/x",
         "https://user:pw@huggingface.co/x", "https://huggingface.co:8443/x", "https://us.aws.cdn.hf.co/xet-bridge-us/abc", "https://cdn-lfs.huggingface.co/x",
-        "https://cas-bridge.xethub.hf.co/x", "https://github.com/DenRakEiw/scumble/releases/download/x", "https://storage.googleapis.com/x", "not a url", "",
+        "https://cas-bridge.xethub.hf.co/x", "https://github.com/scumble-app/scumble/releases/download/x", "https://storage.googleapis.com/x", "not a url", "",
     ];
     const wrongYes = yes.filter((u) => !models.hfTokenAllowed(u));
     const wrongNo = no.filter((u) => models.hfTokenAllowed(u));

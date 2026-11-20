@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = "DenRakEiw/scumble"
+REPO = "scumble-app/scumble"
 PUBLISHER = "DenRakEiw"
 PACKAGE_NAME = "Scumble"
 PACKAGE_ID = "DenRakEiw.Scumble"

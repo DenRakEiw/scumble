@@ -62,9 +62,10 @@ export function renderUpdate(s) {
 
 /** The release page Download opens: the one main names (electron/main/updater.js releaseUrl), else the tag's. */
 export function releasePage(s) {
-    if (s && typeof s.url === "string" && /^https:\/\/github\.com\/DenRakEiw\/scumble\/releases\//.test(s.url)) return s.url;
+    // the repository's place since 2026-11-20, and its old one (GitHub forwards it; a copy before the move names it)
+    if (s && typeof s.url === "string" && /^https:\/\/github\.com\/(scumble-app|DenRakEiw)\/scumble\/releases\//.test(s.url)) return s.url;
     const v = String((s && s.version) || "").replace(/^v/, "");
-    return /^[0-9A-Za-z.+-]+$/.test(v) ? `https://github.com/DenRakEiw/scumble/releases/tag/v${v}` : "https://github.com/DenRakEiw/scumble/releases/latest";
+    return /^[0-9A-Za-z.+-]+$/.test(v) ? `https://github.com/scumble-app/scumble/releases/tag/v${v}` : "https://github.com/scumble-app/scumble/releases/latest";
 }
 
 /** How Download opens the page (main allows http(s) only); a test replaces `open`. */
@@ -226,7 +227,7 @@ async function installUpdate() {
 }
 
 // ---- item 40: the star line after an update ------------------------------------------------------------
-const REPO_URL = "https://github.com/DenRakEiw/scumble";
+const REPO_URL = "https://github.com/scumble-app/scumble";
 
 /** The quiet line on the first start of a new version (main decides, once per version): never a modal, closed for good. */
 function showStarNote(text) {

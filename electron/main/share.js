@@ -3,7 +3,7 @@
 // nicht die webseite"); no UTM or tracking parameter goes along. Plain Node: tools/share_test.js.
 "use strict";
 
-const REPO = "https://github.com/DenRakEiw/scumble";
+const REPO = "https://github.com/scumble-app/scumble";
 const LINE = "Scumble: a free, open-source editor for AI inpainting";
 // the user's wording of 2026-10-07 (CLAUDE.md item 40)
 const STAR_NOTE = "⭐ If Scumble is useful to you, consider starring the repo — it helps the project get discovered.";

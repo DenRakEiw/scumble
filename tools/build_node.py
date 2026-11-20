@@ -57,7 +57,7 @@ FILES = [
 ]
 BINARIES = ["px/px.wasm"]
 NODE_OWN = ["host.js", "inpaint_node.js", "inpaint_bridge.js"]
-HEADER = "// Generated from DenRakEiw/scumble renderer/editor/{name} by tools/build_node.py. Do not edit here: edit it in the app repo and build.\n"
+HEADER = "// Generated from scumble-app/scumble renderer/editor/{name} by tools/build_node.py. Do not edit here: edit it in the app repo and build.\n"
 DEV_MARK = "> **js/ is generated**"
 
 
@@ -240,7 +240,7 @@ def main():
         dev_path = os.path.join(args.node, "DEVELOPMENT.md")
         dev = read(dev_path)
         line = (f"{DEV_MARK} (build {digest} from scumble {app_revision()}): every file in js/ except host.js, "
-                "inpaint_node.js and inpaint_bridge.js comes from `renderer/editor/` in DenRakEiw/scumble through its "
+                "inpaint_node.js and inpaint_bridge.js comes from `renderer/editor/` in scumble-app/scumble through its "
                 "`tools/build_node.py`. Edit the editor there, build, commit both repos.\n")
         lines = dev.split("\n")
         lines = [l for l in lines if not l.startswith(DEV_MARK)]

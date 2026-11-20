@@ -12,7 +12,7 @@ function check(what, ok, detail) {
     console.log(`[${ok ? "ok" : "FAIL"}] ${what}${detail ? ": " + detail : ""}`);
 }
 
-const http = ["https://github.com/DenRakEiw/scumble", "http://127.0.0.1:8188/", "HTTPS://Example.com/x?y=1#z", " https://example.com/ "];
+const http = ["https://github.com/scumble-app/scumble", "http://127.0.0.1:8188/", "HTTPS://Example.com/x?y=1#z", " https://example.com/ "];
 const other = ["file:///C:/Windows/System32/calc.exe", "smb://host/share", "\\\\host\\share", "ms-settings:privacy", "ms-msdt:/id x", "search-ms:query=x",
     "javascript:alert(1)", "scumble://app/index.html#", "scumble://app/comfy/view", "mailto:a@b.c", "data:text/html,x", "", null, undefined, 42, "https:"];
 check("http and https URLs pass (any case of the scheme)", http.every(isHttpUrl), http.filter((u) => !isHttpUrl(u)).join(" | "));

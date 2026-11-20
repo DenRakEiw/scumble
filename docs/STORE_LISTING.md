@@ -14,12 +14,12 @@ English: every language the package declares needs a complete listing of its own
 | Pricing | Free, all markets |
 | Category | Photo & video |
 | Subcategory | (none) or Image editing, where offered |
-| Privacy policy URL | https://github.com/DenRakEiw/scumble/blob/main/docs/CODE_SIGNING_POLICY.md#privacy-policy |
+| Privacy policy URL | https://github.com/scumble-app/scumble/blob/main/docs/CODE_SIGNING_POLICY.md#privacy-policy |
 | Website | https://www.denrakeiw.com/scumble |
-| Support contact | https://github.com/DenRakEiw/scumble/issues |
+| Support contact | https://github.com/scumble-app/scumble/issues |
 | Copyright | © 2026 DenRakEiw. Free software under the GNU General Public License v3.0. |
-| Additional license terms | https://github.com/DenRakEiw/scumble/blob/main/LICENSE |
-| Restricted capability `runFullTrust`, the why (the field takes about 500 characters; this is 441) | Scumble is a desktop image editor (Electron, packaged with the Desktop Bridge). It connects to the user's own ComfyUI server, usually on 127.0.0.1, which an AppContainer app cannot reach; opens and saves images, PSD and ORA files anywhere on disk; runs local helper models with ONNX Runtime on DirectML; and offers a local MCP server for AI agents. No services, drivers or startup entries. Open source (GPL-3.0): github.com/DenRakEiw/scumble |
+| Additional license terms | https://github.com/scumble-app/scumble/blob/main/LICENSE |
+| Restricted capability `runFullTrust`, the why (the field takes about 500 characters; this is 441) | Scumble is a desktop image editor (Electron, packaged with the Desktop Bridge). It connects to the user's own ComfyUI server, usually on 127.0.0.1, which an AppContainer app cannot reach; opens and saves images, PSD and ORA files anywhere on disk; runs local helper models with ONNX Runtime on DirectML; and offers a local MCP server for AI agents. No services, drivers or startup entries. Open source (GPL-3.0): github.com/scumble-app/scumble |
 | Publishing | Right after certification (the user, 2026-09-23) |
 | Notes for the testers (*Additional testing information*) | No account or sign-in is needed. Everything except generating works offline: open an image (or drag one in), select with the tools on the left, add layers, filters and text, and export. F1 opens the built-in manual. Generating (the green Generate button) needs either the user's own ComfyUI server or an API key of a provider the user pays; neither ships with the app, so without them Generate reports that no recipe is ready. This is expected. The app never charges anything itself and has no in-app purchases. |
 | Age rating (IARC) | Answer that the app lets users generate and edit images with AI models of third-party providers the user chooses and pays, from their own prompts; no user-to-user communication, no content shared by the app, no purchases in the app. The rating body decides; expect a general rating with a note on generated content. |

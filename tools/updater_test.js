@@ -121,8 +121,8 @@ function getBlock({ api = false, rule = true } = {}) {
         api ? '<markdown-accessiblity-table><table role="table">' : "<table>",
         "<thead>", "<tr>", "<th>Package</th>", "<th>Download</th>", "<th>Size</th>", "<th>Notes</th>", "</tr>", "</thead>", "<tbody>",
         ...row("Microsoft Store", `<a href="https://apps.microsoft.com/detail/9NDBTNNMXF2R" rel="nofollow">Scumble in the Store</a> or ${code}winget install scumble</code>`, "–", "Signed by Microsoft and updated by the Store."),
-        ...row("Windows installer", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/Scumble-Setup-0.1.43.exe">Scumble-Setup-0.1.43.exe</a>', "123 MB", "Updates itself."),
-        ...row("Linux .deb", '<a href="https://github.com/DenRakEiw/scumble/releases/download/v0.1.43/scumble-0.1.43.deb">scumble-0.1.43.deb</a>', "118 MB", "Early build made by CI, not tested by the author yet."),
+        ...row("Windows installer", '<a href="https://github.com/scumble-app/scumble/releases/download/v0.1.43/Scumble-Setup-0.1.43.exe">Scumble-Setup-0.1.43.exe</a>', "123 MB", "Updates itself."),
+        ...row("Linux .deb", '<a href="https://github.com/scumble-app/scumble/releases/download/v0.1.43/scumble-0.1.43.deb">scumble-0.1.43.deb</a>', "118 MB", "Early build made by CI, not tested by the author yet."),
         "</tbody>",
         api ? "</table></markdown-accessiblity-table>" : "</table>",
     ];
@@ -279,7 +279,7 @@ check("notify_mode_never_downloads_nor_installs_and_keeps_the_switch_off", () =>
         const on = flags.filter(([, d, q]) => d !== false || q !== false);
         assert(!on.length, "a switch on: " + JSON.stringify(on));
         assert(u.status.state === "available" && u.status.version === "0.1.40" && u.status.percent === null, "state " + JSON.stringify(u.status));
-        assert(u.status.url === "https://github.com/DenRakEiw/scumble/releases/tag/v0.1.40", "url " + u.status.url);
+        assert(u.status.url === "https://github.com/scumble-app/scumble/releases/tag/v0.1.40", "url " + u.status.url);
         assert(JSON.stringify(u.status.headlines) === JSON.stringify(["New in 0.1.40."]) && /New in 0\.1\.40/.test(u.status.notes), "notes " + JSON.stringify(u.status));
         assert(fake.downloads === 0, "downloadUpdate was called");
         assert(u.install() === false && fake.installs.length === 0, "install in notify mode");
@@ -313,9 +313,9 @@ check("notify_mode_never_downloads_nor_installs_and_keeps_the_switch_off", () =>
 });
 
 check("the_release_page_and_the_other_modes", async () => {
-    assert(releaseUrl("0.1.42") === "https://github.com/DenRakEiw/scumble/releases/tag/v0.1.42", releaseUrl("0.1.42"));
+    assert(releaseUrl("0.1.42") === "https://github.com/scumble-app/scumble/releases/tag/v0.1.42", releaseUrl("0.1.42"));
     assert(releaseUrl("v0.1.42") === releaseUrl("0.1.42"), "a v prefix");
-    assert(releaseUrl("") === "https://github.com/DenRakEiw/scumble/releases/latest" && releaseUrl("../x") === releaseUrl(null), "no version, or not a version");
+    assert(releaseUrl("") === "https://github.com/scumble-app/scumble/releases/latest" && releaseUrl("../x") === releaseUrl(null), "no version, or not a version");
     // the default is today's: packaged, not the Store, an install
     assert(new Updater().mode === "install" && new Updater().status.mode === "install", "the default mode");
     fake = makeFake();

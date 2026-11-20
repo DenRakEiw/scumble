@@ -11,7 +11,7 @@ table and never a bulleted list: the app's update question takes every top-level
 body as a change (electron/main/updater.js releaseHeadlines), and the app drops this block, from its heading to the
 rule after it, before it shows the notes (updater.js withoutDownloads). The block is not part of CHANGELOG.md.
 
-`--assets` reads the release's files read-only (`gh release view <tag> --repo DenRakEiw/scumble --json assets`) and
+`--assets` reads the release's files read-only (`gh release view <tag> --repo scumble-app/scumble --json assets`) and
 adds a size column (a dash for the Store and for a file the release does not hold yet); without it the table has no
 size column. It exits 3 when gh cannot read the release.
 
@@ -19,7 +19,7 @@ Used by .github/workflows/build.yml when it creates the draft release (without s
 uploaded their files (with --assets, a draft only), and by hand when a release body needs fixing afterwards:
 
     python tools/release_notes.py v0.1.3 --assets > notes.md
-    gh release edit v0.1.3 --repo DenRakEiw/scumble --notes-file notes.md
+    gh release edit v0.1.3 --repo scumble-app/scumble --notes-file notes.md
 
 Exits 1 with a message on stderr when the version has no section, so a release never goes out with someone else's
 notes, and when the section holds an @token outside a code span (`@img1` written bare): GitHub reads it as a mention,
@@ -38,7 +38,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = "DenRakEiw/scumble"
+REPO = "scumble-app/scumble"
 STORE_ID = "9NDBTNNMXF2R"
 STORE_URL = "https://apps.microsoft.com/detail/" + STORE_ID
 

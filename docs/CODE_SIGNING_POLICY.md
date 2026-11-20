@@ -3,7 +3,7 @@
 Scumble's Windows installer (`Scumble Setup <version>.exe`) and its portable zip
 (`Scumble-<version>-portable-win-x64.zip`) are built by GitHub Actions from the source in this
 repository and published on
-[GitHub Releases](https://github.com/DenRakEiw/scumble/releases). This page is the code
+[GitHub Releases](https://github.com/scumble-app/scumble/releases). This page is the code
 signing policy the [SignPath Foundation](https://signpath.org/terms) asks an open source
 project to publish. It describes who may change the code, who approves a signed release and
 what the program sends over the network.
@@ -53,7 +53,7 @@ What the MSIX build has to get right (built on 2026-09-23 and checked without an
 
 | Role | Who |
 | --- | --- |
-| Committers and reviewers | Members of the [DenRakEiw/scumble](https://github.com/DenRakEiw/scumble) repository with write permission: [DenRakEiw](https://github.com/DenRakEiw) |
+| Committers and reviewers | Members of the [scumble-app/scumble](https://github.com/scumble-app/scumble) repository with write permission: [DenRakEiw](https://github.com/DenRakEiw) |
 | Approvers | [DenRakEiw](https://github.com/DenRakEiw) |
 
 Contributions from outside the team arrive as pull requests and are reviewed and merged by a

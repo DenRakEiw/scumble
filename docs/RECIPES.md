@@ -241,7 +241,7 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   snowy birch forest at dawn" in 11 s, the request "TARGET CANVAS: 16:9
 ..." with no picture, a detailed photograph.
   The queued prompts held no switch, `pos.text = ["up_run", 0]`, and the caption came back through `up_show`.
-- `moss_image_local`, **MOSS-Image** (0.1.50, item 47, issue DenRakEiw/scumble#6): OpenMOSS's 5B text-to-image model
+- `moss_image_local`, **MOSS-Image** (0.1.50, item 47, issue scumble-app/scumble#6): OpenMOSS's 5B text-to-image model
   (Apache-2.0), on ComfyUI 0.42 or newer, which runs it on its own nodes (PR Comfy-Org/ComfyUI#17095; 0.41 does not).
   A text-to-image graph after Comfy's template `image_moss_image_t2i_bboxes`, without its prompt upsampler (it rewrites
   a layout): `UNETLoader` (`moss_image_sft_bf16`), `CLIPLoader` type `moss_image` (`qwen3.5_9b_int8_convrot`),
@@ -256,7 +256,7 @@ the Cloud copy writes it into the copy's variant (`detach`), and `tools/cloud_re
   left, a plant lower right) and a Keep box in 20 s: the word, the bicycle and the plant each landed in its box, the
   Keep box stayed out with the panel's warning and the run's note; `/history` showed `layout.element = ["canvas", 22]`
   and `pos.text = ["layout", 0]`. Generate on a selection refused before anything was queued.
-- `moss_image_edit_local`, **MOSS-Image Edit** (0.1.52, item 50, issue DenRakEiw/scumble#11; `docs/PLAN_LORAS.md`
+- `moss_image_edit_local`, **MOSS-Image Edit** (0.1.52, item 50, issue scumble-app/scumble#11; `docs/PLAN_LORAS.md`
   §3.6, LR6): MOSS-Image with chinoll's edit LoRA, on ComfyUI 0.43 or newer, which brought the core node
   `TextEncodeMOSSImageEdit` (PRs Comfy-Org/ComfyUI#17296 and #17320; 0.42 has neither the node nor the model's reference
   latents: there the recipe is listed with "The server lacks these node types: TextEncodeMOSSImageEdit", `list_recipes`
@@ -1994,7 +1994,7 @@ The adapter `electron/main/providers/toapis.js` is written from the English docs
 (`docs.toapis.com/docs/en/...`, read 2026-09-15) and **has not run against the live API** from Scumble;
 every ToAPIs variant's note says so, and says that crop, mask and references are uploaded to public
 `files.toapis.com` URLs. The key link (Settings › API providers) carries the author's referral code.
-**One outside live run (2026-10-13, DenRakEiw/scumble#5):** ToAPIs called this adapter's own `generate()` / `edit()`
+**One outside live run (2026-10-13, scumble-app/scumble#5):** ToAPIs called this adapter's own `generate()` / `edit()`
 at `0d0be6b` from a wrapper (`ToAPIs-2025/cheaper-scumble-toapis`): GPT Image 2 on channels `standard` and `vip`, one
 new image each and two whole-picture reference edits on `vip`, 1K, four PNGs for $0.0207. That shows the upload,
 generations, task query and download path for those two channels; channel `official` with the selection as

@@ -111,7 +111,7 @@ const read = (r) => ({
 const press = (r, label) => Array.from(r.querySelectorAll("button")).find((b) => b.textContent === label).click();
 const until = async (fn, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await wait(100)) { const v = fn(); if (v) return v; } return null; };
 const notAsked = (s) => Promise.race([shell.announceUpdate(s), wait(1500).then(() => "open")]);
-const TAG = (v) => "https://github.com/DenRakEiw/scumble/releases/tag/v" + v;
+const TAG = (v) => "https://github.com/scumble-app/scumble/releases/tag/v" + v;
 // what main sends in notify mode (electron/main/updater.js), without the url: the window names the tag's page itself
 const fake = (version, more = {}) => ({ state: "available", mode: "notify", current: "0.1.42", version, percent: null, error: null, manual: false, skip: null, announced: null, notes: "• One. More.\n• Two. More.", headlines: ["One.", "Two."], ...more });
 if (dialogs.openCount()) throw new Error("a question is open before the step");
@@ -188,7 +188,7 @@ try {
     const stored = (await window.scumble.settings.get()).updates || {};
     if (stored.skip !== "9.8.7" || (await window.scumble.updates.status()).skip !== "9.8.7" || opened.length !== count) throw new Error("the skip: " + JSON.stringify(stored));
     // the page main names is used when it is GitHub's release page, else the tag's
-    if (shell.releasePage(fake("1.2.3", { url: TAG("1.2.3") })) !== TAG("1.2.3") || shell.releasePage(fake("1.2.3", { url: "https://example.com/x" })) !== TAG("1.2.3") || shell.releasePage({}) !== "https://github.com/DenRakEiw/scumble/releases/latest") throw new Error("releasePage");
+    if (shell.releasePage(fake("1.2.3", { url: TAG("1.2.3") })) !== TAG("1.2.3") || shell.releasePage(fake("1.2.3", { url: "https://example.com/x" })) !== TAG("1.2.3") || shell.releasePage({}) !== "https://github.com/scumble-app/scumble/releases/latest") throw new Error("releasePage");
     if (dialogs.openCount()) throw new Error("a question stayed open");
     out.opened = opened.length;
 } finally {

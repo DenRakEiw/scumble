@@ -1011,5 +1011,5 @@ Scumble is at 0.1.x and it says so. Not every path has been tested end to end; t
 ### Notes
 
 - Keys are never written into a settings file, so a settings file you share holds no secrets — but check anything you paste from the log before you post it.
-- Issues: github.com/DenRakEiw/scumble/issues. The version is in the About dialog and in the log's first line.
+- Issues: github.com/scumble-app/scumble/issues. The version is in the About dialog and in the log's first line.
 - Comfy Cloud runs go through Comfy's newer API since 0.1.49. If they fail where 0.1.48 worked, close Scumble, add `"comfycloud": { "api": "legacy" }` to settings.json in the data folder (the About dialog names it), and start it again: Comfy Cloud then runs the older way, without the node in the bar, without Cancel on Comfy's side and without bringing a job back after a crash. Please report it too; the older way is kept for this release.

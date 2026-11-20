@@ -13,7 +13,7 @@ const { app } = require("electron");
 const { isStore } = require("./msix");
 const { EventEmitter } = require("node:events");
 
-const RELEASES = "https://github.com/DenRakEiw/scumble/releases";
+const RELEASES = "https://github.com/scumble-app/scumble/releases";
 
 /** A release's page on GitHub, what Download opens in a copy that does not update itself. */
 function releaseUrl(version) {
