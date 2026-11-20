@@ -139,7 +139,7 @@
       <h3>Assistant</h3>
       <div class="shell-row">
         <label for="set-as-keep">Keep the last</label><input id="set-as-keep" type="number" min="1" max="200" step="1" style="width:5em"><span class="shell-note">chats</span>
-        <label for="set-as-steps">at most</label><input id="set-as-steps" type="number" min="1" max="100" step="1" style="width:5em"><span class="shell-note">tool calls per turn</span>
+        <label for="set-as-steps">at most</label><input id="set-as-steps" type="number" min="1" max="1000" step="1" style="width:5em"><span class="shell-note">tool calls per turn</span>
       </div>
       <div class="shell-row"><button id="set-as-reset" type="button">Delete all assistant data ...</button><span id="set-as-note" class="shell-note"></span></div>
       <p class="shell-help">The chat assistant keeps its chats and their screenshots under <code>assistant/</code> in the app data folder, one file per chat. Deleting removes every chat and its screenshots, the dates of the privacy notices, the assistant's settings and its lines in the app log. <strong>Your API keys stay</strong>: they belong to <em>API providers</em> above.</p>

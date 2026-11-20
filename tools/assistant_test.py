@@ -544,6 +544,47 @@ return { before, after, undone, restored: out };""", timeout=300)
             raise RuntimeError("the turn did not come back whole: " + json.dumps(out))
         return f"{a['layers'] - b['layers']} layers in one turn, the stack trimmed to {a['undo']}, all back"
 
+    async def step_limit_continue(self):
+        """A turn cut at the step limit: its note has Continue, and the next message tells the model."""
+        self.mock.reset()
+        said = "ended at the step limit of 2 tool calls"
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "list_layers", "args": {}}, {"name": "list_layers", "args": {}}]}),
+            Turn(expect=lambda r: (said in str(r["messages"]) and "Continue." in str(r["messages"])) or f"the note does not say it: {str(r['messages'])[-300:]}",
+                 answer={"text": "weiter gemacht"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const saved = (await window.scumble.settings.get()).assistant || {};
+await window.scumble.settings.set({ assistant: { ...saved, maxSteps: 2 } });
+const idle = async () => {
+    for (let i = 0; i < 120; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+    await wait(300);
+};
+const last = async () => [...(await window.scumble.assistant.state()).events].reverse().find((e) => e.type === "turn:done") || {};
+const button = () => Array.from(d.querySelectorAll(".as-card.as-note button")).find((b) => b.textContent === "Continue") || null;
+await window.scumble.assistant.send("lies die ebenen zweimal");
+await idle();
+const first = await last();
+const b = button();
+const note = b ? b.closest(".as-card").textContent : "";
+if (b) b.click();
+await wait(300);
+await idle();
+const second = await last();
+await window.scumble.settings.set({ assistant: saved });
+return { first: first.reason, detail: first.detail, had: !!b, note, second: second.reason, turns: first.turn !== second.turn, left: !!button() };""", timeout=180)
+        if out["first"] != "cap" or not out["had"] or "step limit" not in out["note"]:
+            raise RuntimeError("the capped turn has no Continue: " + json.dumps(out))
+        if out["second"] != "end" or not out["turns"] or out["left"]:
+            raise RuntimeError("Continue did not run the next turn, or its button stayed: " + json.dumps(out))
+        return f"the turn ended at the limit ({out['detail']}), Continue ran the next one and the model was told"
+
     async def undo_turn_two_documents(self):
         """A turn that changed two documents restores both."""
         if not await self.tiles():
@@ -1831,6 +1872,7 @@ async def main():
             await g.run_step("undo_of_a_turn_restores_what_was_before_it", g.undo_whole_turn)
             await g.run_step("undo_of_a_turn_asks_when_the_user_edited_during_it", g.undo_turn_asks_after_an_edit)
             await g.run_step("a_turn_of_thirty_five_steps_comes_back_whole", g.undo_long_turn)
+            await g.run_step("a_turn_at_the_step_limit_offers_continue", g.step_limit_continue)
             await g.run_step("a_turn_over_two_documents_restores_both", g.undo_turn_two_documents)
             await g.run_step("the_model_is_told_its_turn_was_undone", g.undo_turn_tells_the_model)
             await g.run_step("an_undo_card_belongs_to_its_own_turn", g.undo_card_is_its_own_turns)

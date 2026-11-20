@@ -4,6 +4,12 @@ What changed in each release, for the people who use Scumble. The release on Git
 the section for its version; `docs/` and the commit history hold the technical detail.
 ## Unreleased
 
+- **Fixed: the assistant stopped longer tasks in the middle** with "the step limit of this turn was reached". A turn
+  ended after 25 tool calls, and every screenshot and every read of the layers counted. The limit is now 100 by
+  default (*Settings › Assistant*, up to 1,000), the note has a **Continue** button that goes on with the same task,
+  and the model is told that its turn was cut short, so it carries on instead of starting over. A limit you set
+  yourself stays as it is.
+
 ## 0.1.58 - 2026-11-18
 
 - **Deep paint: Stay on surface.** A stroke of the brush or the eraser and a bucket fill on a Deep paint layer now

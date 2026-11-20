@@ -915,7 +915,7 @@ async function openSettings() {
     ui.setUndoMB.value = depth.mb;
     const as = shellState.settings.assistant || {};
     ui.setAsKeep.value = Math.max(1, Math.round(Number(as.keepChats) || 20));
-    ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 25));
+    ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 100));
     ui.setAsNote.textContent = "";
     await renderTileMode();
     refreshGpuMemory();   // not awaited (P18): the card's read starts nvidia-smi or a PowerShell counter

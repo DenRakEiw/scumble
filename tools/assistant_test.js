@@ -1301,12 +1301,22 @@ async function main() {
             check("the_step_cap_ends_the_turn_with_a_valid_history",
                 out.reason === "cap" && out.steps === 3 && last.role === "user" && last.content[0].type === "tool_result",
                 `${out.reason} after ${out.steps} steps`);
+            // the next message tells the model that the turn was cut short, once
+            a.deps.fetchImpl = scriptedFetch([anthropicStream([{ type: "text", text: "done" }]), anthropicStream([{ type: "text", text: "ok" }])]);
+            const capped = a.chat.capped;
+            await a.send("Continue.");
+            const told = () => (JSON.stringify(a.chat.history).match(/ended at the step limit of 3 tool calls/g) || []).length;
+            const first = told();
+            await a.send("thanks");
+            check("the_message_after_a_step_cap_tells_the_model_once",
+                capped === 3 && first === 1 && told() === 1 && !a.chat.capped,
+                `capped ${capped}, told ${first} then ${told()}`);
             await a.close();
         }
         {
             const editor = new FakeEditor();
             const { a } = assistantOn(editor, [anthropicStream([{ type: "text", text: "hi" }])], { assistant: { base: "http://127.0.0.1:5599" } });
-            check("a_partial_assistant_setting_keeps_the_defaults", a.settings().maxSteps === 25 && a.settings().keepImages === 3 && a.settings().maxTokens === 32000,
+            check("a_partial_assistant_setting_keeps_the_defaults", a.settings().maxSteps === 100 && a.settings().keepImages === 3 && a.settings().maxTokens === 32000,
                 JSON.stringify(a.settings()));
             await a.close();
         }

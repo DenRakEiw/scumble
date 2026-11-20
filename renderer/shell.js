@@ -912,7 +912,7 @@ ui.setAsKeep.addEventListener("change", async () => {
     shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), keepChats: v } });
 });
 ui.setAsSteps.addEventListener("change", async () => {
-    const v = Math.min(100, Math.max(1, Math.round(Number(ui.setAsSteps.value) || 25)));
+    const v = Math.min(1000, Math.max(1, Math.round(Number(ui.setAsSteps.value) || 100)));
     ui.setAsSteps.value = v;
     shellState.settings = await window.scumble.settings.set({ assistant: { ...(shellState.settings.assistant || {}), maxSteps: v } });
 });
@@ -933,7 +933,7 @@ ui.setAsReset.addEventListener("click", async () => {
         resetAssistant();
         shellState.settings = await window.scumble.settings.get();
         ui.setAsKeep.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).keepChats) || 20));
-        ui.setAsSteps.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).maxSteps) || 25));
+        ui.setAsSteps.value = Math.max(1, Math.round(Number((shellState.settings.assistant || {}).maxSteps) || 100));
         ui.setAsNote.textContent = "every chat, screenshot and log line of the assistant is gone; the keys are untouched";
     } catch (err) {
         ui.setAsNote.textContent = "could not delete: " + ((err && err.message) || err);

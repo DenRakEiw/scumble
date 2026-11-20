@@ -27,6 +27,7 @@ let deps = {};
 let started = false;
 let busy = false;
 let openAsk = null;          // the token of the ask card that is waiting
+let continueRow = null;      // the Continue button under the last step-limit note
 let streamBubble = null;     // the bubble the model's text streams into
 let streamText = null;       // its text node
 let cards = new Map();       // call id -> its card, for this turn only: ids repeat across turns
@@ -522,6 +523,7 @@ function onEvent(e) {
     if (!started || !e) return;
     switch (e.type) {
         case "user":
+            dropContinue();
             endStream();
             bubble("as-user", e.text);
             break;
@@ -571,7 +573,10 @@ function onEvent(e) {
             closeAsks();                                   // no question stays clickable after a turn
             ui.send.textContent = "Send";
             endStream(e.reason === "stopped");
-            if (e.reason && e.reason !== "end") note(doneWords(e), e.reason === "error" ? "as-bad" : "");
+            if (e.reason && e.reason !== "end") {
+                const card = note(doneWords(e), e.reason === "error" ? "as-bad" : "");
+                if (e.reason === "cap") continueButton(card);
+            }
             if (e.usage) usage = e.usage;
             showCost();
             undoCard(e.turn);
@@ -590,7 +595,7 @@ function doneWords(e) {
     const detail = e.detail ? ": " + e.detail : "";
     if (e.reason === "stopped") return "stopped" + detail;
     if (e.reason === "cut") return "the answer was cut off (the model's length limit)" + detail;
-    if (e.reason === "cap") return "the step limit of this turn was reached" + detail;
+    if (e.reason === "cap") return "the step limit of this turn was reached" + detail + ". Continue goes on from here; the limit is in Settings › Assistant.";
     if (e.reason === "full") return "this chat is too long" + detail;
     if (e.reason === "refusal") return "the model refused" + detail;
     if (e.reason === "closed") return "the document of this turn was closed" + detail;
@@ -775,10 +780,34 @@ export function resetAssistant() {
 
 // ---- sending --------------------------------------------------------------------------------
 
+/** The button under a step-limit note: one click goes on with the task. It goes with the next message. */
+function continueButton(card) {
+    dropContinue();
+    const b = el("button", null, "Continue");
+    b.type = "button";
+    b.addEventListener("click", () => {
+        if (busy || ui.send.disabled) return;
+        dropContinue();
+        sendText("Continue.");
+    });
+    continueRow = el("div", "as-card-buttons");
+    continueRow.appendChild(b);
+    card.appendChild(continueRow);
+}
+
+function dropContinue() {
+    if (continueRow) continueRow.remove();
+    continueRow = null;
+}
+
 async function send() {
     const text = ui.text.value.trim();
     if (!text || busy) return;
     ui.text.value = "";
+    await sendText(text);
+}
+
+async function sendText(text) {
     // the provider's privacy notice shows until the first send to it (docs/ASSISTANT.md): that send is this one
     const noticed = noticeProvider;
     try {

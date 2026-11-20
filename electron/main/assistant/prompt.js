@@ -81,6 +81,7 @@ function stateNote(docs, layers, opts = {}) {
     // after the cut, so a long layer list never drops them
     if (opts.undone) note += "\nThe user undid your last turn.";
     if (opts.stopped) note += "\n(your previous answer was stopped before it finished)";
+    if (opts.capped) note += `\n(your previous turn ended at the step limit of ${opts.capped} tool calls before you were done; go on from where it stood, do not start over)`;
     return note;
 }
 

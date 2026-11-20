@@ -64,8 +64,12 @@ You write a line and press Enter. The assistant then:
 2. asks the model, streaming its answer into the panel;
 3. runs the tools the model asks for, one card per call - the arguments, how long it took, the
    first of what came back, and a screenshot as a thumbnail;
-4. stops at the step limit (*Settings › Assistant*, 25 by default), at Stop, or when the model
-   has nothing left to do.
+4. stops at the step limit, at Stop, or when the model has nothing left to do.
+
+**The step limit** (*Settings › Assistant*, 100 tool calls per turn by default, up to 1,000) bounds
+a loop that runs away; every call counts, a screenshot and a read of the layers too. A turn that
+reaches it ends with a note and a **Continue** button: one click goes on with the same task, and
+the model is told that its turn was cut short, so it does not start over.
 
 **Stop** ends the turn: the model request is aborted, a call that has not started is dropped, and
 a command that has started runs on in the editor. Your next message continues the same chat.
@@ -133,7 +137,7 @@ export without a path, or with an extension that does not match the format, is r
     layer would cost hundreds of megabytes, so the button is not offered there.
   - If **you** edited one of those documents while the turn ran, the button says so and only the
     second press discards your work.
-  - A turn of 25 steps can push your own oldest undo steps past the 30-step limit. The turn
+  - A turn of more than 30 steps pushes your own oldest undo steps past the 30-step limit. The turn
     itself still comes back whole, because its snapshot sits outside the stack.
 - The per-document fields (prompt, generation, crop, settings) come back **only** with "Undo this
   turn": no undo step of the editor covers them.

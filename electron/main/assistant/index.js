@@ -29,7 +29,7 @@ const EVENTS_MAX = 2000;            // the events a chat keeps for its replay (e
 
 const DEFAULTS = {
     model: DEFAULT_MODEL,
-    maxSteps: 25,
+    maxSteps: 100,
     screenshotMax: 1024,
     keepImages: 3,
     maxTokens: 32000,
@@ -717,8 +717,9 @@ class Assistant {
             }
         }
 
-        const note = prompt.stateNote(list, layers, { pin: turn.pin, undone: chat.undone, stopped: chat.stopped });
+        const note = prompt.stateNote(list, layers, { pin: turn.pin, undone: chat.undone, stopped: chat.stopped, capped: chat.capped });
         chat.undone = false;
+        chat.capped = 0;
         const pendingUser = chat.history.length && chat.history[chat.history.length - 1].role === "user";
         if (!pendingUser && s.keepImages > 0 && adapter.countImages(chat.history) > 2 * s.keepImages) adapter.prune(chat.history, s.keepImages);
         // the family's own way to add text to a user message that is still pending (a stopped
@@ -774,7 +775,12 @@ class Assistant {
             }
             chat.history.push(...adapter.resultsMessages(res.calls, results, chat));
             if (closed) return this.done(chat, turn, "closed");
-            if (turn.steps >= s.maxSteps) return this.done(chat, turn, "cap");
+            // the cap bounds a runaway loop, it is no judgement on the task: the next message's note
+            // tells the model that it was cut short, so "Continue" goes on where it stood
+            if (turn.steps >= s.maxSteps) {
+                chat.capped = turn.steps;
+                return this.done(chat, turn, "cap", `${turn.steps} tool calls`);
+            }
         }
     }
 

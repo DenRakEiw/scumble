@@ -96,6 +96,11 @@ written down anywhere.
   `v0-1-58` is live with the manual sync, the MCP Registry has 0.1.58, the node's editor is pushed
   (`ComfyUI-InpaintCanvas` `d8fc370`, no pyproject bump), `INPAINT_CANVAS_REF` moved. After the tag `main` holds only
   the RunPod ref, `server.json` and docs; `main` equals origin.
+- **Unreleased on `main`** (2026-11-20, CHANGELOG "Unreleased"): the assistant's step limit is 100 by default
+  instead of 25 (the field takes up to 1,000; every call counts, reads too), a turn that reaches it shows a
+  *Continue* button, and the next message's state note tells the model that its turn was cut short (`chat.capped`,
+  `prompt.stateNote`). The user's report: "längere agentic tasks funktionieren nicht richtig". Item 75 belongs to the
+  same update.
 - **The releases since 0.1.47, one line each** (CHANGELOG has the text, HISTORY the hand-over): 0.1.48 status and
   feedback (red error lines, the progress bar, prompts from the history); 0.1.49 Comfy Cloud and Comfy Router on
   Comfy's SDK, FLUX 3 Klein and boxes on the user's ComfyUI; 0.1.50 MOSS-Image with boxes, the Klein prompt upsampler;
