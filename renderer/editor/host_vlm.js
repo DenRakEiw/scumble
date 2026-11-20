@@ -45,6 +45,7 @@ export const HostVlmPart = {
     },
 
     vlmSeq: 0,
+    vlmLoaded: false,   // Florence-2 was loaded into the helpers' process (one for every tab) since the last free
 
     /**
      * `describeImage` for one document, with a job id `cancelDescribes` reaches. The editor's `vlmUsed` marks that

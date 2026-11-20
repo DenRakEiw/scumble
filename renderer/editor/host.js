@@ -106,6 +106,7 @@ import { HostHelperWatchPart } from "./host_helperwatch.js";
  * @property {(editor: any, layer: any) => Promise<{ key: string, image: any }>} segmentKey
  * @property {(editor: any, points?: any[], box?: any, layer?: any) => Promise<{ logits: Float32Array, n: number, score: number }>} segmentLogits
  * @property {() => Promise<any>} freeHelpers
+ * @property {boolean} vlmLoaded                                     Florence-2 sits in the helpers' process (host_vlm.js): a local Generate frees it; the node never loads it
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
  * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse, guess? }); the node answers null
