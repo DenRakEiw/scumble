@@ -322,6 +322,16 @@ planning it. A new item gets its number and a few lines here; its research goes 
   (2026-11-18): he wants the single click, a brush with a radius, one click on a spot (an eye), redrawn in about 2 s
   with Flux.2 Klein. The user is not keen on that as a tool of its own (2026-11-19): a selection, a prompt and
   Generate do it in three steps today. The reply on #14 is not written yet.
+- 75: auto-approve for the assistant, as an option (the user, 2026-11-20: "der agent fragt zu viel ... automatisch
+  alles approved als option"; for the next update). Today `electron/main/assistant/policy.js` `decide` answers
+  auto / ask / refuse per call and `index.js` waits for the card's answer on every ask. The asks are of five kinds:
+  paid or queued runs, changes Ctrl+Z takes back (a layer the user made, the whole picture), changes it does not
+  (`load_image`, `new_canvas`, `generate_new`, `close_document`, `delete_snapshot`, `cancel_run`), the disk (reading a
+  file, an export, `save_document`) and global settings that are saved. Proposed, not decided: a setting with levels
+  (ask as today / approve what can be undone / approve everything), "Allow for this chat" on a card, a cap on paid
+  runs per turn, the refusals untouched, every auto-approved call still shown as a card with its reason. The risk to
+  say plainly: the model reads layer names, file names and text in the picture, so with everything approved such
+  text can make it spend money or overwrite a file. Not planned in detail, not built.
 - Not numbered: **B3, the macOS build** (`docs/PLAN_0_1_24.md`; the user tests on their MacBook, a friend signs and
   releases, memory `scumble-macos-friend`; the public texts say "coming soon"). Linux is built by CI and was never
   run. Types stage 3 (`docs/PLAN_TYPES.md`). A parked idea, not a plan: a mobile companion.
